@@ -13,6 +13,9 @@ export class UsersService {
     private usersRepository: Repository<User>,
   ) {}
 
+  async findOneByEmail(email: string) {
+  return this.usersRepository.findOneBy({ email });
+}
   async create(createUserDto: CreateUserDto) {
     // 1. Gera o Hash da senha (O '10' é o custo do processamento, padrão de mercado)
     const saltRounds = 10;

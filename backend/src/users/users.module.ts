@@ -1,12 +1,13 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm'; // Importante
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
-import { User } from './entities/user.entity'; // Importante
+import { User } from './entities/user.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User])], // <--- Libera o uso do repositório
+  imports: [TypeOrmModule.forFeature([User])], // Permite usar o Repository<User>
   controllers: [UsersController],
   providers: [UsersService],
+  exports: [UsersService], // <--- OBRIGATÓRIO: Exporta o serviço para ser usado no AuthModule
 })
 export class UsersModule {}
