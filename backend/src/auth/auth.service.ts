@@ -11,18 +11,20 @@ export class AuthService {
   ) {}
 
   async validateUser(email: string, pass: string): Promise<any> {
-    const user = await this.usersService.findByEmail(email);
-    if (user && (await bcrypt.compare(pass, user.password))) {
-      const { password, ...result } = user;
+    const user = await this.usersService.findOneByEmail(email);
+    
+    // CORREÇÃO: Compara 'pass' com 'user.password_hash'
+    if (user && (await bcrypt.compare(pass, user.password_hash))) {
+      
+      // Removemos o hash antes de retornar o objeto do usuário
+      const { password_hash, ...result } = user;
       return result;
     }
     return null;
   }
 
   async login(user: any) {
-    // AQUI ESTÁ O SEGREDO: Adicionamos 'role: user.role' no payload
     const payload = { email: user.email, sub: user.id, role: user.role };
-    
     return {
       access_token: this.jwtService.sign(payload),
     };

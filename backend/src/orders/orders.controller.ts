@@ -15,15 +15,24 @@ export class OrdersController {
 
   @Post()
   @UseGuards(AuthGuard('jwt')) 
-  // Qualquer usuário logado pode fazer pedidos
   create(@Body() createOrderDto: CreateOrderDto, @Request() req) {
     return this.ordersService.create(createOrderDto, req.user.id);
   }
 
+  // --- ROTA DE DASHBOARD (Resumo Financeiro) ---
+  // IMPORTANTE: Esta rota deve vir ANTES de rotas com :id
+  @Get('summary')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN') // Apenas ADMIN acessa
+  getSummary() {
+    return this.ordersService.getDashboardSummary();
+  }
+  // ---------------------------------------------
+
   @Get()
   @UseGuards(AuthGuard('jwt'))
-  findAll() {
-    return this.ordersService.findAll();
+  findAll(@Request() req) {
+    return this.ordersService.findAll(req.user);
   }
 
   @Get(':id')
@@ -34,7 +43,7 @@ export class OrdersController {
 
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN') // Apenas ADMIN atualiza status (Cozinha)
+  @Roles('ADMIN')
   update(@Param('id', ParseIntPipe) id: number, @Body() updateOrderDto: UpdateOrderDto) {
     return this.ordersService.update(id, updateOrderDto);
   }

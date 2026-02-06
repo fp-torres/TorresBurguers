@@ -18,19 +18,17 @@ export class OrdersService {
 
   async create(createOrderDto: CreateOrderDto, userId: number) {
     const order = new Order();
-    order.user = { id: userId } as User; // Associa ao usuário logado
+    order.user = { id: userId } as User; 
     order.status = OrderStatus.PENDING;
     order.items = [];
     order.total_price = 0;
-    order.payment_method = 'PIX'; // Fixo por enquanto, depois mudamos
+    order.payment_method = 'PIX';
 
-    // 1. Busca todos os produtos do pedido no banco
     const productIds = createOrderDto.items.map((item) => item.productId);
     const products = await this.productRepository.findBy({
       id: In(productIds),
     });
 
-    // 2. Monta os itens do pedido e calcula o total
     for (const itemDto of createOrderDto.items) {
       const product = products.find((p) => p.id === itemDto.productId);
       
@@ -43,24 +41,59 @@ export class OrdersService {
       orderItem.quantity = itemDto.quantity;
       orderItem.observation = itemDto.observation || '';
       
-      // Adiciona ao pedido
       order.items.push(orderItem);
-      
-      // Soma ao total (Preço x Quantidade)
       order.total_price += Number(product.price) * itemDto.quantity;
     }
 
-    // 3. Salva o pedido (o TypeORM salva os itens automaticamente por causa do cascade)
     return this.orderRepository.save(order);
   }
 
-  async findAll() {
-    // Retorna pedidos trazendo os Itens, os Produtos e os Dados do Usuário
-    return this.orderRepository.find({
+  // --- ATUALIZADO: Filtro de Privacidade ---
+  async findAll(user: any) {
+    const options = {
       relations: ['items', 'items.product', 'user'],
-      order: { created_at: 'DESC' }
-    });
+      order: { created_at: 'DESC' } as any,
+    };
+
+    // Se for CLIENT, filtra para mostrar só os dele
+    if (user.role === 'CLIENT') {
+      return this.orderRepository.find({
+        ...options,
+        where: { user: { id: user.id } },
+      });
+    }
+
+    // Se for ADMIN, mostra tudo
+    return this.orderRepository.find(options);
   }
+
+  // --- NOVO: Resumo Financeiro para o Dashboard ---
+  async getDashboardSummary() {
+    const totalOrders = await this.orderRepository.count();
+    
+    // Soma o total de vendas (excluindo cancelados)
+    const revenueQuery = await this.orderRepository
+      .createQueryBuilder('order')
+      .select('SUM(order.total_price)', 'total')
+      .where('order.status != :status', { status: OrderStatus.CANCELED }) 
+      .getRawOne();
+
+    const pendingOrders = await this.orderRepository.count({
+      where: { status: OrderStatus.PENDING }
+    });
+
+    const preparingOrders = await this.orderRepository.count({
+      where: { status: OrderStatus.PREPARING }
+    });
+
+    return {
+      totalOrders,
+      revenue: Number(revenueQuery.total) || 0,
+      pendingOrders,
+      preparingOrders
+    };
+  }
+  // ----------------------------------------
 
   findOne(id: number) {
     return this.orderRepository.findOne({
@@ -69,17 +102,14 @@ export class OrdersService {
     });
   }
 
-  async update(id: number, updateOrderDto: any) { // Usamos any no DTO temporariamente para simplificar
+  async update(id: number, updateOrderDto: any) {
     const order = await this.findOne(id);
     
     if (!order) {
-       // O findOne já lança erro se não achar, mas é bom garantir
        throw new NotFoundException(`Pedido ${id} não encontrado`);
     }
 
-    // Atualiza apenas os campos enviados
     this.orderRepository.merge(order, updateOrderDto);
-    
     return this.orderRepository.save(order);
   }
 }

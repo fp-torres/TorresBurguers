@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as bcrypt from 'bcrypt'; // <--- Importe o bcrypt
+import * as bcrypt from 'bcrypt';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './entities/user.entity';
@@ -14,26 +14,23 @@ export class UsersService {
   ) {}
 
   async findOneByEmail(email: string) {
-  return this.usersRepository.findOneBy({ email });
-}
-  async create(createUserDto: CreateUserDto) {
-    // 1. Gera o Hash da senha (O '10' é o custo do processamento, padrão de mercado)
-    const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(createUserDto.password, saltRounds); //
+    return this.usersRepository.findOneBy({ email });
+  }
 
-    // 2. Cria o usuário com a senha criptografada
+  async create(createUserDto: CreateUserDto) {
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(createUserDto.password, saltRounds);
+
     const newUser = this.usersRepository.create({
       name: createUserDto.name,
       email: createUserDto.email,
-      role: createUserDto.role,
-      password_hash: passwordHash, // <--- Salvamos o hash, não a senha pura
+      role: createUserDto.role as any, // Garante compatibilidade com o Enum
+      password_hash: passwordHash, // <--- Salva no campo correto
     });
 
-    // 3. Salva no banco e retorna (O TypeORM remove a senha do retorno se configurado, mas vamos garantir depois)
     return this.usersRepository.save(newUser);
   }
 
-  // ... (mantenha os outros métodos findAll, findOne, etc como estavam)
   findAll() {
     return this.usersRepository.find();
   }

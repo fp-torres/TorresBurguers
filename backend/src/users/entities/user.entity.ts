@@ -1,4 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
+import { 
+  Entity, PrimaryGeneratedColumn, Column, 
+  CreateDateColumn, UpdateDateColumn, OneToMany 
+} from 'typeorm';
 import { Order } from '../../orders/entities/order.entity';
 
 export enum UserRole {
@@ -17,7 +20,8 @@ export class User {
   @Column({ unique: true })
   email: string;
 
-  @Column()
+  // O banco guarda como password_hash
+  @Column({ name: 'password_hash' }) 
   password_hash: string;
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.CLIENT })
