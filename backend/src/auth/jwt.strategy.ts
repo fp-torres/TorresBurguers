@@ -7,16 +7,14 @@ import { ConfigService } from '@nestjs/config';
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(configService: ConfigService) {
     super({
-      // 1. Onde procurar o token? No cabeçalho Authorization: Bearer <token>
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      // 2. CORREÇÃO AQUI: Adicionamos "|| ''" para garantir que nunca seja undefined
       secretOrKey: configService.get('JWT_SECRET') || 'chave-secreta-padrao',
     });
   }
 
-  // 3. Validação do payload do token
   async validate(payload: any) {
+    // AQUI: Recuperamos o role do token e colocamos no request
     return { id: payload.sub, email: payload.email, role: payload.role };
   }
 }
