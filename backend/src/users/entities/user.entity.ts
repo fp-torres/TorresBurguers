@@ -3,6 +3,7 @@ import {
   CreateDateColumn, UpdateDateColumn, OneToMany 
 } from 'typeorm';
 import { Order } from '../../orders/entities/order.entity';
+import { Address } from '../../addresses/entities/address.entity'; // <--- Importe o novo Address
 
 export enum UserRole {
   CLIENT = 'CLIENT',
@@ -20,7 +21,6 @@ export class User {
   @Column({ unique: true })
   email: string;
 
-  // O banco guarda como password_hash
   @Column({ name: 'password_hash' }) 
   password_hash: string;
 
@@ -29,6 +29,11 @@ export class User {
 
   @OneToMany(() => Order, (order) => order.user)
   orders: Order[];
+
+  // --- NOVA RELAÇÃO: Um usuário tem vários endereços ---
+  @OneToMany(() => Address, (address) => address.user)
+  addresses: Address[];
+  // ----------------------------------------------------
 
   @CreateDateColumn()
   created_at: Date;

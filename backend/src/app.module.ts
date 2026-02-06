@@ -3,23 +3,29 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ServeStaticModule } from '@nestjs/serve-static'; 
 import { join } from 'path'; 
+
+// Módulos
 import { UsersModule } from './users/users.module';
 import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
 import { AuthModule } from './auth/auth.module';
+import { AddressesModule } from './addresses/addresses.module';
+
+// Entidades (Tabelas do Banco)
 import { User } from './users/entities/user.entity';
 import { Product } from './products/entities/product.entity';
 import { Order } from './orders/entities/order.entity';
 import { OrderItem } from './orders/entities/order-item.entity';
+import { Address } from './addresses/entities/address.entity'; // <--- 1. Importado aqui
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     
-    // 3. Configura a pasta pública de imagens
+    // Configura a pasta pública de imagens
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'uploads'), 
-      serveRoot: '/uploads', // A URL será http://localhost:3000/uploads/...
+      serveRoot: '/uploads',
     }),
 
     TypeOrmModule.forRoot({
@@ -29,7 +35,8 @@ import { OrderItem } from './orders/entities/order-item.entity';
       username: process.env.DB_USERNAME || 'postgres',
       password: process.env.DB_PASSWORD || '0000',
       database: process.env.DB_DATABASE || 'torresburgers',
-      entities: [User, Product, Order, OrderItem],
+      // 2. ADICIONEI 'Address' NA LISTA ABAIXO:
+      entities: [User, Product, Order, OrderItem, Address], 
       synchronize: true,
     }),
 
@@ -37,6 +44,7 @@ import { OrderItem } from './orders/entities/order-item.entity';
     ProductsModule,
     OrdersModule,
     AuthModule,
+    AddressesModule,
   ],
   controllers: [],
   providers: [],
