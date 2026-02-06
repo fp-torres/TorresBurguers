@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "@nestjs/common": "^11.1.13",
+    "@nestjs/core": "^11.1.13",
+    "@nestjs/platform-express": "^11.1.13",
+    "@nestjs/serve-static": "^5.0.4"
+  },
+  "devDependencies": {
+    "@types/multer": "^2.0.0"
+  }
+}

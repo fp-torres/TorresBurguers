@@ -69,7 +69,17 @@ export class OrdersService {
     });
   }
 
-  // Métodos update/remove vazios por enquanto
-  update(id: number, updateOrderDto: any) { return `This action updates a #${id} order`; }
-  remove(id: number) { return `This action removes a #${id} order`; }
+  async update(id: number, updateOrderDto: any) { // Usamos any no DTO temporariamente para simplificar
+    const order = await this.findOne(id);
+    
+    if (!order) {
+       // O findOne já lança erro se não achar, mas é bom garantir
+       throw new NotFoundException(`Pedido ${id} não encontrado`);
+    }
+
+    // Atualiza apenas os campos enviados
+    this.orderRepository.merge(order, updateOrderDto);
+    
+    return this.orderRepository.save(order);
+  }
 }
