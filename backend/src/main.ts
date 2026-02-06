@@ -1,15 +1,32 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // 1. Validação automática (DTOs)
-  app.useGlobalPipes(new ValidationPipe());
+  // 1. Configuração de Validação Global (Nível Sênior)
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true, // Remove chaves que não estão no DTO (Segurança)
+    forbidNonWhitelisted: true, // Retorna erro se mandar dados extras
+    transform: true, // Tenta converter tipos automaticamente
+  }));
 
-  // 2. Libera o Frontend para acessar o Backend
+  // 2. Configuração do Swagger (Documentação Automática)
+  const config = new DocumentBuilder()
+    .setTitle('TorresBurgers API')
+    .setDescription('API para gestão de hamburgueria e pedidos')
+    .setVersion('1.0')
+    .addBearerAuth() // Botão para colar o Token JWT na doc
+    .build();
+
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api', app, document); // Rota: http://localhost:3000/api
+
+  // 3. Libera o Frontend
   app.enableCors();
+  
   await app.listen(3000);
 }
 bootstrap();

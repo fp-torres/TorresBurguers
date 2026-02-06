@@ -1,15 +1,18 @@
-import { IsArray, IsInt, IsNotEmpty, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsInt, IsNotEmpty, IsString, ValidateNested, Min, IsOptional } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class OrderItemDto {
   @IsInt()
+  @IsNotEmpty()
   productId: number;
 
   @IsInt()
+  @Min(1, { message: 'A quantidade deve ser no mínimo 1' }) 
   quantity: number;
 
   @IsString()
-  observation: string;
+  @IsOptional() 
+  observation?: string;
 }
 
 export class CreateOrderDto {
