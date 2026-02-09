@@ -18,6 +18,7 @@ export class ProductsService {
   }
 
   findAll() {
+    // Retorna todos (o frontend pode filtrar se quiser mostrar só os ativos)
     return this.productRepository.find();
   }
 
@@ -29,7 +30,18 @@ export class ProductsService {
     return this.productRepository.update(id, updateProductDto);
   }
 
-  remove(id: number) {
-    return this.productRepository.delete(id);
+  async remove(id: number) {
+    try {
+      // 1. TENTA APAGAR FISICAMENTE
+      // Se o produto foi criado errado e nunca vendido, ele será apagado do banco.
+      return await this.productRepository.delete(id);
+    } catch (error) {
+      // 2. SE DER ERRO (Proteção de Chave Estrangeira / Pedidos Existentes)
+      console.log(`Erro ao deletar produto ${id}. Motivo: Vendas vinculadas. Arquivando...`);
+      
+      // Ao invés de apagar, atualizamos para INDISPONÍVEL
+      // Isso faz ele sumir do cardápio do cliente, mas mantém no histórico do admin
+      return await this.productRepository.update(id, { available: false });
+    }
   }
 }
