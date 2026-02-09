@@ -24,8 +24,12 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document); // Rota: http://localhost:3000/api
 
-  // 3. Libera o Frontend
-  app.enableCors();
+  // 3. Libera o Frontend (CORS) - Configuração Explícita
+  app.enableCors({
+    origin: true, // Aceita qualquer origem (em produção, troque pelo domínio real)
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true, // Permite envio de Cookies e Headers de Auth
+  });
   
   await app.listen(3000);
 }
