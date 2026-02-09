@@ -6,8 +6,6 @@ import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto'; 
 import { AuthGuard } from '@nestjs/passport';
-import { Roles } from '../auth/roles.decorator';
-import { RolesGuard } from '../auth/roles.guard';
 
 @Controller('orders')
 export class OrdersController {
@@ -16,14 +14,14 @@ export class OrdersController {
   @Post()
   @UseGuards(AuthGuard('jwt')) 
   create(@Body() createOrderDto: CreateOrderDto, @Request() req) {
+    // req.user vem do JWT decodificado
     return this.ordersService.create(createOrderDto, req.user.id);
   }
 
   // --- ROTA DE DASHBOARD (Resumo Financeiro) ---
   // IMPORTANTE: Esta rota deve vir ANTES de rotas com :id
   @Get('summary')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN') // Apenas ADMIN acessa
+  @UseGuards(AuthGuard('jwt'))
   getSummary() {
     return this.ordersService.getDashboardSummary();
   }
@@ -42,8 +40,7 @@ export class OrdersController {
   }
 
   @Patch(':id')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN')
+  @UseGuards(AuthGuard('jwt'))
   update(@Param('id', ParseIntPipe) id: number, @Body() updateOrderDto: UpdateOrderDto) {
     return this.ordersService.update(id, updateOrderDto);
   }
