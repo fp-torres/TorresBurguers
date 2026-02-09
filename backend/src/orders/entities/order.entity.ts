@@ -7,11 +7,11 @@ import { Address } from '../../addresses/entities/address.entity';
 import { OrderItem } from './order-item.entity';
 
 export enum OrderStatus {
-  PENDING = 'PENDING',
-  PREPARING = 'PREPARING',
-  DELIVERING = 'DELIVERING',
-  DONE = 'DONE',
-  CANCELED = 'CANCELED'
+  PENDING = 'PENDING',       // Chegou agora
+  PREPARING = 'PREPARING',   // Na chapa
+  DELIVERING = 'DELIVERING', // Saiu com motoboy
+  DONE = 'DONE',             // Entregue/Finalizado
+  CANCELED = 'CANCELED'      // Cancelado
 }
 
 export enum OrderType {
@@ -19,17 +19,33 @@ export enum OrderType {
   TAKEOUT = 'TAKEOUT'
 }
 
+// --- NOVO: Controle Financeiro Sênior ---
+export enum PaymentStatus {
+  PENDING = 'PENDING', // Pagar na entrega ou aguardando PIX
+  PAID = 'PAID',       // Pago
+  FAILED = 'FAILED'    // Cartão recusado
+}
+
 @Entity('orders')
 export class Order {
   @PrimaryGeneratedColumn()
   id: number;
 
+  // Status Logístico (Cozinha/Entrega)
   @Column({
     type: 'enum',
     enum: OrderStatus,
     default: OrderStatus.PENDING,
   })
   status: OrderStatus;
+
+  // Status Financeiro (Caixa)
+  @Column({
+    type: 'enum',
+    enum: PaymentStatus,
+    default: PaymentStatus.PENDING, // Começa como pendente
+  })
+  payment_status: PaymentStatus;
 
   @Column({
     type: 'enum',
@@ -45,7 +61,7 @@ export class Order {
   delivery_fee: number;
 
   @Column()
-  payment_method: string;
+  payment_method: string; // "PIX", "CREDIT_CARD", "CASH"
 
   @CreateDateColumn()
   created_at: Date;
@@ -54,11 +70,9 @@ export class Order {
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  // CORREÇÃO AQUI: Adicionamos '| null' para o TypeScript aceitar nulo
   @ManyToOne(() => Address, { nullable: true })
   @JoinColumn({ name: 'address_id' })
   address: Address | null; 
-  // ------------------------------------------------------------------
 
   @OneToMany(() => OrderItem, (item) => item.order, { cascade: true })
   items: OrderItem[];

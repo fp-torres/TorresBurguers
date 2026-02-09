@@ -5,9 +5,12 @@ import {
 import { Order } from '../../orders/entities/order.entity';
 import { Address } from '../../addresses/entities/address.entity';
 
+// Atualizado com os cargos da Documentação
 export enum UserRole {
-  CLIENT = 'CLIENT',
-  ADMIN = 'ADMIN',
+  CLIENT = 'CLIENT',     // Cliente Final
+  ADMIN = 'ADMIN',       // Dono/Gerente
+  KITCHEN = 'KITCHEN',   // Funcionários da Cozinha (Vê pedidos em preparo)
+  COURIER = 'COURIER',   // Motoboys (Vê pedidos prontos para entrega)
 }
 
 @Entity('users')
@@ -24,10 +27,8 @@ export class User {
   @Column({ name: 'password_hash' }) 
   password_hash: string;
 
-  // --- Campo Essencial para Delivery (WhatsApp/Contato) ---
   @Column({ length: 20, nullable: true }) 
   phone: string; 
-  // --------------------------------------------------------
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.CLIENT })
   role: UserRole;
