@@ -18,14 +18,21 @@ export class CreateProductDto {
   @Min(0)
   price: number;
 
-  // --- NOVO: Campo de Promoção (Opcional) ---
+  // --- CORREÇÃO: ADICIONADO O CAMPO DE IMAGEM ---
+  @ApiProperty({ example: '1738291-foto.jpg', required: false, description: 'Nome do arquivo da imagem' })
+  @IsString()
+  @IsOptional() // Permite que seja nulo ou não enviado
+  image?: string;
+  // ---------------------------------------------
+
+  // --- Campo de Promoção (Opcional) ---
   @ApiProperty({ example: 19.90, required: false, description: 'Preço com desconto' })
   @IsNumber()
   @IsOptional()
   @Min(0)
   promotion_price?: number;
 
-  // --- NOVO: Campo de Destaque (Opcional) ---
+  // --- Campo de Destaque (Opcional) ---
   @ApiProperty({ example: true, required: false, description: 'Se aparece no topo do App' })
   @IsBoolean()
   @IsOptional()
@@ -33,7 +40,7 @@ export class CreateProductDto {
 
   @ApiProperty({ enum: ProductCategory, example: ProductCategory.BURGER })
   @IsEnum(ProductCategory, { 
-    message: 'Categoria inválida. Use: hamburgueres, bebidas, sobremesas, etc.' 
+    message: 'Categoria inválida. Use: hamburgueres, bebidas, sobremesas, acompanhamentos, combos' 
   })
   category: ProductCategory;
 
