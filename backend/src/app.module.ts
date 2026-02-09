@@ -17,13 +17,16 @@ import { Product } from './products/entities/product.entity';
 import { Order } from './orders/entities/order.entity';
 import { OrderItem } from './orders/entities/order-item.entity';
 import { Address } from './addresses/entities/address.entity';
-import { Addon } from './products/entities/addon.entity'; // <--- 1. Import do Adicional
+import { Addon } from './products/entities/addon.entity';
+
+// Controllers Globais (Uploads)
+import { UploadController } from './common/upload.controller'; // <--- Importado
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     
-    // Configura a pasta pública de imagens
+    // Configura a pasta pública para servir as imagens (GET /uploads/foto.jpg)
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'uploads'), 
       serveRoot: '/uploads',
@@ -36,18 +39,19 @@ import { Addon } from './products/entities/addon.entity'; // <--- 1. Import do A
       username: process.env.DB_USERNAME || 'postgres',
       password: process.env.DB_PASSWORD || '0000',
       database: process.env.DB_DATABASE || 'torresburgers',
-      // 2. ADICIONEI 'Addon' NA LISTA ABAIXO:
+      // Lista de Entidades (Tabelas)
       entities: [User, Product, Order, OrderItem, Address, Addon], 
       synchronize: true,
     }),
 
+    // Módulos de Funcionalidade
     UsersModule,
     ProductsModule,
     OrdersModule,
     AuthModule,
     AddressesModule,
   ],
-  controllers: [],
+  controllers: [UploadController], // <--- Adicionado aqui para ativar a rota POST /uploads
   providers: [],
 })
 export class AppModule {}
