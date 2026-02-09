@@ -3,8 +3,9 @@ import Login from '../pages/Login';
 import DefaultLayout from '../layouts/DefaultLayout';
 import Products from '../pages/Products'; 
 import Orders from '../pages/Orders'; 
-import Dashboard from '../pages/Dashboard'; // <--- IMPORTADO AQUI
+import Dashboard from '../pages/Dashboard'; 
 import type { JSX } from 'react/jsx-dev-runtime'; 
+import Users from '../pages/Users';
 
 // Proteção de Rota
 function PrivateRoute({ children }: { children: JSX.Element }) {
@@ -25,6 +26,8 @@ export default function AppRoutes() {
       }>
         {/* ROTA DASHBOARD ATIVADA */}
         <Route path="/dashboard" element={<Dashboard />} />
+
+        <Route path="/users" element={<Users />} />
         
         <Route path="/products" element={<Products />} /> 
 
