@@ -4,12 +4,12 @@ import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
 import { Order } from './entities/order.entity';
 import { Product } from '../products/entities/product.entity';
-import { Address } from '../addresses/entities/address.entity'; // <--- Importe Address
+import { Address } from '../addresses/entities/address.entity';
+import { Addon } from '../products/entities/addon.entity'; // Import do Adicional
 
 @Module({
   imports: [
-    // Registre Address aqui para o Service conseguir usar
-    TypeOrmModule.forFeature([Order, Product, Address]) 
+    TypeOrmModule.forFeature([Order, Product, Address, Addon]) 
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

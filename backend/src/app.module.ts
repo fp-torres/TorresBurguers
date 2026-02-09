@@ -16,7 +16,8 @@ import { User } from './users/entities/user.entity';
 import { Product } from './products/entities/product.entity';
 import { Order } from './orders/entities/order.entity';
 import { OrderItem } from './orders/entities/order-item.entity';
-import { Address } from './addresses/entities/address.entity'; // <--- 1. Importado aqui
+import { Address } from './addresses/entities/address.entity';
+import { Addon } from './products/entities/addon.entity'; // <--- 1. Import do Adicional
 
 @Module({
   imports: [
@@ -35,8 +36,8 @@ import { Address } from './addresses/entities/address.entity'; // <--- 1. Import
       username: process.env.DB_USERNAME || 'postgres',
       password: process.env.DB_PASSWORD || '0000',
       database: process.env.DB_DATABASE || 'torresburgers',
-      // 2. ADICIONEI 'Address' NA LISTA ABAIXO:
-      entities: [User, Product, Order, OrderItem, Address], 
+      // 2. ADICIONEI 'Addon' NA LISTA ABAIXO:
+      entities: [User, Product, Order, OrderItem, Address, Addon], 
       synchronize: true,
     }),
 

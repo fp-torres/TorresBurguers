@@ -14,6 +14,11 @@ class OrderItemDto {
   @Min(1, { message: 'A quantidade deve ser no mínimo 1' }) 
   quantity: number;
 
+  @ApiProperty({ required: false, type: [Number] })
+  @IsArray()
+  @IsOptional()
+  addonIds?: number[];
+
   @ApiProperty({ required: false })
   @IsString()
   @IsOptional() 

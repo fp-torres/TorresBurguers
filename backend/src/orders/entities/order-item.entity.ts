@@ -1,6 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinTable, ManyToMany } from 'typeorm';
 import { Order } from './order.entity';
 import { Product } from '../../products/entities/product.entity';
+import { Addon } from 'src/products/entities/addon.entity';
 
 @Entity('order_items')
 export class OrderItem {
@@ -12,6 +13,11 @@ export class OrderItem {
 
   @ManyToOne(() => Product)
   product: Product;
+
+  @ManyToMany(() => Addon)
+  @JoinTable({ name: 'order_item_addons' }) // Tabela pivô automática
+  addons: Addon[];
+  // ------------------------------------
 
   @Column('int')
   quantity: number;
