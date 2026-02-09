@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Lock, Mail, Loader2, ArrowLeft } from 'lucide-react';
+import { Lock, Mail, Loader2, ArrowLeft, HelpCircle } from 'lucide-react';
 import api from '../../../services/api';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useCart } from '../../../contexts/CartContext'; // <--- Importamos o carrinho
 
 export default function ClientLogin() {
   const [email, setEmail] = useState('');
@@ -11,8 +12,9 @@ export default function ClientLogin() {
   const navigate = useNavigate();
   
   const { signIn } = useAuth();
+  const { cartItems } = useCart(); // <--- Para checar se tem itens
 
-  // Função auxiliar para ler os dados de dentro do Token JWT (sem bibliotecas extras)
+  // Função auxiliar para decodificar JWT
   function parseJwt(token: string) {
     try {
       const base64Url = token.split('.')[1];
@@ -32,23 +34,15 @@ export default function ClientLogin() {
     try {
       const response = await api.post('/auth/login', { email, password });
       
-      console.log("RESPOSTA DO BACKEND:", response.data); // <--- Verifique isso no console!
-
-      // Tenta pegar o token (pode vir como access_token ou token)
       const access_token = response.data.access_token || response.data.token;
-      
-      // Tenta pegar o usuário da resposta OU extrair do token
       let userData = response.data.user;
 
       if (!userData && access_token) {
-        console.log("Usuário não veio na resposta, extraindo do token...");
         const decoded = parseJwt(access_token);
-        
-        // Monta um objeto de usuário provisório com o que tem no token
         if (decoded) {
           userData = {
-            id: decoded.sub || decoded.id, // 'sub' geralmente é o ID no JWT padrão
-            name: decoded.name || decoded.username || email.split('@')[0], // Tenta achar nome ou usa parte do email
+            id: decoded.sub || decoded.id,
+            name: decoded.name || decoded.username || email.split('@')[0],
             email: decoded.email || email,
             role: decoded.role || 'CLIENT'
           };
@@ -57,14 +51,20 @@ export default function ClientLogin() {
 
       if (access_token && userData) {
         signIn(access_token, userData);
-        navigate('/cart');
+
+        // LÓGICA INTELIGENTE:
+        // Se tem coisa no carrinho, vai pro carrinho finalizar.
+        // Se não tem nada, vai pra Home escolher lanche.
+        if (cartItems.length > 0) {
+          navigate('/cart');
+        } else {
+          navigate('/');
+        }
       } else {
-        alert("Erro: Login realizado, mas não foi possível recuperar dados do usuário.");
-        console.error("FALHA CRÍTICA: Temos token?", !!access_token, "Temos user?", userData);
+        alert("Erro ao recuperar dados do usuário.");
       }
 
     } catch (error) {
-      console.error(error);
       alert('Email ou senha inválidos');
     } finally {
       setLoading(false);
@@ -74,7 +74,10 @@ export default function ClientLogin() {
   return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md space-y-8 animate-in fade-in slide-in-from-bottom-4">
-        <Link to="/" className="text-gray-500 flex items-center gap-2 mb-4 hover:text-orange-600"><ArrowLeft size={20}/> Voltar ao cardápio</Link>
+        
+        <Link to="/" className="text-gray-500 flex items-center gap-2 mb-4 hover:text-orange-600 transition-colors w-fit">
+          <ArrowLeft size={20}/> Voltar ao cardápio
+        </Link>
         
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-900">Bem-vindo de volta! 🍔</h1>
@@ -100,6 +103,11 @@ export default function ClientLogin() {
               </div>
               <input required type="password" value={password} onChange={e => setPassword(e.target.value)} className="pl-10 block w-full border-gray-300 rounded-xl border p-3 focus:ring-orange-500 focus:border-orange-500" placeholder="******" />
             </div>
+            <div className="flex justify-end mt-1">
+              <a href="#" onClick={(e) => {e.preventDefault(); alert("Entre em contato com o suporte ou envie email para contato@torresburgers.com")}} className="text-sm text-orange-600 hover:text-orange-800 font-medium">
+                Esqueceu a senha?
+              </a>
+            </div>
           </div>
 
           <button disabled={loading} className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-colors">
@@ -107,7 +115,7 @@ export default function ClientLogin() {
           </button>
         </form>
 
-        <div className="text-center">
+        <div className="text-center space-y-4">
           <p className="text-sm text-gray-600">
             Ainda não tem conta?{' '}
             <Link to="/signup" className="font-medium text-orange-600 hover:text-orange-500">
