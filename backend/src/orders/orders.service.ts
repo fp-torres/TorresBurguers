@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { UpdateOrderDto } from './dto/update-order.dto'; // Importante para o método update
 import { Order, OrderStatus, OrderType, PaymentStatus } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
@@ -18,7 +19,7 @@ export class OrdersService {
     private productRepository: Repository<Product>,
     @InjectRepository(Address)
     private addressRepository: Repository<Address>,
-    @InjectRepository(Addon) // <--- Injetando Repositório de Adicionais
+    @InjectRepository(Addon)
     private addonRepository: Repository<Addon>,
   ) {}
 
@@ -26,7 +27,7 @@ export class OrdersService {
     const order = new Order();
     order.user = { id: userId } as User;
     order.status = OrderStatus.PENDING;
-    order.payment_status = PaymentStatus.PENDING; // Começa como Pendente
+    order.payment_status = PaymentStatus.PENDING;
     order.items = [];
     order.total_price = 0;
     
@@ -34,7 +35,7 @@ export class OrdersService {
     order.payment_method = createOrderDto.paymentMethod;
     order.type = createOrderDto.type;
 
-    // 2. Lógica de Entrega
+    // 2. Lógica de Entrega (Delivery vs Retirada)
     if (order.type === OrderType.DELIVERY) {
       if (!createOrderDto.addressId) {
         throw new BadRequestException('Para entrega, o ID do endereço é obrigatório.');
@@ -49,13 +50,13 @@ export class OrdersService {
       }
 
       order.address = address;
-      order.delivery_fee = 5.00;
+      order.delivery_fee = 5.00; // Valor fixo por enquanto (pode ser dinâmico no futuro)
     } else {
       order.address = null;
       order.delivery_fee = 0;
     }
 
-    // 3. Busca Produtos
+    // 3. Busca Produtos (Otimização: Busca todos de uma vez)
     const productIds = createOrderDto.items.map((item) => item.productId);
     const products = await this.productRepository.findBy({ id: In(productIds) });
 
@@ -72,10 +73,11 @@ export class OrdersService {
       orderItem.quantity = itemDto.quantity;
       orderItem.observation = itemDto.observation || '';
       
-      // Preço Base = Preço do Produto (considerando promoção se tivesse lógica de promoção ativa)
+      // Preço Base = Preço do Produto
       let itemUnitPrice = Number(product.price);
 
       // --- Lógica de Adicionais ---
+      // Verificação de segurança: Só busca se tiver IDs no array
       if (itemDto.addonIds && itemDto.addonIds.length > 0) {
         const addons = await this.addonRepository.findBy({ id: In(itemDto.addonIds) });
         orderItem.addons = addons;
@@ -87,11 +89,12 @@ export class OrdersService {
       }
 
       order.items.push(orderItem);
-      // Soma ao total do pedido: (Preço Produto + Adicionais) * Quantidade
+      
+      // Soma ao total do pedido: (Preço Unitário Calculado * Quantidade)
       order.total_price += itemUnitPrice * itemDto.quantity;
     }
 
-    // 5. Adiciona o Frete
+    // 5. Adiciona o Frete ao Total
     order.total_price += order.delivery_fee;
 
     return this.orderRepository.save(order);
@@ -99,11 +102,12 @@ export class OrdersService {
 
   async findAll(user: any) {
     const options = {
-      // Trazemos tudo: Itens, Produto, Adicionais, Usuário, Endereço
+      // Trazemos tudo para o Kanban funcionar: Itens, Produto, Adicionais, Usuário, Endereço
       relations: ['items', 'items.product', 'items.addons', 'user', 'address'], 
       order: { created_at: 'DESC' } as any,
     };
 
+    // Se for Cliente, vê só os dele. Se for Admin (qqr outro), vê tudo.
     if (user.role === 'CLIENT') {
       return this.orderRepository.find({
         ...options,
@@ -114,6 +118,7 @@ export class OrdersService {
     return this.orderRepository.find(options);
   }
 
+  // Usado pelo Dashboard (Gráficos)
   async getDashboardSummary() {
     const totalOrders = await this.orderRepository.count();
     
@@ -131,7 +136,6 @@ export class OrdersService {
       where: { status: OrderStatus.PREPARING }
     });
     
-    // Novo contador para Dashboard Financeiro
     const pendingPayments = await this.orderRepository.count({
       where: { payment_status: PaymentStatus.PENDING }
     });
@@ -152,7 +156,8 @@ export class OrdersService {
     });
   }
 
-  async update(id: number, updateOrderDto: any) {
+  // Atualiza Status (usado pelo Kanban)
+  async update(id: number, updateOrderDto: UpdateOrderDto) {
     const order = await this.findOne(id);
     
     if (!order) {
