@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { CreateOrderDto } from './dto/create-order.dto';
-import { UpdateOrderDto } from './dto/update-order.dto'; // Importante para o método update
+import { UpdateOrderDto } from './dto/update-order.dto'; 
 import { Order, OrderStatus, OrderType, PaymentStatus } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
@@ -31,70 +31,64 @@ export class OrdersService {
     order.items = [];
     order.total_price = 0;
     
-    // 1. Configurações Básicas
     order.payment_method = createOrderDto.paymentMethod;
     order.type = createOrderDto.type;
 
-    // 2. Lógica de Entrega (Delivery vs Retirada)
+    // Lógica de Entrega e Tempo Estimado
     if (order.type === OrderType.DELIVERY) {
-      if (!createOrderDto.addressId) {
-        throw new BadRequestException('Para entrega, o ID do endereço é obrigatório.');
-      }
+      if (!createOrderDto.addressId) throw new BadRequestException('ID do endereço obrigatório.');
 
       const address = await this.addressRepository.findOne({
         where: { id: createOrderDto.addressId, user: { id: userId } },
       });
 
-      if (!address) {
-        throw new NotFoundException('Endereço não encontrado ou não pertence a este usuário.');
-      }
+      if (!address) throw new NotFoundException('Endereço não encontrado.');
 
       order.address = address;
-      order.delivery_fee = 5.00; // Valor fixo por enquanto (pode ser dinâmico no futuro)
+      order.delivery_fee = 5.00; 
+      
+      // CÁLCULO DE TEMPO ESTIMADO (SIMULADO)
+      // Se tiver Bairro X, demora Y. Se não, padrão 40-50 min.
+      // Futuramente pode integrar Google Maps API aqui.
+      const neighborhood = address.neighborhood?.toLowerCase() || '';
+      if (neighborhood.includes('centro')) {
+        order.estimated_delivery_time = '30-40 min';
+      } else if (neighborhood.includes('zona norte')) {
+        order.estimated_delivery_time = '50-60 min';
+      } else {
+        order.estimated_delivery_time = '40-50 min'; // Padrão
+      }
+
     } else {
       order.address = null;
       order.delivery_fee = 0;
+      order.estimated_delivery_time = '15-20 min'; // Retirada é mais rápido
     }
 
-    // 3. Busca Produtos (Otimização: Busca todos de uma vez)
     const productIds = createOrderDto.items.map((item) => item.productId);
     const products = await this.productRepository.findBy({ id: In(productIds) });
 
-    // 4. Monta Itens e Calcula Adicionais
     for (const itemDto of createOrderDto.items) {
       const product = products.find((p) => p.id === itemDto.productId);
-      
-      if (!product) {
-        throw new NotFoundException(`Produto ID ${itemDto.productId} não encontrado`);
-      }
+      if (!product) throw new NotFoundException(`Produto ${itemDto.productId} não encontrado`);
 
       const orderItem = new OrderItem();
       orderItem.product = product;
       orderItem.quantity = itemDto.quantity;
       orderItem.observation = itemDto.observation || '';
       
-      // Preço Base = Preço do Produto
       let itemUnitPrice = Number(product.price);
 
-      // --- Lógica de Adicionais ---
-      // Verificação de segurança: Só busca se tiver IDs no array
       if (itemDto.addonIds && itemDto.addonIds.length > 0) {
         const addons = await this.addonRepository.findBy({ id: In(itemDto.addonIds) });
         orderItem.addons = addons;
-        
-        // Soma cada adicional ao preço unitário do item
-        for (const addon of addons) {
-          itemUnitPrice += Number(addon.price);
-        }
+        for (const addon of addons) itemUnitPrice += Number(addon.price);
       }
 
       order.items.push(orderItem);
-      
-      // Soma ao total do pedido: (Preço Unitário Calculado * Quantidade)
       order.total_price += itemUnitPrice * itemDto.quantity;
     }
 
-    // 5. Adiciona o Frete ao Total
     order.total_price += order.delivery_fee;
 
     return this.orderRepository.save(order);
@@ -102,12 +96,10 @@ export class OrdersService {
 
   async findAll(user: any) {
     const options = {
-      // Trazemos tudo para o Kanban funcionar: Itens, Produto, Adicionais, Usuário, Endereço
       relations: ['items', 'items.product', 'items.addons', 'user', 'address'], 
       order: { created_at: 'DESC' } as any,
     };
 
-    // Se for Cliente, vê só os dele. Se for Admin (qqr outro), vê tudo.
     if (user.role === 'CLIENT') {
       return this.orderRepository.find({
         ...options,
@@ -118,7 +110,6 @@ export class OrdersService {
     return this.orderRepository.find(options);
   }
 
-  // Usado pelo Dashboard (Gráficos)
   async getDashboardSummary() {
     const totalOrders = await this.orderRepository.count();
     
@@ -128,17 +119,9 @@ export class OrdersService {
       .where('order.status != :status', { status: OrderStatus.CANCELED }) 
       .getRawOne();
 
-    const pendingOrders = await this.orderRepository.count({
-      where: { status: OrderStatus.PENDING }
-    });
-
-    const preparingOrders = await this.orderRepository.count({
-      where: { status: OrderStatus.PREPARING }
-    });
-    
-    const pendingPayments = await this.orderRepository.count({
-      where: { payment_status: PaymentStatus.PENDING }
-    });
+    const pendingOrders = await this.orderRepository.count({ where: { status: OrderStatus.PENDING } });
+    const preparingOrders = await this.orderRepository.count({ where: { status: OrderStatus.PREPARING } });
+    const pendingPayments = await this.orderRepository.count({ where: { payment_status: PaymentStatus.PENDING } });
 
     return {
       totalOrders,
@@ -156,14 +139,9 @@ export class OrdersService {
     });
   }
 
-  // Atualiza Status (usado pelo Kanban)
   async update(id: number, updateOrderDto: UpdateOrderDto) {
     const order = await this.findOne(id);
-    
-    if (!order) {
-       throw new NotFoundException(`Pedido ${id} não encontrado`);
-    }
-
+    if (!order) throw new NotFoundException(`Pedido ${id} não encontrado`);
     this.orderRepository.merge(order, updateOrderDto);
     return this.orderRepository.save(order);
   }

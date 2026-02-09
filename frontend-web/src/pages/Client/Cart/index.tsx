@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Trash2, ArrowRight, MapPin, Store, Plus, AlertCircle, CreditCard, Banknote, QrCode } from 'lucide-react';
+import { Trash2, ArrowRight, MapPin, Store, Plus, AlertCircle, CreditCard, Clock } from 'lucide-react';
 import { useCart } from '../../../contexts/CartContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import api from '../../../services/api';
@@ -12,8 +12,8 @@ export default function ClientCart() {
   const navigate = useNavigate();
   
   const [orderType, setOrderType] = useState<'DELIVERY' | 'TAKEOUT'>('TAKEOUT');
-  const [paymentType, setPaymentType] = useState<'ONLINE' | 'OFFLINE'>('OFFLINE'); // Novo estado
-  const [paymentMethod, setPaymentMethod] = useState('PIX'); // Método final enviado ao back
+  const [paymentType, setPaymentType] = useState<'ONLINE' | 'OFFLINE'>('OFFLINE'); 
+  const [paymentMethod, setPaymentMethod] = useState('PIX'); 
   const [loading, setLoading] = useState(false);
   
   const [addresses, setAddresses] = useState<any[]>([]);
@@ -21,9 +21,23 @@ export default function ClientCart() {
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Simulação de Tempo Estimado
+  const [estimatedTime, setEstimatedTime] = useState('15-20 min');
+
   useEffect(() => {
     if (isAuthenticated) loadAddresses();
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    // Recalcula tempo quando muda tipo ou endereço
+    if (orderType === 'TAKEOUT') {
+      setEstimatedTime('15-20 min (Retirada)');
+    } else if (selectedAddressId) {
+      setEstimatedTime('40-50 min (Delivery)');
+    } else {
+      setEstimatedTime('--');
+    }
+  }, [orderType, selectedAddressId]);
 
   async function loadAddresses() {
     try {
@@ -46,10 +60,7 @@ export default function ClientCart() {
 
     setLoading(true);
     try {
-      // Simula delay de pagamento online
-      if (paymentType === 'ONLINE') {
-        await new Promise(resolve => setTimeout(resolve, 1500)); 
-      }
+      if (paymentType === 'ONLINE') await new Promise(resolve => setTimeout(resolve, 1500)); 
 
       const payload = {
         items: cartItems.map(item => ({
@@ -58,7 +69,7 @@ export default function ClientCart() {
           observation: item.observation || "",
           addonIds: [] 
         })),
-        paymentMethod: paymentType === 'ONLINE' ? 'CREDIT_CARD' : paymentMethod, // Se online, manda fixo ou o que escolher
+        paymentMethod: paymentType === 'ONLINE' ? 'CREDIT_CARD' : paymentMethod,
         type: orderType,
         ...(orderType === 'DELIVERY' ? { addressId: selectedAddressId } : {}) 
       };
@@ -110,13 +121,20 @@ export default function ClientCart() {
         ))}
       </div>
 
-      {/* Entrega */}
+      {/* Entrega e Tempo Estimado */}
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-        <h3 className="font-bold text-gray-800 flex items-center gap-2"><MapPin size={18} className="text-orange-600" /> Entrega</h3>
+        <div className="flex justify-between items-center">
+           <h3 className="font-bold text-gray-800 flex items-center gap-2"><MapPin size={18} className="text-orange-600" /> Entrega</h3>
+           <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg flex items-center gap-1">
+             <Clock size={14} /> {estimatedTime}
+           </span>
+        </div>
+        
         <div className="grid grid-cols-2 gap-3">
           <button onClick={() => setOrderType('TAKEOUT')} className={`p-3 rounded-xl border-2 text-sm font-bold transition-all ${orderType === 'TAKEOUT' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-100 text-gray-500'}`}>Retirada</button>
           <button onClick={() => setOrderType('DELIVERY')} className={`p-3 rounded-xl border-2 text-sm font-bold transition-all ${orderType === 'DELIVERY' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-100 text-gray-500'}`}>Delivery</button>
         </div>
+
         {orderType === 'DELIVERY' && (
           <div className="mt-4 animate-in slide-in-from-top-2">
             {addresses.length > 0 ? (
@@ -142,11 +160,10 @@ export default function ClientCart() {
         )}
       </div>
 
-      {/* Pagamento (Simulado vs Real) */}
+      {/* Pagamento */}
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
         <h3 className="font-bold text-gray-800">Pagamento</h3>
         
-        {/* Abas */}
         <div className="flex p-1 bg-gray-100 rounded-xl mb-4">
            <button onClick={() => setPaymentType('ONLINE')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${paymentType === 'ONLINE' ? 'bg-white shadow-sm text-orange-600' : 'text-gray-500'}`}>Pagar Agora (Online)</button>
            <button onClick={() => setPaymentType('OFFLINE')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${paymentType === 'OFFLINE' ? 'bg-white shadow-sm text-orange-600' : 'text-gray-500'}`}>Pagar na Entrega</button>
@@ -159,7 +176,6 @@ export default function ClientCart() {
                    <CreditCard className="text-orange-600"/>
                    <span className="font-bold text-gray-800">Cartão de Crédito</span>
                 </div>
-                {/* Inputs Fakes (Cenográficos) */}
                 <input placeholder="Número do Cartão" className="w-full mb-2 p-2 rounded border border-gray-300 text-sm" disabled />
                 <div className="flex gap-2">
                    <input placeholder="MM/AA" className="w-1/2 p-2 rounded border border-gray-300 text-sm" disabled />
@@ -180,7 +196,6 @@ export default function ClientCart() {
         )}
       </div>
 
-      {/* Footer */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4 lg:p-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40">
         <div className="max-w-2xl mx-auto space-y-3">
           {errorMsg && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2 animate-bounce"><AlertCircle size={18} />{errorMsg}</div>}

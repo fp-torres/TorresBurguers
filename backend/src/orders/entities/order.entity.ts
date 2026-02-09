@@ -7,11 +7,11 @@ import { Address } from '../../addresses/entities/address.entity';
 import { OrderItem } from './order-item.entity';
 
 export enum OrderStatus {
-  PENDING = 'PENDING',       // Chegou agora
-  PREPARING = 'PREPARING',   // Na chapa
-  DELIVERING = 'DELIVERING', // Saiu com motoboy
-  DONE = 'DONE',             // Entregue/Finalizado
-  CANCELED = 'CANCELED'      // Cancelado
+  PENDING = 'PENDING',       
+  PREPARING = 'PREPARING',   
+  DELIVERING = 'DELIVERING', 
+  DONE = 'DONE',             
+  CANCELED = 'CANCELED'      
 }
 
 export enum OrderType {
@@ -19,11 +19,10 @@ export enum OrderType {
   TAKEOUT = 'TAKEOUT'
 }
 
-// --- NOVO: Controle Financeiro Sênior ---
 export enum PaymentStatus {
-  PENDING = 'PENDING', // Pagar na entrega ou aguardando PIX
-  PAID = 'PAID',       // Pago
-  FAILED = 'FAILED'    // Cartão recusado
+  PENDING = 'PENDING', 
+  PAID = 'PAID',       
+  FAILED = 'FAILED'    
 }
 
 @Entity('orders')
@@ -31,7 +30,6 @@ export class Order {
   @PrimaryGeneratedColumn()
   id: number;
 
-  // Status Logístico (Cozinha/Entrega)
   @Column({
     type: 'enum',
     enum: OrderStatus,
@@ -39,11 +37,10 @@ export class Order {
   })
   status: OrderStatus;
 
-  // Status Financeiro (Caixa)
   @Column({
     type: 'enum',
     enum: PaymentStatus,
-    default: PaymentStatus.PENDING, // Começa como pendente
+    default: PaymentStatus.PENDING, 
   })
   payment_status: PaymentStatus;
 
@@ -61,7 +58,11 @@ export class Order {
   delivery_fee: number;
 
   @Column()
-  payment_method: string; // "PIX", "CREDIT_CARD", "CASH"
+  payment_method: string; 
+
+  // NOVO: Tempo estimado em minutos (Ex: "45-55")
+  @Column({ nullable: true })
+  estimated_delivery_time: string;
 
   @CreateDateColumn()
   created_at: Date;

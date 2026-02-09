@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Lock, Mail, User, Loader2, ArrowLeft } from 'lucide-react';
+import { Lock, Mail, User, Loader2, ArrowLeft, Phone } from 'lucide-react';
 import api from '../../../services/api';
 
 export default function ClientSignup() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState(''); // <--- Novo Estado
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -14,12 +15,12 @@ export default function ClientSignup() {
     e.preventDefault();
     setLoading(true);
     try {
-      // Cria usuário com role CLIENT
-      await api.post('/users', { name, email, password, role: 'CLIENT' });
-      alert('Conta criada! Faça login para continuar.');
+      // Envia celular junto
+      await api.post('/users', { name, email, password, phone, role: 'CLIENT' });
+      alert('Conta criada com sucesso! Faça login.');
       navigate('/signin');
     } catch (error) {
-      alert('Erro ao criar conta. Tente outro email.');
+      alert('Erro ao criar conta. Verifique os dados.');
     } finally {
       setLoading(false);
     }
@@ -43,6 +44,16 @@ export default function ClientSignup() {
                 <User className="h-5 w-5 text-gray-400" />
               </div>
               <input required value={name} onChange={e => setName(e.target.value)} className="pl-10 block w-full border-gray-300 rounded-xl border p-3 focus:ring-orange-500 focus:border-orange-500" placeholder="Seu Nome" />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Celular / WhatsApp</label>
+            <div className="mt-1 relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Phone className="h-5 w-5 text-gray-400" />
+              </div>
+              <input required value={phone} onChange={e => setPhone(e.target.value)} className="pl-10 block w-full border-gray-300 rounded-xl border p-3 focus:ring-orange-500 focus:border-orange-500" placeholder="(21) 99999-9999" />
             </div>
           </div>
 

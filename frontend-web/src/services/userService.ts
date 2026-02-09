@@ -1,10 +1,21 @@
 import api from './api';
 
+// CORREÇÃO: Adicionamos os novos cargos na tipagem
 export interface User {
   id: number;
   name: string;
   email: string;
-  role: 'ADMIN' | 'CLIENT'; // Adicione 'DELIVERY' se tiver no futuro
+  phone?: string; 
+  role: 'ADMIN' | 'CLIENT' | 'KITCHEN' | 'COURIER';
+}
+
+// DTO para o formulário
+export interface CreateUserDTO {
+  name: string;
+  email: string;
+  password?: string;
+  phone?: string;
+  role: string; // Pode ser string genérica aqui para facilitar o select
 }
 
 export const userService = {
@@ -13,10 +24,14 @@ export const userService = {
     return response.data;
   },
 
-  // Importante: No seu backend a criação de usuário pode ser via /auth/register ou /users
-  // Vou assumir /users por padrão de REST, se der erro ajustamos.
-  create: async (data: { name: string; email: string; password: string; role: string }) => {
-    await api.post('/users', data);
+  create: async (data: CreateUserDTO) => {
+    const response = await api.post('/users', data);
+    return response.data;
+  },
+
+  update: async (id: number, data: Partial<CreateUserDTO>) => {
+    const response = await api.patch(`/users/${id}`, data);
+    return response.data;
   },
 
   delete: async (id: number) => {
