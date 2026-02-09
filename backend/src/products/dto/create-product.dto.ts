@@ -1,6 +1,6 @@
 import { IsString, IsNotEmpty, IsNumber, IsEnum, IsBoolean, IsOptional, Min } from 'class-validator';
 import { ProductCategory } from '../entities/product.entity';
-import { ApiProperty } from '@nestjs/swagger'; // Para documentar no Swagger
+import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateProductDto {
   @ApiProperty({ example: 'X-Bacon Torres' })
@@ -17,6 +17,19 @@ export class CreateProductDto {
   @IsNumber()
   @Min(0)
   price: number;
+
+  // --- NOVO: Campo de Promoção (Opcional) ---
+  @ApiProperty({ example: 19.90, required: false, description: 'Preço com desconto' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  promotion_price?: number;
+
+  // --- NOVO: Campo de Destaque (Opcional) ---
+  @ApiProperty({ example: true, required: false, description: 'Se aparece no topo do App' })
+  @IsBoolean()
+  @IsOptional()
+  is_highlight?: boolean;
 
   @ApiProperty({ enum: ProductCategory, example: ProductCategory.BURGER })
   @IsEnum(ProductCategory, { 

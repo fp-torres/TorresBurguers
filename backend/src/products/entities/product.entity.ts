@@ -1,7 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
+import { 
+  Entity, PrimaryGeneratedColumn, Column, 
+  CreateDateColumn, UpdateDateColumn, OneToMany 
+} from 'typeorm';
 import { OrderItem } from '../../orders/entities/order-item.entity';
 
-// 1. Categorias exatas da Documentação
+// Categorias exatas da Documentação
 export enum ProductCategory {
   BURGER = 'hamburgueres',
   STARTER = 'entradas',
@@ -26,11 +29,17 @@ export class Product {
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   price: number;
 
-  // 2. Imagem opcional (caso esteja cadastrando sem foto inicial)
+  // --- NOVO: Preço Promocional (De R$ 30 por R$ 19.90) ---
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  promotion_price: number;
+
+  // --- NOVO: Destaque na Home (Carrossel) ---
+  @Column({ default: false })
+  is_highlight: boolean;
+
   @Column({ nullable: true })
   image: string;
 
-  // 3. Categoria travada (Segurança de Dados)
   @Column({
     type: 'enum',
     enum: ProductCategory,
@@ -38,7 +47,6 @@ export class Product {
   })
   category: ProductCategory;
 
-  // 4. Controle de Disponibilidade (Não deletar, apenas desativar)
   @Column({ default: true })
   available: boolean;
 
