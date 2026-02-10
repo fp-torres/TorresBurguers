@@ -3,7 +3,7 @@ import {
   CreateDateColumn, UpdateDateColumn, OneToMany, ManyToMany, JoinTable 
 } from 'typeorm';
 import { OrderItem } from '../../orders/entities/order-item.entity';
-import { Addon } from './addon.entity'; // Certifique-se de que o arquivo addon.entity.ts existe
+import { Addon } from './addon.entity'; 
 
 export enum ProductCategory {
   BURGER = 'hamburgueres',
@@ -45,15 +45,16 @@ export class Product {
   })
   category: ProductCategory;
 
-  // --- NOVO: Ingredientes Padrão (Ex: Pão, Carne, Queijo, Cebola) ---
-  // Isso permite que o frontend saiba o que mostrar para o usuário "Remover"
   @Column({ type: 'simple-array', nullable: true })
   ingredients: string[];
 
-  // --- NOVO: Adicionais Permitidos ---
-  // Define quais adicionais aparecem para este produto específico
-  @ManyToMany(() => Addon)
-  @JoinTable({ name: 'product_allowed_addons' })
+  // RELACIONAMENTO: Um produto pode ter vários adicionais
+  @ManyToMany(() => Addon, { cascade: true })
+  @JoinTable({ 
+    name: 'product_allowed_addons', 
+    joinColumn: { name: 'product_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'addon_id', referencedColumnName: 'id' }
+  })
   allowed_addons: Addon[];
 
   @Column({ default: true })

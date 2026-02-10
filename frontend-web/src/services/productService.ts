@@ -1,23 +1,20 @@
 import api from './api';
 
-// --- NOVA INTERFACE PARA ADICIONAIS ---
 export interface Addon {
   id: number;
   name: string;
   price: number | string;
+  description?: string;
 }
 
-// --- INTERFACE DE PRODUTO ATUALIZADA ---
 export interface Product {
   id: number;
   name: string;
   description: string;
-  price: number | string; // Aceita string ou number para evitar erro
+  price: number | string;
   image: string | null;
   category: string;
   available: boolean;
-  
-  // Novos campos opcionais (pois produtos antigos podem não ter)
   ingredients?: string[];
   allowed_addons?: Addon[];
 }
@@ -29,12 +26,19 @@ export const productService = {
     return response.data;
   },
 
-  // Deletar produto
+  // --- NOVO: Buscar todos os adicionais cadastrados no sistema ---
+  getAllAddons: async () => {
+    // Supondo que você tenha uma rota /addons ou /products/addons
+    // Se não tiver rota específica de addons, crie no backend ou use filters
+    // Por enquanto, vou assumir que existe um endpoint simples para listar adicionais
+    const response = await api.get<Addon[]>('/addons'); 
+    return response.data;
+  },
+
   delete: async (id: number) => {
     await api.delete(`/products/${id}`);
   },
 
-  // Criar produto (Upload de imagem incluso)
   create: async (data: FormData) => {
     const response = await api.post('/products', data, {
       headers: { 'Content-Type': 'multipart/form-data' }

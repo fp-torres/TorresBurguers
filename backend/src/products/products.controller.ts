@@ -1,6 +1,6 @@
 import { 
   Controller, Get, Post, Body, Patch, Param, Delete, 
-  UseGuards, UseInterceptors, UploadedFile, BadRequestException, ParseIntPipe 
+  UseGuards, UseInterceptors, UploadedFile, BadRequestException, ParseIntPipe, HttpStatus, ParseFilePipeBuilder 
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -18,21 +18,14 @@ export class ProductsController {
 
   @Post()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN') // Apenas ADMIN cria produtos
-  create(@Body() createProductDto: CreateProductDto) {
-    return this.productsService.create(createProductDto);
-  }
-
-  @Post('upload')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN') // Apenas ADMIN faz upload
+  @Roles('ADMIN')
   @UseInterceptors(FileInterceptor('file', {
     storage: diskStorage({
-      destination: './uploads', 
-      filename: (req, file, callback) => {
+      destination: './uploads',
+      filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
         const ext = extname(file.originalname);
-        callback(null, `product-${uniqueSuffix}${ext}`);
+        cb(null, `product-${uniqueSuffix}${ext}`);
       },
     }),
     fileFilter: (req, file, callback) => {
@@ -42,11 +35,21 @@ export class ProductsController {
       callback(null, true);
     },
   }))
-  uploadImage(@UploadedFile() file: Express.Multer.File) {
-    if (!file) {
-      throw new BadRequestException('Arquivo não enviado');
+  create(
+    @Body() createProductDto: CreateProductDto,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .build({
+          fileIsRequired: false,
+          errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+        }),
+    )
+    file?: Express.Multer.File,
+  ) {
+    if (file) {
+      createProductDto.image = file.filename;
     }
-    return { url: `http://localhost:3000/uploads/${file.filename}` };
+    return this.productsService.create(createProductDto);
   }
 
   @Get()
@@ -55,20 +58,20 @@ export class ProductsController {
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) { 
+  findOne(@Param('id', ParseIntPipe) id: number) {
     return this.productsService.findOne(id);
   }
 
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN') // Apenas ADMIN edita
+  @Roles('ADMIN')
   update(@Param('id', ParseIntPipe) id: number, @Body() updateProductDto: UpdateProductDto) {
     return this.productsService.update(id, updateProductDto);
   }
 
   @Delete(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN') // Apenas ADMIN deleta
+  @Roles('ADMIN')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.productsService.remove(id);
   }

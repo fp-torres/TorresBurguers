@@ -1,8 +1,8 @@
-import { useState, useRef } from 'react';
-// CORREÇÃO: Usando SyntheticEvent (padrão genérico para submits) e ChangeEvent
+import { useState, useRef, useEffect } from 'react';
 import type { ChangeEvent, SyntheticEvent } from 'react'; 
-import { X, Upload, Loader2, CheckCircle } from 'lucide-react';
+import { X, Upload, Loader2, CheckCircle, Plus, Save } from 'lucide-react';
 import api from '../../services/api';
+import { productService, type Addon } from '../../services/productService';
 
 interface CreateProductModalProps {
   isOpen: boolean;
@@ -14,13 +14,56 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess }: Creat
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Estados do Formulário
+  // Estados do Produto
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [category, setCategory] = useState('hamburgueres');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [ingredientsText, setIngredientsText] = useState('');
+
+  // Estados dos Adicionais
+  const [allAddons, setAllAddons] = useState<Addon[]>([]);
+  const [selectedAddonIds, setSelectedAddonIds] = useState<number[]>([]);
+  
+  // Novo Adicional Rápido
+  const [newAddonName, setNewAddonName] = useState('');
+  const [newAddonPrice, setNewAddonPrice] = useState('');
+  const [creatingAddon, setCreatingAddon] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadAddons();
+    }
+  }, [isOpen]);
+
+  async function loadAddons() {
+    try {
+      const data = await productService.getAllAddons();
+      setAllAddons(data);
+    } catch (error) {
+      console.log("Nenhum adicional encontrado ou erro de conexão");
+    }
+  }
+
+  async function handleQuickAddonCreate() {
+    if (!newAddonName || !newAddonPrice) return;
+    setCreatingAddon(true);
+    try {
+      await api.post('/addons', {
+        name: newAddonName,
+        price: parseFloat(newAddonPrice.replace(',', '.'))
+      });
+      setNewAddonName('');
+      setNewAddonPrice('');
+      await loadAddons(); // Recarrega a lista
+    } catch (error) {
+      alert('Erro ao criar adicional');
+    } finally {
+      setCreatingAddon(false);
+    }
+  }
 
   if (!isOpen) return null;
 
@@ -33,29 +76,37 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess }: Creat
     }
   }
 
-  // CORREÇÃO: FormEvent -> SyntheticEvent
+  function toggleAddonSelection(id: number) {
+    setSelectedAddonIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  }
+
   async function handleSubmit(e: SyntheticEvent) {
-    e.preventDefault(); // Agora o TypeScript reconhece isso sem erros
+    e.preventDefault();
     setLoading(true);
 
     try {
-      // 1. Cria o FormData para envio de arquivo
       const formData = new FormData();
       formData.append('name', name);
       formData.append('description', description);
-      
-      // Converte preço (troca vírgula por ponto)
-      const formattedPrice = price.replace(',', '.');
-      formData.append('price', formattedPrice);
-      
-      formData.append('category', category);
+      formData.append('price', price.replace(',', '.'));
+      formData.append('category', category.toLowerCase());
       formData.append('available', 'true');
+
+      if (ingredientsText.trim()) {
+        const list = ingredientsText.split(',').map(i => i.trim()).filter(Boolean);
+        list.forEach(ing => formData.append('ingredients[]', ing));
+      }
+
+      if (selectedAddonIds.length > 0) {
+        selectedAddonIds.forEach(id => formData.append('allowed_addons_ids[]', String(id)));
+      }
 
       if (imageFile) {
         formData.append('file', imageFile);
       }
 
-      // 2. Envia para o endpoint de criação
       await api.post('/products', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
@@ -65,8 +116,8 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess }: Creat
       resetForm();
 
     } catch (error: any) {
-      console.error("Erro ao criar:", error);
-      alert('Erro ao cadastrar produto. Verifique os dados.');
+      const msg = error.response?.data?.message || 'Erro desconhecido.';
+      alert(`Erro: ${Array.isArray(msg) ? msg.join('\n') : msg}`);
     } finally {
       setLoading(false);
     }
@@ -76,127 +127,95 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess }: Creat
     setName('');
     setDescription('');
     setPrice('');
+    setIngredientsText('');
     setCategory('hamburgueres');
     setImageFile(null);
     setPreview(null);
+    setSelectedAddonIds([]);
   }
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         
-        {/* Cabeçalho */}
-        <div className="bg-gray-50 px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+        <div className="bg-gray-50 px-6 py-4 border-b border-gray-100 flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-gray-800">Novo Produto</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
-            <X size={24} />
-          </button>
+          <button onClick={onClose}><X size={24} className="text-gray-400 hover:text-gray-600" /></button>
         </div>
 
-        {/* Formulário */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          <div className="flex gap-6">
-            {/* Upload de Imagem */}
-            <div className="w-1/3">
-              <div 
-                onClick={() => fileInputRef.current?.click()}
-                className="aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-orange-500 cursor-pointer flex flex-col items-center justify-center bg-gray-50 hover:bg-orange-50 transition-colors overflow-hidden relative group"
-              >
-                {preview ? (
-                  <>
-                    <img src={preview} alt="Preview" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <p className="text-white text-xs font-bold">Trocar Foto</p>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <Upload className="text-gray-400 mb-2" size={32} />
-                    <span className="text-xs text-gray-500 font-medium text-center px-2">Clique para adicionar foto</span>
-                  </>
-                )}
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleFileChange} 
-                  className="hidden" 
-                  accept="image/*"
-                />
+        <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+          <div className="flex flex-col md:flex-row gap-6">
+            <div className="w-full md:w-1/3">
+              <div onClick={() => fileInputRef.current?.click()} className="aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-orange-500 cursor-pointer flex flex-col items-center justify-center bg-gray-50 relative group">
+                {preview ? <img src={preview} className="w-full h-full object-cover rounded-lg" /> : <Upload className="text-gray-400" />}
+                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
               </div>
             </div>
 
-            {/* Campos de Texto */}
             <div className="flex-1 space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nome do Produto</label>
-                <input 
-                  required
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
-                  placeholder="Ex: X-Torres Bacon"
-                />
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nome</label>
+                <input required value={name} onChange={e => setName(e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Preço (R$)</label>
-                  <input 
-                    required
-                    type="text"
-                    value={price}
-                    onChange={e => setPrice(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
-                    placeholder="0,00"
-                  />
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Preço</label>
+                  <input required value={price} onChange={e => setPrice(e.target.value)} className="w-full px-4 py-2 border rounded-lg" placeholder="0,00" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Categoria</label>
-                  <select 
-                    value={category}
-                    onChange={e => setCategory(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none bg-white"
-                  >
+                  <select value={category} onChange={e => setCategory(e.target.value)} className="w-full px-4 py-2 border rounded-lg bg-white">
                     <option value="hamburgueres">Hambúrgueres</option>
                     <option value="bebidas">Bebidas</option>
-                    <option value="acompanhamentos">Acompanhamentos</option>
                     <option value="sobremesas">Sobremesas</option>
+                    <option value="acompanhamentos">Acompanhamentos</option>
+                    <option value="combos">Combos</option>
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Ingredientes Padrão (Para Remover)</label>
+                <input value={ingredientsText} onChange={e => setIngredientsText(e.target.value)} className="w-full px-4 py-2 border rounded-lg" placeholder="Ex: Pão, Carne, Queijo (Separar por vírgula)" />
               </div>
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Descrição</label>
-            <textarea 
-              required
-              rows={3}
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none resize-none"
-              placeholder="Descreva os ingredientes deliciosos..."
-            />
+            <textarea required rows={2} value={description} onChange={e => setDescription(e.target.value)} className="w-full px-4 py-2 border rounded-lg resize-none" />
+          </div>
+
+          {/* VINCULAR / CRIAR ADICIONAIS */}
+          <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+            <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center justify-between">
+              <span className="flex items-center gap-2"><Plus size={16} className="text-orange-600"/> Adicionais Permitidos</span>
+            </h3>
+            
+            {/* Formulário Rápido de Adicional */}
+            <div className="flex gap-2 mb-4">
+              <input value={newAddonName} onChange={e => setNewAddonName(e.target.value)} placeholder="Novo: Bacon" className="flex-1 px-3 py-1.5 text-xs border rounded-lg" />
+              <input value={newAddonPrice} onChange={e => setNewAddonPrice(e.target.value)} placeholder="Preço" className="w-20 px-3 py-1.5 text-xs border rounded-lg" />
+              <button type="button" onClick={handleQuickAddonCreate} disabled={creatingAddon || !newAddonName} className="bg-orange-600 text-white p-1.5 rounded-lg disabled:opacity-50">
+                <Save size={16} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-40 overflow-y-auto custom-scrollbar">
+              {allAddons.map(addon => (
+                <label key={addon.id} className={`flex items-center gap-2 p-2 border rounded-lg cursor-pointer transition-all ${selectedAddonIds.includes(addon.id) ? 'bg-orange-100 border-orange-300' : 'bg-white border-gray-200'}`}>
+                  <input type="checkbox" className="rounded text-orange-600 focus:ring-orange-500" checked={selectedAddonIds.includes(addon.id)} onChange={() => toggleAddonSelection(addon.id)} />
+                  <span className="text-xs font-medium text-gray-700 truncate">{addon.name} <span className="text-gray-400">({Number(addon.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</span></span>
+                </label>
+              ))}
+            </div>
           </div>
 
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-            <button 
-              type="button" 
-              onClick={onClose}
-              className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium transition-colors"
-            >
-              Cancelar
-            </button>
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />}
-              Salvar Produto
+            <button type="button" onClick={onClose} className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancelar</button>
+            <button type="submit" disabled={loading} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium flex items-center gap-2 disabled:opacity-50">
+              {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />} Salvar
             </button>
           </div>
-
         </form>
       </div>
     </div>

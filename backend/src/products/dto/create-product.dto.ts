@@ -1,4 +1,5 @@
-import { IsString, IsNotEmpty, IsNumber, IsEnum, IsBoolean, IsOptional, Min } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsEnum, IsBoolean, IsOptional, Min, IsArray } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 import { ProductCategory } from '../entities/product.entity';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -8,44 +9,64 @@ export class CreateProductDto {
   @IsNotEmpty()
   name: string;
 
-  @ApiProperty({ example: 'Pão brioche, 2 carnes, muito bacon e queijo cheddar.' })
+  @ApiProperty({ example: 'Descrição...' })
   @IsString()
   @IsNotEmpty()
   description: string;
 
   @ApiProperty({ example: 29.90 })
+  @Transform(({ value }) => parseFloat(String(value).replace(',', '.')))
   @IsNumber()
   @Min(0)
   price: number;
 
-  // --- CORREÇÃO: ADICIONADO O CAMPO DE IMAGEM ---
-  @ApiProperty({ example: '1738291-foto.jpg', required: false, description: 'Nome do arquivo da imagem' })
+  @ApiProperty({ required: false })
   @IsString()
-  @IsOptional() // Permite que seja nulo ou não enviado
-  image?: string;
-  // ---------------------------------------------
-
-  // --- Campo de Promoção (Opcional) ---
-  @ApiProperty({ example: 19.90, required: false, description: 'Preço com desconto' })
-  @IsNumber()
   @IsOptional()
+  image?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @Transform(({ value }) => value ? parseFloat(String(value).replace(',', '.')) : undefined)
+  @IsNumber()
   @Min(0)
   promotion_price?: number;
 
-  // --- Campo de Destaque (Opcional) ---
-  @ApiProperty({ example: true, required: false, description: 'Se aparece no topo do App' })
-  @IsBoolean()
+  @ApiProperty({ required: false })
   @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
   is_highlight?: boolean;
 
-  @ApiProperty({ enum: ProductCategory, example: ProductCategory.BURGER })
+  @ApiProperty({ enum: ProductCategory })
+  @Transform(({ value }) => String(value).toLowerCase())
   @IsEnum(ProductCategory, { 
-    message: 'Categoria inválida. Use: hamburgueres, bebidas, sobremesas, acompanhamentos, combos' 
+    message: 'Categoria inválida. Use: hamburgueres, bebidas, sobremesas, acompanhamentos, combos, molhos, adicionais' 
   })
   category: ProductCategory;
 
-  @ApiProperty({ example: true, required: false })
-  @IsBoolean()
+  @ApiProperty({ required: false })
   @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
   available?: boolean;
+
+  // --- TRANSFORMAÇÃO DE INGREDIENTES ---
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => {
+    // Se vier como string única (ex: "Alface, Tomate"), transforma em array
+    if (typeof value === 'string') {
+      return value.split(',').map((v: string) => v.trim()).filter((v: string) => v.length > 0);
+    }
+    return value;
+  })
+  ingredients?: string[];
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsArray()
+  allowed_addons_ids?: number[];
 }
