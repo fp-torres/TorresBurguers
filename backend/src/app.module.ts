@@ -10,6 +10,7 @@ import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
 import { AuthModule } from './auth/auth.module';
 import { AddressesModule } from './addresses/addresses.module';
+import { StoreModule } from './store/store.module'; // <--- NOVO IMPORT
 
 // Entidades (Tabelas do Banco)
 import { User } from './users/entities/user.entity';
@@ -18,15 +19,16 @@ import { Order } from './orders/entities/order.entity';
 import { OrderItem } from './orders/entities/order-item.entity';
 import { Address } from './addresses/entities/address.entity';
 import { Addon } from './products/entities/addon.entity';
+import { StoreConfig } from './store/entities/store-config.entity'; // <--- NOVA ENTIDADE
 
 // Controllers Globais (Uploads)
-import { UploadController } from './common/upload.controller'; // <--- Importado
+import { UploadController } from './common/upload.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     
-    // Configura a pasta pública para servir as imagens (GET /uploads/foto.jpg)
+    // Configura a pasta pública para servir as imagens
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'uploads'), 
       serveRoot: '/uploads',
@@ -40,7 +42,8 @@ import { UploadController } from './common/upload.controller'; // <--- Importado
       password: process.env.DB_PASSWORD || '0000',
       database: process.env.DB_DATABASE || 'torresburgers',
       // Lista de Entidades (Tabelas)
-      entities: [User, Product, Order, OrderItem, Address, Addon], 
+      // IMPORTANTE: Adicionei StoreConfig aqui
+      entities: [User, Product, Order, OrderItem, Address, Addon, StoreConfig], 
       synchronize: true,
     }),
 
@@ -50,8 +53,9 @@ import { UploadController } from './common/upload.controller'; // <--- Importado
     OrdersModule,
     AuthModule,
     AddressesModule,
+    StoreModule, // <--- ADICIONADO AQUI
   ],
-  controllers: [UploadController], // <--- Adicionado aqui para ativar a rota POST /uploads
+  controllers: [UploadController],
   providers: [],
 })
 export class AppModule {}

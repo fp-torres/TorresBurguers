@@ -23,6 +23,19 @@ class OrderItemDto {
   @IsString()
   @IsOptional() 
   observation?: string;
+
+  // --- NOVO: Ponto da Carne ---
+  @ApiProperty({ required: false, example: 'Ao Ponto' })
+  @IsString()
+  @IsOptional()
+  meatPoint?: string;
+
+  // --- NOVO: Ingredientes Removidos ---
+  @ApiProperty({ required: false, type: [String], example: ['Cebola'] })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  removedIngredients?: string[];
 }
 
 export class CreateOrderDto {
@@ -32,18 +45,15 @@ export class CreateOrderDto {
   @Type(() => OrderItemDto)
   items: OrderItemDto[];
 
-  // 1. Tipo: DELIVERY ou TAKEOUT
   @ApiProperty({ enum: OrderType, example: OrderType.DELIVERY })
   @IsEnum(OrderType)
   type: OrderType;
 
-  // 2. ID do Endereço (Obrigatório se for Delivery, mas validaremos na lógica)
   @ApiProperty({ example: 1, required: false })
   @IsInt()
   @IsOptional()
   addressId?: number;
 
-  // 3. Forma de Pagamento (PIX, Cartão, Dinheiro)
   @ApiProperty({ example: 'PIX' })
   @IsString()
   @IsNotEmpty()

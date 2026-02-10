@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Search, CheckCircle } from 'lucide-react'; 
+import { Search, Info } from 'lucide-react'; 
 import { productService, type Product } from '../../../services/productService';
-import { useCart } from '../../../contexts/CartContext';
+import ProductModal from '../../../components/ProductModal';
 
 export default function ClientHome() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('todos');
   
-  // Estado para a notificação (Toast)
-  const [showToast, setShowToast] = useState(false);
-
-  const { addToCart } = useCart();
+  // Controle do Modal
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const categories = [
     { id: 'todos', label: 'Tudo' },
@@ -36,12 +35,9 @@ export default function ClientHome() {
     }
   }
 
-  // Função Wrapper para adicionar e mostrar feedback
-  function handleAddToCart(product: Product) {
-    addToCart(product);
-    setShowToast(true);
-    // Esconde depois de 3 segundos
-    setTimeout(() => setShowToast(false), 3000);
+  function openProductModal(product: Product) {
+    setSelectedProduct(product);
+    setIsModalOpen(true);
   }
 
   const filteredProducts = selectedCategory === 'todos' 
@@ -49,17 +45,9 @@ export default function ClientHome() {
     : products.filter(p => p.category === selectedCategory);
 
   return (
-    <div className="space-y-6 relative">
+    <div className="space-y-6 relative pb-20">
       
-      {/* --- TOAST DE SUCESSO (Fixo no topo) --- */}
-      <div className={`fixed top-20 left-1/2 transform -translate-x-1/2 z-50 transition-all duration-300 ${showToast ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-10 pointer-events-none'}`}>
-        <div className="bg-green-600 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-2 font-bold animate-bounce">
-          <CheckCircle size={20} />
-          Produto adicionado!
-        </div>
-      </div>
-
-      {/* Banner de Boas Vindas */}
+      {/* Banner */}
       <div className="bg-gradient-to-r from-orange-600 to-red-600 rounded-2xl p-6 text-white shadow-lg mb-8">
         <h1 className="text-2xl font-bold mb-2">Fome de quê hoje? 😋</h1>
         <p className="opacity-90 text-sm mb-4">Os melhores burgers artesanais da região.</p>
@@ -87,10 +75,14 @@ export default function ClientHome() {
         {loading ? (
           <p className="text-center col-span-full py-10 text-gray-400">Carregando cardápio...</p>
         ) : filteredProducts.map(product => (
-          <div key={product.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex gap-4 cursor-pointer group">
-            <div className="w-24 h-24 bg-gray-100 rounded-xl flex-shrink-0 overflow-hidden">
+          <div 
+            key={product.id} 
+            onClick={() => openProductModal(product)}
+            className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex gap-4 cursor-pointer group active:scale-[0.98]"
+          >
+            <div className="w-24 h-24 bg-gray-100 rounded-xl flex-shrink-0 overflow-hidden relative">
               {product.image ? (
-                <img src={`http://localhost:3000/uploads/${product.image}`} className="w-full h-full object-cover" />
+                <img src={`http://localhost:3000/uploads/${product.image}`} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">Sem foto</div>
               )}
@@ -105,19 +97,21 @@ export default function ClientHome() {
                 <span className="font-bold text-green-700">
                   {Number(product.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </span>
-                
-                {/* USA A NOVA FUNÇÃO handleAddToCart */}
-                <button 
-                  onClick={() => handleAddToCart(product)} 
-                  className="bg-gray-100 text-gray-600 p-2 rounded-lg hover:bg-orange-600 hover:text-white transition-colors active:scale-95"
-                >
-                  <span className="text-xs font-bold">Adicionar</span>
-                </button>
+                <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-lg">
+                  Adicionar
+                </span>
               </div>
             </div>
           </div>
         ))}
       </div>
+
+      {/* O NOVO MODAL */}
+      <ProductModal 
+        product={selectedProduct} 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+      />
     </div>
   );
 }

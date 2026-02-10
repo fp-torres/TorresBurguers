@@ -9,6 +9,7 @@ import { Product } from '../products/entities/product.entity';
 import { User } from '../users/entities/user.entity';
 import { Address } from '../addresses/entities/address.entity';
 import { Addon } from '../products/entities/addon.entity';
+import { StoreService } from '../store/store.service'; // <--- IMPORT DO SERVIÇO DA LOJA
 
 @Injectable()
 export class OrdersService {
@@ -21,9 +22,16 @@ export class OrdersService {
     private addressRepository: Repository<Address>,
     @InjectRepository(Addon)
     private addonRepository: Repository<Addon>,
+    private readonly storeService: StoreService, // <--- INJEÇÃO DE DEPENDÊNCIA
   ) {}
 
   async create(createOrderDto: CreateOrderDto, userId: number) {
+    // 1. VERIFICAÇÃO DE LOJA ABERTA (BLOQUEIO)
+    const isOpen = await this.storeService.isOpen();
+    if (!isOpen) {
+      throw new BadRequestException('A loja está fechada no momento. Voltaremos em breve! 🌙');
+    }
+
     const order = new Order();
     order.user = { id: userId } as User;
     order.status = OrderStatus.PENDING;
@@ -47,9 +55,6 @@ export class OrdersService {
       order.address = address;
       order.delivery_fee = 5.00; 
       
-      // CÁLCULO DE TEMPO ESTIMADO (SIMULADO)
-      // Se tiver Bairro X, demora Y. Se não, padrão 40-50 min.
-      // Futuramente pode integrar Google Maps API aqui.
       const neighborhood = address.neighborhood?.toLowerCase() || '';
       if (neighborhood.includes('centro')) {
         order.estimated_delivery_time = '30-40 min';

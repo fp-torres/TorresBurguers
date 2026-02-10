@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, Edit, Search } from 'lucide-react';
-import { productService, type Product } from '../../services/productService'; // Import corrigido
-import ProductModal from '../../components/ProductModal';
+import { productService, type Product } from '../../services/productService'; 
+// IMPORTANTE: Trocamos o import para o novo modal de criação
+import CreateProductModal from '../../components/CreateProductModal';
 
 export default function Products() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -24,12 +25,12 @@ export default function Products() {
   }
 
   async function handleDelete(id: number) {
-    if (confirm('Tem certeza?')) {
+    if (confirm('Tem certeza que deseja excluir este produto?')) {
       try {
         await productService.delete(id);
-        loadProducts();
+        loadProducts(); // Recarrega a lista
       } catch (error) {
-        alert('Erro ao excluir');
+        alert('Erro ao excluir produto.');
       }
     }
   }
@@ -110,7 +111,8 @@ export default function Products() {
         </table>
       </div>
 
-      <ProductModal 
+      {/* Uso do novo modal com a prop onSuccess funcionando */}
+      <CreateProductModal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         onSuccess={() => {

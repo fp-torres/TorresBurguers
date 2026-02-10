@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Trash2, ArrowRight, MapPin, Store, Plus, AlertCircle, CreditCard, Clock } from 'lucide-react';
+import { Trash2, ArrowRight, MapPin, Store, Plus, Minus, AlertCircle, CreditCard, Clock } from 'lucide-react';
 import { useCart } from '../../../contexts/CartContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import api from '../../../services/api';
 import AddressModal from '../../../components/AddressModal';
 
 export default function ClientCart() {
-  const { cartItems, removeFromCart, clearCart, cartTotal } = useCart();
+  const { cartItems, removeFromCart, updateQuantity, clearCart, cartTotal } = useCart();
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   
@@ -21,7 +21,6 @@ export default function ClientCart() {
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Simulação de Tempo Estimado
   const [estimatedTime, setEstimatedTime] = useState('15-20 min');
 
   useEffect(() => {
@@ -29,7 +28,6 @@ export default function ClientCart() {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    // Recalcula tempo quando muda tipo ou endereço
     if (orderType === 'TAKEOUT') {
       setEstimatedTime('15-20 min (Retirada)');
     } else if (selectedAddressId) {
@@ -67,7 +65,9 @@ export default function ClientCart() {
           productId: Number(item.id),
           quantity: Number(item.quantity),
           observation: item.observation || "",
-          addonIds: [] 
+          addonIds: item.addons.map(a => a.id),
+          meatPoint: item.meatPoint,
+          removedIngredients: item.removedIngredients
         })),
         paymentMethod: paymentType === 'ONLINE' ? 'CREDIT_CARD' : paymentMethod,
         type: orderType,
@@ -95,33 +95,59 @@ export default function ClientCart() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-32">
-      <h1 className="text-2xl font-bold text-gray-800">Finalizar Pedido</h1>
+      <h1 className="text-2xl font-bold text-gray-800">Carrinho</h1>
 
-      {/* Itens */}
+      {/* Lista de Itens Melhorada */}
       <div className="space-y-4">
-        {cartItems.map((item) => (
-          <div key={item.cartId} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex gap-4">
-            <div className="w-20 h-20 bg-gray-100 rounded-xl overflow-hidden flex-shrink-0">
-               {item.image && <img src={`http://localhost:3000/uploads/${item.image}`} className="w-full h-full object-cover" />}
-            </div>
-            <div className="flex-1 flex flex-col justify-between">
-              <div className="flex justify-between items-start">
+        {cartItems.map((item) => {
+          // Calcula preço unitário com adicionais
+          const unitPrice = Number(item.price) + item.addons.reduce((sum, a) => sum + Number(a.price), 0);
+
+          return (
+            <div key={item.cartId} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex gap-4">
+              <div className="w-20 h-20 bg-gray-100 rounded-xl overflow-hidden flex-shrink-0">
+                 {item.image && <img src={`http://localhost:3000/uploads/${item.image}`} className="w-full h-full object-cover" />}
+              </div>
+              
+              <div className="flex-1 flex flex-col justify-between">
                 <div>
-                  <h3 className="font-bold text-gray-800">{item.name}</h3>
-                  {item.observation && <p className="text-xs text-gray-500 italic">Obs: {item.observation}</p>}
+                  <div className="flex justify-between items-start">
+                    <h3 className="font-bold text-gray-800">{item.name}</h3>
+                    <button onClick={() => removeFromCart(item.cartId)} className="text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
+                  </div>
+
+                  {/* Detalhes da Customização */}
+                  <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+                    {item.meatPoint && <p className="text-orange-600 font-medium">🔥 {item.meatPoint}</p>}
+                    {item.removedIngredients.length > 0 && (
+                      <p className="text-red-500">🚫 Sem: {item.removedIngredients.join(', ')}</p>
+                    )}
+                    {item.addons.length > 0 && (
+                      <p className="text-green-600 font-medium">✨ + {item.addons.map(a => a.name).join(', ')}</p>
+                    )}
+                    {item.observation && <p className="italic text-gray-400">"{item.observation}"</p>}
+                  </div>
                 </div>
-                <button onClick={() => removeFromCart(item.cartId)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={18} /></button>
-              </div>
-              <div className="flex justify-between items-center mt-2">
-                <span className="font-bold text-green-700">{Number(item.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-                <span className="text-xs font-bold text-gray-600 bg-gray-100 px-2 py-1 rounded-lg">{item.quantity}x</span>
+
+                <div className="flex justify-between items-center mt-3">
+                  <span className="font-bold text-gray-800">
+                    {unitPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                  
+                  {/* Controle de Quantidade */}
+                  <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-1 border border-gray-200">
+                    <button onClick={() => updateQuantity(item.cartId, -1)} className="p-1 hover:bg-white rounded shadow-sm text-gray-600"><Minus size={14} /></button>
+                    <span className="text-sm font-bold w-4 text-center">{item.quantity}</span>
+                    <button onClick={() => updateQuantity(item.cartId, 1)} className="p-1 hover:bg-white rounded shadow-sm text-green-600"><Plus size={14} /></button>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Entrega e Tempo Estimado */}
+      {/* Entrega e Tempo */}
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
         <div className="flex justify-between items-center">
            <h3 className="font-bold text-gray-800 flex items-center gap-2"><MapPin size={18} className="text-orange-600" /> Entrega</h3>
@@ -165,7 +191,7 @@ export default function ClientCart() {
         <h3 className="font-bold text-gray-800">Pagamento</h3>
         
         <div className="flex p-1 bg-gray-100 rounded-xl mb-4">
-           <button onClick={() => setPaymentType('ONLINE')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${paymentType === 'ONLINE' ? 'bg-white shadow-sm text-orange-600' : 'text-gray-500'}`}>Pagar Agora (Online)</button>
+           <button onClick={() => setPaymentType('ONLINE')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${paymentType === 'ONLINE' ? 'bg-white shadow-sm text-orange-600' : 'text-gray-500'}`}>Pagar Agora</button>
            <button onClick={() => setPaymentType('OFFLINE')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${paymentType === 'OFFLINE' ? 'bg-white shadow-sm text-orange-600' : 'text-gray-500'}`}>Pagar na Entrega</button>
         </div>
 
@@ -177,25 +203,22 @@ export default function ClientCart() {
                    <span className="font-bold text-gray-800">Cartão de Crédito</span>
                 </div>
                 <input placeholder="Número do Cartão" className="w-full mb-2 p-2 rounded border border-gray-300 text-sm" disabled />
-                <div className="flex gap-2">
-                   <input placeholder="MM/AA" className="w-1/2 p-2 rounded border border-gray-300 text-sm" disabled />
-                   <input placeholder="CVV" className="w-1/2 p-2 rounded border border-gray-300 text-sm" disabled />
-                </div>
                 <p className="text-xs text-orange-600 mt-2 font-bold">* Ambiente de teste: Nenhum valor será cobrado.</p>
              </div>
           </div>
         ) : (
           <div className="animate-in fade-in">
-             <label className="block text-sm font-medium text-gray-700 mb-2">Como você vai pagar?</label>
+             <label className="block text-sm font-medium text-gray-700 mb-2">Forma de Pagamento</label>
              <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-orange-500">
-               <option value="PIX">PIX (Chave na entrega)</option>
-               <option value="CREDIT_CARD">Maquininha de Cartão</option>
-               <option value="MONEY">Dinheiro (Levar troco)</option>
+               <option value="PIX">PIX</option>
+               <option value="CREDIT_CARD">Cartão (Maquininha)</option>
+               <option value="MONEY">Dinheiro</option>
              </select>
           </div>
         )}
       </div>
 
+      {/* Botão Finalizar */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4 lg:p-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40">
         <div className="max-w-2xl mx-auto space-y-3">
           {errorMsg && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2 animate-bounce"><AlertCircle size={18} />{errorMsg}</div>}

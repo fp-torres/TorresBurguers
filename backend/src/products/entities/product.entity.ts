@@ -1,10 +1,10 @@
 import { 
   Entity, PrimaryGeneratedColumn, Column, 
-  CreateDateColumn, UpdateDateColumn, OneToMany 
+  CreateDateColumn, UpdateDateColumn, OneToMany, ManyToMany, JoinTable 
 } from 'typeorm';
 import { OrderItem } from '../../orders/entities/order-item.entity';
+import { Addon } from './addon.entity'; // Certifique-se de que o arquivo addon.entity.ts existe
 
-// Categorias exatas da Documentação
 export enum ProductCategory {
   BURGER = 'hamburgueres',
   STARTER = 'entradas',
@@ -29,11 +29,9 @@ export class Product {
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   price: number;
 
-  // --- NOVO: Preço Promocional (De R$ 30 por R$ 19.90) ---
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   promotion_price: number;
 
-  // --- NOVO: Destaque na Home (Carrossel) ---
   @Column({ default: false })
   is_highlight: boolean;
 
@@ -46,6 +44,17 @@ export class Product {
     default: ProductCategory.BURGER
   })
   category: ProductCategory;
+
+  // --- NOVO: Ingredientes Padrão (Ex: Pão, Carne, Queijo, Cebola) ---
+  // Isso permite que o frontend saiba o que mostrar para o usuário "Remover"
+  @Column({ type: 'simple-array', nullable: true })
+  ingredients: string[];
+
+  // --- NOVO: Adicionais Permitidos ---
+  // Define quais adicionais aparecem para este produto específico
+  @ManyToMany(() => Addon)
+  @JoinTable({ name: 'product_allowed_addons' })
+  allowed_addons: Addon[];
 
   @Column({ default: true })
   available: boolean;
