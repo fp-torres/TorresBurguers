@@ -19,6 +19,14 @@ export class OrdersController {
     return this.ordersService.create(createOrderDto, req.user.id);
   }
 
+  // --- DADOS PARA O DASHBOARD (GRÁFICOS) ---
+  @Get('charts')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  getCharts() {
+    return this.ordersService.getChartData();
+  }
+
   @Get('summary')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
@@ -29,7 +37,6 @@ export class OrdersController {
   @Get()
   @UseGuards(AuthGuard('jwt'))
   findAll(@Request() req) {
-    // Passa o usuário inteiro (que contém id e role) para o service filtrar
     return this.ordersService.findAll(req.user);
   }
 
@@ -39,7 +46,6 @@ export class OrdersController {
     return this.ordersService.findOne(id);
   }
 
-  // ATUALIZAR STATUS (Admin/Cozinha)
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')

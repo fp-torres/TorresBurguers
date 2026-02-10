@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, MoreThanOrEqual } from 'typeorm';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto'; 
 import { Order, OrderStatus, OrderType, PaymentStatus } from './entities/order.entity';
@@ -87,23 +87,14 @@ export class OrdersService {
     return this.orderRepository.save(order);
   }
 
-  // --- BUSCAR PEDIDOS (COM FILTRO DE CLIENTE) ---
   async findAll(user: any) {
     const options = {
-      // Carrega todas as relações necessárias para o histórico (itens, produtos, adicionais)
       relations: ['items', 'items.product', 'items.addons', 'user', 'address'], 
       order: { created_at: 'DESC' } as any,
     };
-
     if (user.role === 'CLIENT') {
-      // Filtra apenas os pedidos DO PRÓPRIO CLIENTE
-      return this.orderRepository.find({
-        ...options,
-        where: { user: { id: user.id } },
-      });
+      return this.orderRepository.find({ ...options, where: { user: { id: user.id } } });
     }
-
-    // Se for ADMIN, retorna todos
     return this.orderRepository.find(options);
   }
 
@@ -117,7 +108,6 @@ export class OrdersService {
   async update(id: number, updateOrderDto: UpdateOrderDto) {
     const order = await this.findOne(id);
     if (!order) throw new NotFoundException(`Pedido ${id} não encontrado`);
-    
     this.orderRepository.merge(order, updateOrderDto);
     return this.orderRepository.save(order);
   }
@@ -131,5 +121,63 @@ export class OrdersService {
       preparingOrders: await this.orderRepository.count({ where: { status: OrderStatus.PREPARING } }),
       pendingPayments: await this.orderRepository.count({ where: { payment_status: PaymentStatus.PENDING } })
     };
+  }
+
+  // --- NOVO: DADOS PARA OS GRÁFICOS ---
+  async getChartData() {
+    // 1. Pega data de 7 dias atrás
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    // 2. Busca pedidos (exceto cancelados)
+    const orders = await this.orderRepository.find({
+      where: { 
+        created_at: MoreThanOrEqual(sevenDaysAgo),
+        // status: Not(OrderStatus.CANCELED) // Se quiser filtrar cancelados
+      },
+      relations: ['items', 'items.product'],
+      order: { created_at: 'ASC' }
+    });
+
+    // 3. Agrupa Vendas por Dia
+    const salesByDate: Record<string, number> = {};
+    // Inicializa os últimos 7 dias com 0
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+      salesByDate[key] = 0;
+    }
+
+    // 4. Agrupa Produtos Mais Vendidos
+    const topProducts: Record<string, number> = {};
+
+    orders.forEach(order => {
+      if (order.status === OrderStatus.CANCELED) return;
+
+      // Soma Dia
+      const dateKey = new Date(order.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+      if (salesByDate[dateKey] !== undefined) {
+        salesByDate[dateKey] += Number(order.total_price);
+      }
+
+      // Soma Produtos
+      order.items.forEach(item => {
+        const prodName = item.product?.name || 'Item Removido';
+        topProducts[prodName] = (topProducts[prodName] || 0) + item.quantity;
+      });
+    });
+
+    // Formata para o Recharts
+    const revenueChart = Object.entries(salesByDate)
+      .map(([date, total]) => ({ date, total }))
+      .reverse(); // Coloca na ordem cronológica
+
+    const productsChart = Object.entries(topProducts)
+      .map(([name, quantity]) => ({ name, quantity }))
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 5); // Top 5
+
+    return { revenueChart, productsChart };
   }
 }
