@@ -11,24 +11,15 @@ export class ProductsService {
   constructor(
     @InjectRepository(Product)
     private productRepository: Repository<Product>,
-    
     @InjectRepository(Addon)
     private addonRepository: Repository<Addon>,
   ) {}
 
-  // --- PRODUTOS ---
-
   async create(createProductDto: CreateProductDto) {
     const product = this.productRepository.create(createProductDto);
-
-    // Vincula os adicionais se houver IDs
-    if (createProductDto.allowed_addons_ids && createProductDto.allowed_addons_ids.length > 0) {
-      const addons = await this.addonRepository.findBy({
-        id: In(createProductDto.allowed_addons_ids),
-      });
-      product.allowed_addons = addons;
+    if (createProductDto.allowed_addons_ids?.length) {
+      product.allowed_addons = await this.addonRepository.findBy({ id: In(createProductDto.allowed_addons_ids) });
     }
-
     return this.productRepository.save(product);
   }
 
@@ -50,34 +41,40 @@ export class ProductsService {
     const product = await this.findOne(id);
     if (!product) throw new NotFoundException('Produto não encontrado');
 
-    Object.assign(product, updateProductDto);
+    // Limpa campos undefined para não sobrescrever
+    Object.keys(updateProductDto).forEach(key => updateProductDto[key] === undefined && delete updateProductDto[key]);
 
+    // Mescla dados
+    this.productRepository.merge(product, updateProductDto);
+
+    // Atualiza adicionais se necessário
     if (updateProductDto.allowed_addons_ids) {
-      const addons = await this.addonRepository.findBy({
+      product.allowed_addons = await this.addonRepository.findBy({
         id: In(updateProductDto.allowed_addons_ids),
       });
-      product.allowed_addons = addons;
     }
 
     return this.productRepository.save(product);
   }
 
+  // Soft Delete: Apenas esconde
   async remove(id: number) {
+    return await this.productRepository.update(id, { available: false });
+  }
+
+  // Hard Delete: Tenta apagar do banco
+  async removePermanent(id: number) {
     try {
+      // Tenta apagar fisicamente
       return await this.productRepository.delete(id);
     } catch (error) {
+      // Se der erro (ex: tem pedidos vinculados), apenas desativa
+      console.log(`Não foi possível excluir o produto ${id} (Vendas vinculadas). Arquivando.`);
       return await this.productRepository.update(id, { available: false });
     }
   }
 
-  // --- ADICIONAIS (Novos Métodos) ---
-
-  findAllAddons() {
-    return this.addonRepository.find({ order: { name: 'ASC' } });
-  }
-
-  createAddon(data: { name: string; price: number; description?: string }) {
-    const addon = this.addonRepository.create(data);
-    return this.addonRepository.save(addon);
-  }
+  // --- ADICIONAIS ---
+  findAllAddons() { return this.addonRepository.find({ order: { name: 'ASC' } }); }
+  createAddon(data: any) { return this.addonRepository.save(this.addonRepository.create(data)); }
 }

@@ -59,6 +59,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     removedIngredients: string[] = []
   ) {
     setCartItems(state => {
+      // Procura item idêntico (mesmo produto + mesmas customizações)
       const existingItemIndex = state.findIndex(item => 
         item.id === product.id &&
         item.observation === observation &&
@@ -104,8 +105,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setCartItems([]);
   }
 
+  // O Total do carrinho considera apenas os ITENS + ADICIONAIS.
+  // A taxa de entrega é somada na página de Checkout.
   const cartTotal = cartItems.reduce((acc, item) => {
-    // BLINDAGEM: Garante que addons seja um array antes de fazer o reduce
     const currentAddons = item.addons || [];
     const addonsPrice = currentAddons.reduce((sum, addon) => sum + Number(addon.price), 0);
     

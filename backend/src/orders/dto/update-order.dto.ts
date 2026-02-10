@@ -5,6 +5,8 @@ import { OrderStatus } from '../entities/order.entity';
 
 export class UpdateOrderDto extends PartialType(CreateOrderDto) {
   @IsOptional()
-  @IsEnum(OrderStatus)
+  @IsEnum(OrderStatus, {
+    message: 'Status inválido. Use: PENDING, PREPARING, DELIVERING, DONE, CANCELED'
+  })
   status?: OrderStatus;
 }

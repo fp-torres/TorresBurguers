@@ -1,9 +1,9 @@
 import { Outlet, Link } from 'react-router-dom';
-import { ShoppingBag, Menu, User, LogOut, Briefcase, LayoutDashboard } from 'lucide-react';
+import { ShoppingBag, Menu, User, LogOut, Briefcase, LayoutDashboard, Clock } from 'lucide-react';
 import { useCart } from '../../contexts/CartContext';
 import { useAuth } from '../../contexts/AuthContext';
 import ClientFooter from '../../components/ClientFooter'; 
-import { StoreStatusBadge } from '../../components/StoreStatusBadge'; // <--- IMPORT NOVO
+import { StoreStatusBadge } from '../../components/StoreStatusBadge';
 
 export default function ClientLayout() {
   const { cartCount } = useCart();
@@ -16,7 +16,7 @@ export default function ClientLayout() {
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
       <header className="bg-white shadow-sm sticky top-0 z-50 h-16 px-4 lg:px-8 flex items-center justify-between border-b border-gray-100">
         
-        {/* LADO ESQUERDO: Logo + Status da Loja */}
+        {/* LADO ESQUERDO: Logo + Status */}
         <div className="flex items-center gap-4 sm:gap-6">
           <Link to="/" className="flex items-center gap-2 group">
             <div className="bg-orange-600 text-white p-1.5 rounded-lg group-hover:bg-orange-700 transition-colors">
@@ -27,7 +27,6 @@ export default function ClientLayout() {
             </span>
           </Link>
 
-          {/* BADGE DE STATUS DA LOJA (Visível em Mobile e Desktop) */}
           <div className="hidden min-[350px]:block">
              <StoreStatusBadge />
           </div>
@@ -36,7 +35,7 @@ export default function ClientLayout() {
         {/* LADO DIREITO: Ações */}
         <div className="flex items-center gap-3 sm:gap-4">
           
-          {/* Se for ADMIN logado, mostra botão "Ir para Painel" */}
+          {/* Painel Admin (Só Equipe) */}
           {isStaff ? (
             <Link 
               to="/dashboard" 
@@ -46,7 +45,6 @@ export default function ClientLayout() {
               <span className="hidden sm:inline">Painel Admin</span>
             </Link>
           ) : (
-            // Se NÃO estiver logado como equipe, mostra botão "Sou Funcionário"
             !user && (
               <Link 
                 to="/login" 
@@ -58,6 +56,18 @@ export default function ClientLayout() {
             )
           )}
 
+          {/* Botão Meus Pedidos (Só Logado) - CORRIGIDO AQUI */}
+          {user && (
+            <Link 
+              to="/my-orders" // <--- ROTA CORRETA
+              className="p-2 text-gray-600 hover:text-orange-600 transition-colors bg-gray-50 rounded-full hover:bg-orange-50"
+              title="Meus Pedidos"
+            >
+              <Clock size={20} />
+            </Link>
+          )}
+
+          {/* Carrinho */}
           <Link to="/cart" className="relative p-2 text-gray-600 hover:text-orange-600 transition-colors bg-orange-50 rounded-full hover:bg-orange-100">
             <ShoppingBag size={20} />
             {cartCount > 0 && (
@@ -67,6 +77,7 @@ export default function ClientLayout() {
             )}
           </Link>
 
+          {/* Perfil / Login */}
           {user ? (
             <div className="flex items-center gap-2 pl-2 sm:pl-4 border-l border-gray-100 animate-in fade-in">
               <div className="text-right hidden sm:block">

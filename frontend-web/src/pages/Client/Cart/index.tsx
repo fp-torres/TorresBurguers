@@ -1,10 +1,29 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Trash2, ArrowRight, MapPin, Store, Plus, Minus, AlertCircle, CreditCard, Clock } from 'lucide-react';
-import { useCart } from '../../../contexts/CartContext';
+import { Trash2, ArrowRight, MapPin, Store, Plus, Minus, AlertCircle, CreditCard, Clock, Navigation } from 'lucide-react';
+import { useCart, type Addon } from '../../../contexts/CartContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import api from '../../../services/api';
 import AddressModal from '../../../components/AddressModal';
+
+// Endereço Fictício da Loja (Centro do RJ)
+const STORE_ADDRESS = {
+  street: "Av. Rio Branco",
+  number: "156",
+  complement: "Loja B",
+  neighborhood: "Centro",
+  city: "Rio de Janeiro",
+  state: "RJ",
+  zipCode: "20040-003"
+};
+
+interface AddressData {
+  id: number;
+  street: string;
+  number: string;
+  neighborhood: string;
+  city: string;
+}
 
 export default function ClientCart() {
   const { cartItems, removeFromCart, updateQuantity, clearCart, cartTotal } = useCart();
@@ -16,26 +35,36 @@ export default function ClientCart() {
   const [paymentMethod, setPaymentMethod] = useState('PIX'); 
   const [loading, setLoading] = useState(false);
   
-  const [addresses, setAddresses] = useState<any[]>([]);
+  const [addresses, setAddresses] = useState<AddressData[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Estados de cálculo
+  const [deliveryFee, setDeliveryFee] = useState(0);
   const [estimatedTime, setEstimatedTime] = useState('15-20 min');
 
   useEffect(() => {
     if (isAuthenticated) loadAddresses();
   }, [isAuthenticated]);
 
+  // Atualiza Taxa e Tempo quando muda o tipo ou endereço selecionado
   useEffect(() => {
     if (orderType === 'TAKEOUT') {
-      setEstimatedTime('15-20 min (Retirada)');
+      setEstimatedTime('15-20 min'); // Tempo fixo para preparar retirada
+      setDeliveryFee(0);
     } else if (selectedAddressId) {
-      setEstimatedTime('40-50 min (Delivery)');
+      const address = addresses.find(a => a.id === selectedAddressId);
+      if (address) {
+        const { fee, time } = calculateDeliveryLogistics(address.neighborhood);
+        setDeliveryFee(fee);
+        setEstimatedTime(time);
+      }
     } else {
       setEstimatedTime('--');
+      setDeliveryFee(0);
     }
-  }, [orderType, selectedAddressId]);
+  }, [orderType, selectedAddressId, addresses]);
 
   async function loadAddresses() {
     try {
@@ -43,6 +72,43 @@ export default function ClientCart() {
       setAddresses(response.data);
       if (response.data.length > 0) setSelectedAddressId(response.data[0].id);
     } catch (error) { console.log("Erro endereço"); }
+  }
+
+  // Lógica de Logística (Espelho do Backend)
+  function calculateDeliveryLogistics(neighborhood: string) {
+    const bairro = neighborhood.toLowerCase();
+    
+    // Centro e Lapa (Muito perto)
+    if (bairro.includes('centro') || bairro.includes('lapa') || bairro.includes('santa teresa')) {
+      return { fee: 5.00, time: '25-35 min' };
+    }
+    // Zona Sul Próxima
+    if (bairro.includes('flamengo') || bairro.includes('botafogo') || bairro.includes('laranjeiras') || bairro.includes('glória')) {
+      return { fee: 7.00, time: '35-45 min' };
+    }
+    // Zona Sul Distante
+    if (bairro.includes('copacabana') || bairro.includes('ipanema') || bairro.includes('leblon')) {
+      return { fee: 10.00, time: '50-60 min' };
+    }
+    // Tijuca/Maracanã
+    if (bairro.includes('tijuca') || bairro.includes('maracanã') || bairro.includes('vila isabel')) {
+      return { fee: 12.00, time: '50-60 min' };
+    }
+    // Barra e Recreio (Longe)
+    if (bairro.includes('barra') || bairro.includes('recreio')) {
+      return { fee: 20.00, time: '60-80 min' };
+    }
+    
+    // Padrão
+    return { fee: 15.00, time: '45-55 min' }; 
+  }
+
+  function groupAddons(addons: Addon[]) {
+    const groups: Record<string, number> = {};
+    addons.forEach(addon => {
+      groups[addon.name] = (groups[addon.name] || 0) + 1;
+    });
+    return Object.entries(groups);
   }
 
   async function handleFinishOrder() {
@@ -85,6 +151,8 @@ export default function ClientCart() {
     }
   }
 
+  const totalFinal = cartTotal + deliveryFee;
+
   if (cartItems.length === 0) return (
     <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 animate-in fade-in">
       <div className="bg-gray-100 p-6 rounded-full text-gray-400"><Store size={48} /></div>
@@ -94,14 +162,15 @@ export default function ClientCart() {
   );
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pb-32">
+    <div className="max-w-2xl mx-auto space-y-6 pb-40">
       <h1 className="text-2xl font-bold text-gray-800">Carrinho</h1>
 
-      {/* Lista de Itens Melhorada */}
+      {/* Lista de Itens */}
       <div className="space-y-4">
         {cartItems.map((item) => {
-          // Calcula preço unitário com adicionais
-          const unitPrice = Number(item.price) + item.addons.reduce((sum, a) => sum + Number(a.price), 0);
+          const addonsSum = item.addons.reduce((sum, a) => sum + Number(a.price), 0);
+          const unitPrice = Number(item.price) + addonsSum;
+          const groupedAddonsList = groupAddons(item.addons);
 
           return (
             <div key={item.cartId} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex gap-4">
@@ -116,14 +185,15 @@ export default function ClientCart() {
                     <button onClick={() => removeFromCart(item.cartId)} className="text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
                   </div>
 
-                  {/* Detalhes da Customização */}
                   <div className="text-xs text-gray-500 mt-1 space-y-0.5">
                     {item.meatPoint && <p className="text-orange-600 font-medium">🔥 {item.meatPoint}</p>}
                     {item.removedIngredients.length > 0 && (
                       <p className="text-red-500">🚫 Sem: {item.removedIngredients.join(', ')}</p>
                     )}
-                    {item.addons.length > 0 && (
-                      <p className="text-green-600 font-medium">✨ + {item.addons.map(a => a.name).join(', ')}</p>
+                    {groupedAddonsList.length > 0 && (
+                      <p className="text-green-600 font-medium">
+                        ✨ + {groupedAddonsList.map(([name, qtd]) => `${qtd}x ${name}`).join(', ')}
+                      </p>
                     )}
                     {item.observation && <p className="italic text-gray-400">"{item.observation}"</p>}
                   </div>
@@ -134,7 +204,6 @@ export default function ClientCart() {
                     {unitPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                   </span>
                   
-                  {/* Controle de Quantidade */}
                   <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-1 border border-gray-200">
                     <button onClick={() => updateQuantity(item.cartId, -1)} className="p-1 hover:bg-white rounded shadow-sm text-gray-600"><Minus size={14} /></button>
                     <span className="text-sm font-bold w-4 text-center">{item.quantity}</span>
@@ -147,10 +216,13 @@ export default function ClientCart() {
         })}
       </div>
 
-      {/* Entrega e Tempo */}
+      {/* Entrega e Endereço */}
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
         <div className="flex justify-between items-center">
-           <h3 className="font-bold text-gray-800 flex items-center gap-2"><MapPin size={18} className="text-orange-600" /> Entrega</h3>
+           <h3 className="font-bold text-gray-800 flex items-center gap-2">
+             {orderType === 'DELIVERY' ? <MapPin size={18} className="text-orange-600" /> : <Store size={18} className="text-orange-600" />}
+             {orderType === 'DELIVERY' ? 'Entrega' : 'Retirada na Loja'}
+           </h3>
            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg flex items-center gap-1">
              <Clock size={14} /> {estimatedTime}
            </span>
@@ -161,35 +233,65 @@ export default function ClientCart() {
           <button onClick={() => setOrderType('DELIVERY')} className={`p-3 rounded-xl border-2 text-sm font-bold transition-all ${orderType === 'DELIVERY' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-100 text-gray-500'}`}>Delivery</button>
         </div>
 
-        {orderType === 'DELIVERY' && (
-          <div className="mt-4 animate-in slide-in-from-top-2">
-            {addresses.length > 0 ? (
-              <div className="space-y-3">
-                <p className="text-sm font-medium text-gray-700">Endereço:</p>
-                {addresses.map(addr => (
-                  <label key={addr.id} className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${selectedAddressId === addr.id ? 'border-orange-500 bg-orange-50' : 'border-gray-100 hover:border-gray-200'}`}>
-                    <input type="radio" name="address" checked={selectedAddressId === addr.id} onChange={() => setSelectedAddressId(addr.id)} className="mt-1 text-orange-600 focus:ring-orange-500"/>
-                    <div className="text-sm">
-                      <p className="font-bold text-gray-800">{addr.street}, {addr.number}</p>
-                      <p className="text-gray-500">{addr.neighborhood} - {addr.city}</p>
-                    </div>
-                  </label>
-                ))}
-                <button onClick={() => setIsAddressModalOpen(true)} className="w-full py-2 text-sm text-orange-600 font-bold hover:bg-orange-50 rounded-lg border border-dashed border-orange-300">+ Novo Endereço</button>
+        {/* LÓGICA DE EXIBIÇÃO: RETIRADA VS DELIVERY */}
+        <div className="mt-4 animate-in slide-in-from-top-2">
+          {orderType === 'TAKEOUT' ? (
+            // --- CARD DE RETIRADA (ENDEREÇO DA LOJA) ---
+            <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 flex items-start gap-3">
+              <div className="bg-white p-2 rounded-full text-orange-600 shadow-sm">
+                <Store size={20} />
               </div>
-            ) : (
-              <div className="text-center p-4 bg-gray-50 rounded-xl border border-dashed border-gray-300">
-                <button onClick={() => setIsAddressModalOpen(true)} className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 mx-auto hover:bg-gray-900 transition-colors"><Plus size={16} /> Cadastrar Endereço</button>
+              <div>
+                <p className="text-sm font-bold text-gray-800">TorresBurgers - Matriz</p>
+                <p className="text-sm text-gray-600 mt-1">{STORE_ADDRESS.street}, {STORE_ADDRESS.number}</p>
+                <p className="text-sm text-gray-600">{STORE_ADDRESS.neighborhood} - {STORE_ADDRESS.city}/{STORE_ADDRESS.state}</p>
+                
+                <a 
+                  href={`https://maps.google.com/?q=${STORE_ADDRESS.street},${STORE_ADDRESS.number},${STORE_ADDRESS.city}`} 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs font-bold text-orange-600 mt-2 hover:underline"
+                >
+                  <Navigation size={12} /> Ver no Mapa
+                </a>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          ) : (
+            // --- LISTA DE ENDEREÇOS (DELIVERY) ---
+            <>
+              {addresses.length > 0 ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-gray-700">Selecione o Endereço:</p>
+                  {addresses.map(addr => (
+                    <label key={addr.id} className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${selectedAddressId === addr.id ? 'border-orange-500 bg-orange-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                      <input type="radio" name="address" checked={selectedAddressId === addr.id} onChange={() => setSelectedAddressId(addr.id)} className="mt-1 text-orange-600 focus:ring-orange-500"/>
+                      <div className="text-sm flex-1">
+                        <p className="font-bold text-gray-800">{addr.street}, {addr.number}</p>
+                        <p className="text-gray-500">{addr.neighborhood} - {addr.city}</p>
+                        {/* Mostra estimativa específica para este endereço */}
+                        {selectedAddressId === addr.id && (
+                          <p className="text-xs text-blue-600 font-bold mt-1">
+                            Tempo estimado: {calculateDeliveryLogistics(addr.neighborhood).time}
+                          </p>
+                        )}
+                      </div>
+                    </label>
+                  ))}
+                  <button onClick={() => setIsAddressModalOpen(true)} className="w-full py-2 text-sm text-orange-600 font-bold hover:bg-orange-50 rounded-lg border border-dashed border-orange-300">+ Novo Endereço</button>
+                </div>
+              ) : (
+                <div className="text-center p-4 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+                  <button onClick={() => setIsAddressModalOpen(true)} className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 mx-auto hover:bg-gray-900 transition-colors"><Plus size={16} /> Cadastrar Endereço</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Pagamento */}
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
         <h3 className="font-bold text-gray-800">Pagamento</h3>
-        
         <div className="flex p-1 bg-gray-100 rounded-xl mb-4">
            <button onClick={() => setPaymentType('ONLINE')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${paymentType === 'ONLINE' ? 'bg-white shadow-sm text-orange-600' : 'text-gray-500'}`}>Pagar Agora</button>
            <button onClick={() => setPaymentType('OFFLINE')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${paymentType === 'OFFLINE' ? 'bg-white shadow-sm text-orange-600' : 'text-gray-500'}`}>Pagar na Entrega</button>
@@ -218,14 +320,32 @@ export default function ClientCart() {
         )}
       </div>
 
-      {/* Botão Finalizar */}
+      {/* RODAPÉ FIXO */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4 lg:p-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40">
         <div className="max-w-2xl mx-auto space-y-3">
+          
           {errorMsg && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2 animate-bounce"><AlertCircle size={18} />{errorMsg}</div>}
+          
+          <div className="space-y-1 pb-3 border-b border-gray-100 text-sm">
+            <div className="flex justify-between text-gray-500">
+              <span>Subtotal</span>
+              <span>{cartTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+            </div>
+            <div className="flex justify-between text-gray-500">
+              <span className="flex items-center gap-1">
+                {orderType === 'DELIVERY' ? <MapPin size={12}/> : <Store size={12}/>} 
+                {orderType === 'DELIVERY' ? 'Taxa de Entrega' : 'Taxa de Retirada'}
+              </span>
+              <span className={deliveryFee > 0 ? 'text-gray-800' : 'text-green-600 font-bold'}>
+                {deliveryFee > 0 ? deliveryFee.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Grátis'}
+              </span>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-xs text-gray-500 font-medium uppercase">Total a pagar</p>
-              <p className="text-2xl font-bold text-gray-800">{cartTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+              <p className="text-2xl font-bold text-gray-800">{totalFinal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
             </div>
             <button onClick={handleFinishOrder} disabled={loading} className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50">
               {loading ? 'Processando...' : 'Finalizar Pedido'}

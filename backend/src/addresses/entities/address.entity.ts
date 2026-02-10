@@ -7,30 +7,29 @@ export class Address {
   id: number;
 
   @Column()
-  zipCode: string; // CEP (ex: 20000-000)
+  zipCode: string; // CEP
 
   @Column()
-  street: string; // Logradouro
+  street: string; 
 
   @Column()
-  number: string; // Número (string pois pode ser "S/N" ou "10B")
+  number: string;
 
   @Column({ nullable: true })
-  complement: string; // Apto 101, Fundos
+  complement: string;
 
   @Column()
-  neighborhood: string; // Bairro
+  neighborhood: string; // ESSENCIAL PARA O CÁLCULO DA TAXA
 
   @Column()
   city: string;
 
   @Column({ length: 2 })
-  state: string; // UF (RJ, SP)
+  state: string;
 
   @Column({ nullable: true })
-  nickname: string; // "Casa", "Trabalho"
+  nickname: string;
 
-  // Relação: Muitos endereços pertencem a um Usuário
   @ManyToOne(() => User, (user) => user.addresses, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;

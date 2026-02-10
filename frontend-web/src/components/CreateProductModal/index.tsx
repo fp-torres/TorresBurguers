@@ -2,19 +2,20 @@ import { useState, useRef, useEffect } from 'react';
 import type { ChangeEvent, SyntheticEvent } from 'react'; 
 import { X, Upload, Loader2, CheckCircle, Plus, Save } from 'lucide-react';
 import api from '../../services/api';
-import { productService, type Addon } from '../../services/productService';
+import { productService, type Addon, type Product } from '../../services/productService';
 
 interface CreateProductModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  productToEdit?: Product | null; // <--- Prop nova para edição
 }
 
-export default function CreateProductModal({ isOpen, onClose, onSuccess }: CreateProductModalProps) {
+export default function CreateProductModal({ isOpen, onClose, onSuccess, productToEdit }: CreateProductModalProps) {
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Estados do Produto
+  // Estados
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
@@ -22,8 +23,6 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess }: Creat
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [ingredientsText, setIngredientsText] = useState('');
-
-  // Estados dos Adicionais
   const [allAddons, setAllAddons] = useState<Addon[]>([]);
   const [selectedAddonIds, setSelectedAddonIds] = useState<number[]>([]);
   
@@ -32,54 +31,61 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess }: Creat
   const [newAddonPrice, setNewAddonPrice] = useState('');
   const [creatingAddon, setCreatingAddon] = useState(false);
 
+  // Carrega dados ao abrir
   useEffect(() => {
     if (isOpen) {
       loadAddons();
+      if (productToEdit) {
+        // MODO EDIÇÃO: Preenche os campos
+        setName(productToEdit.name);
+        setDescription(productToEdit.description);
+        setPrice(String(productToEdit.price).replace('.', ','));
+        setCategory(productToEdit.category);
+        setIngredientsText(productToEdit.ingredients ? productToEdit.ingredients.join(', ') : '');
+        
+        if (productToEdit.image) {
+          setPreview(`http://localhost:3000/uploads/${productToEdit.image}`);
+        } else {
+          setPreview(null);
+        }
+
+        if (productToEdit.allowed_addons) {
+          setSelectedAddonIds(productToEdit.allowed_addons.map(a => a.id));
+        }
+      } else {
+        // MODO CRIAÇÃO: Limpa os campos
+        resetForm();
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, productToEdit]);
 
   async function loadAddons() {
     try {
       const data = await productService.getAllAddons();
       setAllAddons(data);
-    } catch (error) {
-      console.log("Nenhum adicional encontrado ou erro de conexão");
-    }
+    } catch (error) { console.log("Erro addons"); }
   }
 
   async function handleQuickAddonCreate() {
     if (!newAddonName || !newAddonPrice) return;
     setCreatingAddon(true);
     try {
-      await api.post('/addons', {
-        name: newAddonName,
-        price: parseFloat(newAddonPrice.replace(',', '.'))
-      });
-      setNewAddonName('');
-      setNewAddonPrice('');
-      await loadAddons(); // Recarrega a lista
-    } catch (error) {
-      alert('Erro ao criar adicional');
-    } finally {
-      setCreatingAddon(false);
-    }
+      await api.post('/addons', { name: newAddonName, price: parseFloat(newAddonPrice.replace(',', '.')) });
+      setNewAddonName(''); setNewAddonPrice('');
+      await loadAddons();
+    } catch { alert('Erro ao criar'); } finally { setCreatingAddon(false); }
   }
-
-  if (!isOpen) return null;
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (file) {
       setImageFile(file);
-      const objectUrl = URL.createObjectURL(file);
-      setPreview(objectUrl);
+      setPreview(URL.createObjectURL(file));
     }
   }
 
   function toggleAddonSelection(id: number) {
-    setSelectedAddonIds(prev => 
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-    );
+    setSelectedAddonIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   }
 
   async function handleSubmit(e: SyntheticEvent) {
@@ -92,7 +98,10 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess }: Creat
       formData.append('description', description);
       formData.append('price', price.replace(',', '.'));
       formData.append('category', category.toLowerCase());
-      formData.append('available', 'true');
+      
+      // Se estiver criando, available é true. Se editando, mantém o que estava ou manda true se quiser reativar.
+      // Aqui vamos mandar true apenas na criação. Na edição, o available é controlado pela lista.
+      if (!productToEdit) formData.append('available', 'true');
 
       if (ingredientsText.trim()) {
         const list = ingredientsText.split(',').map(i => i.trim()).filter(Boolean);
@@ -107,39 +116,37 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess }: Creat
         formData.append('file', imageFile);
       }
 
-      await api.post('/products', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      if (productToEdit) {
+        // UPDATE
+        await productService.update(productToEdit.id, formData);
+      } else {
+        // CREATE
+        await productService.create(formData);
+      }
       
       onSuccess();
       onClose();
       resetForm();
 
     } catch (error: any) {
-      const msg = error.response?.data?.message || 'Erro desconhecido.';
-      alert(`Erro: ${Array.isArray(msg) ? msg.join('\n') : msg}`);
+      alert('Erro ao salvar produto.');
     } finally {
       setLoading(false);
     }
   }
 
   function resetForm() {
-    setName('');
-    setDescription('');
-    setPrice('');
-    setIngredientsText('');
-    setCategory('hamburgueres');
-    setImageFile(null);
-    setPreview(null);
-    setSelectedAddonIds([]);
+    setName(''); setDescription(''); setPrice(''); setIngredientsText('');
+    setCategory('hamburgueres'); setImageFile(null); setPreview(null); setSelectedAddonIds([]);
   }
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        
         <div className="bg-gray-50 px-6 py-4 border-b border-gray-100 flex justify-between items-center shrink-0">
-          <h2 className="text-lg font-bold text-gray-800">Novo Produto</h2>
+          <h2 className="text-lg font-bold text-gray-800">{productToEdit ? 'Editar Produto' : 'Novo Produto'}</h2>
           <button onClick={onClose}><X size={24} className="text-gray-400 hover:text-gray-600" /></button>
         </div>
 
@@ -174,8 +181,8 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess }: Creat
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Ingredientes Padrão (Para Remover)</label>
-                <input value={ingredientsText} onChange={e => setIngredientsText(e.target.value)} className="w-full px-4 py-2 border rounded-lg" placeholder="Ex: Pão, Carne, Queijo (Separar por vírgula)" />
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Ingredientes Padrão</label>
+                <input value={ingredientsText} onChange={e => setIngredientsText(e.target.value)} className="w-full px-4 py-2 border rounded-lg" placeholder="Separar por vírgula" />
               </div>
             </div>
           </div>
@@ -185,26 +192,23 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess }: Creat
             <textarea required rows={2} value={description} onChange={e => setDescription(e.target.value)} className="w-full px-4 py-2 border rounded-lg resize-none" />
           </div>
 
-          {/* VINCULAR / CRIAR ADICIONAIS */}
+          {/* Adicionais */}
           <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
             <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center justify-between">
               <span className="flex items-center gap-2"><Plus size={16} className="text-orange-600"/> Adicionais Permitidos</span>
             </h3>
             
-            {/* Formulário Rápido de Adicional */}
             <div className="flex gap-2 mb-4">
               <input value={newAddonName} onChange={e => setNewAddonName(e.target.value)} placeholder="Novo: Bacon" className="flex-1 px-3 py-1.5 text-xs border rounded-lg" />
               <input value={newAddonPrice} onChange={e => setNewAddonPrice(e.target.value)} placeholder="Preço" className="w-20 px-3 py-1.5 text-xs border rounded-lg" />
-              <button type="button" onClick={handleQuickAddonCreate} disabled={creatingAddon || !newAddonName} className="bg-orange-600 text-white p-1.5 rounded-lg disabled:opacity-50">
-                <Save size={16} />
-              </button>
+              <button type="button" onClick={handleQuickAddonCreate} disabled={creatingAddon || !newAddonName} className="bg-orange-600 text-white p-1.5 rounded-lg disabled:opacity-50"><Save size={16} /></button>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-40 overflow-y-auto custom-scrollbar">
               {allAddons.map(addon => (
                 <label key={addon.id} className={`flex items-center gap-2 p-2 border rounded-lg cursor-pointer transition-all ${selectedAddonIds.includes(addon.id) ? 'bg-orange-100 border-orange-300' : 'bg-white border-gray-200'}`}>
                   <input type="checkbox" className="rounded text-orange-600 focus:ring-orange-500" checked={selectedAddonIds.includes(addon.id)} onChange={() => toggleAddonSelection(addon.id)} />
-                  <span className="text-xs font-medium text-gray-700 truncate">{addon.name} <span className="text-gray-400">({Number(addon.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</span></span>
+                  <span className="text-xs font-medium text-gray-700 truncate">{addon.name}</span>
                 </label>
               ))}
             </div>

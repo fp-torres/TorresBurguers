@@ -28,27 +28,12 @@ export class ProductsController {
         cb(null, `product-${uniqueSuffix}${ext}`);
       },
     }),
-    fileFilter: (req, file, callback) => {
-      if (!file.mimetype.match(/\/(jpg|jpeg|png|gif)$/)) {
-        return callback(new BadRequestException('Apenas arquivos de imagem são permitidos!'), false);
-      }
-      callback(null, true);
-    },
   }))
   create(
     @Body() createProductDto: CreateProductDto,
-    @UploadedFile(
-      new ParseFilePipeBuilder()
-        .build({
-          fileIsRequired: false,
-          errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
-        }),
-    )
-    file?: Express.Multer.File,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (file) {
-      createProductDto.image = file.filename;
-    }
+    if (file) createProductDto.image = file.filename;
     return this.productsService.create(createProductDto);
   }
 
@@ -62,17 +47,42 @@ export class ProductsController {
     return this.productsService.findOne(id);
   }
 
+  // --- ATUALIZAÇÃO (PUT/PATCH) ---
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
-  update(@Param('id', ParseIntPipe) id: number, @Body() updateProductDto: UpdateProductDto) {
+  @UseInterceptors(FileInterceptor('file', {
+    storage: diskStorage({
+      destination: './uploads',
+      filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const ext = extname(file.originalname);
+        cb(null, `product-${uniqueSuffix}${ext}`);
+      },
+    }),
+  }))
+  update(
+    @Param('id', ParseIntPipe) id: number, 
+    @Body() updateProductDto: UpdateProductDto,
+    @UploadedFile() file?: Express.Multer.File
+  ) {
+    if (file) updateProductDto.image = file.filename;
     return this.productsService.update(id, updateProductDto);
   }
 
+  // --- ARQUIVAR (Soft Delete / Esgotado) ---
   @Delete(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
   remove(@Param('id', ParseIntPipe) id: number) {
-    return this.productsService.remove(id);
+    return this.productsService.remove(id); // Apenas desativa (available = false)
+  }
+
+  // --- DELETAR PERMANENTE (Hard Delete) ---
+  @Delete(':id/permanent')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  removePermanent(@Param('id', ParseIntPipe) id: number) {
+    return this.productsService.removePermanent(id);
   }
 }

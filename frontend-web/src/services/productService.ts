@@ -20,27 +20,36 @@ export interface Product {
 }
 
 export const productService = {
-  // Buscar todos os produtos
   getAll: async () => {
     const response = await api.get<Product[]>('/products');
     return response.data;
   },
 
-  // --- NOVO: Buscar todos os adicionais cadastrados no sistema ---
   getAllAddons: async () => {
-    // Supondo que você tenha uma rota /addons ou /products/addons
-    // Se não tiver rota específica de addons, crie no backend ou use filters
-    // Por enquanto, vou assumir que existe um endpoint simples para listar adicionais
     const response = await api.get<Addon[]>('/addons'); 
     return response.data;
   },
 
+  // Soft delete (Arquivar)
   delete: async (id: number) => {
     await api.delete(`/products/${id}`);
   },
 
+  // Hard delete (Permanente)
+  deletePermanent: async (id: number) => {
+    await api.delete(`/products/${id}/permanent`);
+  },
+
   create: async (data: FormData) => {
     const response = await api.post('/products', data, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
+
+  // Atualizar (PUT/PATCH)
+  update: async (id: number, data: FormData) => {
+    const response = await api.patch(`/products/${id}`, data, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
     return response.data;
