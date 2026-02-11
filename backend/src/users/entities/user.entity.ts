@@ -8,8 +8,9 @@ import { Address } from '../../addresses/entities/address.entity';
 export enum UserRole {
   CLIENT = 'CLIENT',     
   ADMIN = 'ADMIN',       
-  KITCHEN = 'KITCHEN',   
-  COURIER = 'COURIER',   
+  KITCHEN = 'KITCHEN',   // Cozinha
+  COURIER = 'COURIER',   // Motoboy
+  EMPLOYEE = 'EMPLOYEE', // Funcionário Genérico (se ainda usar)
 }
 
 @Entity('users')
@@ -27,7 +28,7 @@ export class User {
   password_hash: string;
 
   @Column({ length: 20, nullable: true }) 
-  phone: string; // <--- NOVO CAMPO
+  phone: string;
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.CLIENT })
   role: UserRole;

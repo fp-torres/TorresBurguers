@@ -2,20 +2,19 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Clock, Package, Truck, CheckCircle, XCircle, 
-  MapPin, ShoppingBag, ChevronDown, ChevronUp, LayoutDashboard, ShieldAlert 
+  MapPin, ShoppingBag, ChevronDown, ChevronUp, LayoutDashboard, ShieldAlert, Bell 
 } from 'lucide-react';
 import { orderService, type Order } from '../../../services/orderService';
 import { useAuth } from '../../../contexts/AuthContext';
-import ConfirmModal from '../../../components/ConfirmModal'; // Import do Modal
-import toast from 'react-hot-toast'; // Import do Toast
-import api from '../../../services/api'; // Import da API para chamar o cancelamento
+import ConfirmModal from '../../../components/ConfirmModal';
+import toast from 'react-hot-toast';
+import api from '../../../services/api';
 
 export default function ClientOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
   
-  // Estados para o Modal de Cancelamento
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<number | null>(null);
 
@@ -56,6 +55,7 @@ export default function ClientOrders() {
   async function loadOrders() {
     try {
       const data = await orderService.getMyOrders();
+      // Garante que o mais recente fique no topo
       setOrders(data.sort((a, b) => b.id - a.id));
     } catch (error) {
       console.error("Erro ao carregar histórico", error);
@@ -64,9 +64,8 @@ export default function ClientOrders() {
     }
   }
 
-  // --- LÓGICA DE CANCELAMENTO ---
   function handleRequestCancel(e: React.MouseEvent, id: number) {
-    e.stopPropagation(); // Evita abrir/fechar o card ao clicar no botão
+    e.stopPropagation();
     setOrderToCancel(id);
     setCancelModalOpen(true);
   }
@@ -74,11 +73,9 @@ export default function ClientOrders() {
   async function executeCancel() {
     if (!orderToCancel) return;
     try {
-      // Chama a rota específica do cliente que criamos no backend
       await api.patch(`/orders/${orderToCancel}/cancel`);
-      
       toast.success('Pedido cancelado com sucesso.');
-      loadOrders(); // Atualiza a lista
+      loadOrders();
     } catch (error) {
       toast.error('Não foi possível cancelar o pedido.');
     }
@@ -87,6 +84,7 @@ export default function ClientOrders() {
   const statusMap: Record<string, { label: string, color: string, icon: any }> = {
     'PENDING': { label: 'Aguardando Confirmação', color: 'text-yellow-600 bg-yellow-50 border-yellow-200', icon: Clock },
     'PREPARING': { label: 'Preparando', color: 'text-blue-600 bg-blue-50 border-blue-200', icon: Package },
+    'READY_FOR_PICKUP': { label: 'Pronto para Entrega', color: 'text-purple-600 bg-purple-50 border-purple-200', icon: Bell },
     'DELIVERING': { label: 'Em Rota', color: 'text-orange-600 bg-orange-50 border-orange-200', icon: Truck },
     'DONE': { label: 'Entregue', color: 'text-green-600 bg-green-50 border-green-200', icon: CheckCircle },
     'FINISHED': { label: 'Entregue', color: 'text-green-600 bg-green-50 border-green-200', icon: CheckCircle },
@@ -142,18 +140,32 @@ export default function ClientOrders() {
               {isExpanded && (
                 <div className="bg-gray-50 p-4 border-t border-gray-100 space-y-4 animate-in slide-in-from-top-2">
                   
-                  {/* Lista de Itens */}
-                  <div className="space-y-2">
+                  {/* Lista de Itens Detalhada */}
+                  <div className="space-y-3">
                     {order.items.map(item => (
-                       <div key={item.id} className="text-sm text-gray-700 flex justify-between">
-                         <div>
-                           <span className="font-bold mr-2">{item.quantity}x</span> 
-                           {item.product?.name || 'Item Removido'}
-                           {item.addons?.length > 0 && (
-                             <span className="text-xs text-gray-500 ml-2">
-                               (+ {item.addons.map(a => a.name).join(', ')})
-                             </span>
+                       <div key={item.id} className="text-sm text-gray-700">
+                         <div className="flex justify-between items-start">
+                           <span><span className="font-bold">{item.quantity}x</span> {item.product?.name || 'Item Removido'}</span>
+                         </div>
+
+                         {/* DETALHES RICOS DO ITEM */}
+                         <div className="pl-6 text-xs text-gray-500 space-y-0.5 mt-1">
+                           
+                           {/* Ponto da Carne */}
+                           {item.meat_point && <p className="text-orange-600 font-bold">🔥 {item.meat_point}</p>}
+                           
+                           {/* Removidos */}
+                           {item.removed_ingredients && item.removed_ingredients.length > 0 && (
+                             <p className="text-red-500">🚫 Sem: {Array.isArray(item.removed_ingredients) ? item.removed_ingredients.join(', ') : item.removed_ingredients}</p>
                            )}
+
+                           {/* Adicionais */}
+                           {item.addons?.length > 0 && (
+                             <p className="text-green-600 font-medium">✨ + {item.addons.map(a => a.name).join(', ')}</p>
+                           )}
+
+                           {/* Observação */}
+                           {item.observation && <p className="italic text-gray-400">"{item.observation}"</p>}
                          </div>
                        </div>
                     ))}
@@ -185,7 +197,6 @@ export default function ClientOrders() {
         })}
       </div>
 
-      {/* Modal de Confirmação */}
       <ConfirmModal 
         isOpen={cancelModalOpen}
         onClose={() => setCancelModalOpen(false)}

@@ -3,7 +3,7 @@ import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { OrderType } from '../entities/order.entity';
 
-class OrderItemDto {
+export class OrderItemDto {
   @ApiProperty()
   @IsInt()
   @IsNotEmpty()
@@ -24,13 +24,11 @@ class OrderItemDto {
   @IsOptional() 
   observation?: string;
 
-  // --- NOVO: Ponto da Carne ---
   @ApiProperty({ required: false, example: 'Ao Ponto' })
   @IsString()
   @IsOptional()
   meatPoint?: string;
 
-  // --- NOVO: Ingredientes Removidos ---
   @ApiProperty({ required: false, type: [String], example: ['Cebola'] })
   @IsArray()
   @IsString({ each: true })

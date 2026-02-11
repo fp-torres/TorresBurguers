@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Icon } from '@iconify/react';
 import { X } from 'lucide-react';
 import { useState } from 'react';
-import ConfirmModal from '../ConfirmModal'; // <--- CAMINHO CORRIGIDO
+import ConfirmModal from '../ConfirmModal';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -13,12 +13,22 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const location = useLocation();
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
-  const menuItems = [
-    { name: 'Dashboard', icon: 'solar:widget-5-bold-duotone', path: '/dashboard' },
-    { name: 'Pedidos', icon: 'solar:bag-check-bold-duotone', path: '/orders' },
-    { name: 'Cardápio', icon: 'solar:chef-hat-bold-duotone', path: '/products' },
-    { name: 'Equipe', icon: 'solar:users-group-rounded-bold-duotone', path: '/users' },
+  // Recupera usuário para filtrar menu
+  const userStored = localStorage.getItem('torresburgers.user');
+  let userRole = 'ADMIN';
+  if (userStored) {
+    try { userRole = JSON.parse(userStored).role; } catch {}
+  }
+
+  const allMenuItems = [
+    { name: 'Dashboard', icon: 'solar:widget-5-bold-duotone', path: '/dashboard', roles: ['ADMIN'] },
+    { name: 'Pedidos', icon: 'solar:bag-check-bold-duotone', path: '/orders', roles: ['ADMIN', 'KITCHEN', 'COURIER', 'EMPLOYEE'] },
+    { name: 'Cardápio', icon: 'solar:chef-hat-bold-duotone', path: '/products', roles: ['ADMIN'] },
+    { name: 'Equipe', icon: 'solar:users-group-rounded-bold-duotone', path: '/users', roles: ['ADMIN'] },
   ];
+
+  // Filtra itens permitidos para o cargo atual
+  const menuItems = allMenuItems.filter(item => item.roles.includes(userRole));
 
   function executeLogout() {
     localStorage.removeItem('torresburgers.token');
@@ -77,7 +87,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         onClose={() => setIsLogoutModalOpen(false)}
         onConfirm={executeLogout}
         title="Sair do Sistema?"
-        message="Você terá que fazer login novamente para acessar o painel administrativo."
+        message="Você terá que fazer login novamente para acessar o sistema."
         confirmLabel="Sair"
         isDestructive
       />

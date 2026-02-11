@@ -28,6 +28,7 @@ export class OrdersController {
     return this.ordersService.findMyOrders(req.user.id);
   }
 
+  // Dados do Dashboard (Financeiro) -> Continua apenas ADMIN
   @Get('charts')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
@@ -42,9 +43,11 @@ export class OrdersController {
     return this.ordersService.getDashboardSummary();
   }
 
+  // --- ROTA GERAL (LISTAR PEDIDOS) ---
+  // LIBERADO PARA: ADMIN, COZINHA e MOTOBOY
   @Get()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN') 
+  @Roles('ADMIN', 'KITCHEN', 'COURIER') 
   findAll() {
     return this.ordersService.findAll();
   }
@@ -55,17 +58,18 @@ export class OrdersController {
     return this.ordersService.findOne(id);
   }
 
-  // --- NOVA ROTA: CANCELAR PEDIDO (CLIENTE) ---
+  // Cancelamento pelo Cliente
   @Patch(':id/cancel')
   @UseGuards(AuthGuard('jwt'))
   async cancelMyOrder(@Param('id', ParseIntPipe) id: number, @Request() req) {
-    // Permite cancelar se for o dono do pedido OU se for Admin
     return this.ordersService.cancelOrder(id, req.user);
   }
 
+  // --- ATUALIZAR STATUS (MUDAR DE FASE) ---
+  // LIBERADO PARA: ADMIN, COZINHA e MOTOBOY
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'KITCHEN', 'COURIER')
   update(@Param('id', ParseIntPipe) id: number, @Body() updateOrderDto: UpdateOrderDto) {
     return this.ordersService.update(id, updateOrderDto);
   }

@@ -9,11 +9,15 @@ export interface OrderItem {
   };
   observation?: string;
   addons: { name: string; price: string | number }[];
+  
+  // --- CAMPOS DETALHADOS (snake_case do Backend) ---
+  meat_point?: string;
+  removed_ingredients?: string[]; 
 }
 
 export interface Order {
   id: number;
-  status: 'PENDING' | 'PREPARING' | 'DELIVERING' | 'DONE' | 'FINISHED' | 'CANCELED';
+  status: 'PENDING' | 'PREPARING' | 'READY_FOR_PICKUP' | 'DELIVERING' | 'DONE' | 'FINISHED' | 'CANCELED';
   total_price: string | number; 
   delivery_fee?: string | number;
   payment_method: string;
@@ -36,19 +40,16 @@ export interface Order {
 }
 
 export const orderService = {
-  // Busca TODOS os pedidos (Painel Admin)
   getAll: async () => {
     const response = await api.get<Order[]>('/orders');
     return response.data;
   },
 
-  // Busca MEUS pedidos (Histórico Pessoal)
   getMyOrders: async () => {
     const response = await api.get<Order[]>('/orders/my-orders');
     return response.data;
   },
 
-  // Atualiza status
   updateStatus: async (id: number, status: string) => {
     await api.patch(`/orders/${id}`, { status });
   },

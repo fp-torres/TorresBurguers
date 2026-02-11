@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Trash2, ArrowRight, MapPin, Store, Plus, Minus, AlertCircle, CreditCard, Clock, Navigation } from 'lucide-react';
+import { 
+  Trash2, ArrowRight, MapPin, Store, Plus, Minus, 
+  AlertCircle, CreditCard, Clock, Navigation, ShieldAlert, LogIn 
+} from 'lucide-react';
 import { useCart, type Addon } from '../../../contexts/CartContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import api from '../../../services/api';
 import AddressModal from '../../../components/AddressModal';
+import ConfirmModal from '../../../components/ConfirmModal'; // <--- IMPORT NOVO
 
-// Endereço Fictício da Loja (Centro do RJ)
+// Endereço Fictício da Loja
 const STORE_ADDRESS = {
   street: "Av. Rio Branco",
   number: "156",
@@ -27,7 +31,7 @@ interface AddressData {
 
 export default function ClientCart() {
   const { cartItems, removeFromCart, updateQuantity, clearCart, cartTotal } = useCart();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth(); // Pegamos user para verificar role
   const navigate = useNavigate();
   
   const [orderType, setOrderType] = useState<'DELIVERY' | 'TAKEOUT'>('TAKEOUT');
@@ -44,14 +48,19 @@ export default function ClientCart() {
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [estimatedTime, setEstimatedTime] = useState('15-20 min');
 
+  // Estado para o Modal de Login
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+  // Verifica se é equipe (Admin, Cozinha, Motoboy)
+  const isStaff = user && user.role !== 'CLIENT';
+
   useEffect(() => {
     if (isAuthenticated) loadAddresses();
   }, [isAuthenticated]);
 
-  // Atualiza Taxa e Tempo quando muda o tipo ou endereço selecionado
   useEffect(() => {
     if (orderType === 'TAKEOUT') {
-      setEstimatedTime('15-20 min'); // Tempo fixo para preparar retirada
+      setEstimatedTime('15-20 min'); 
       setDeliveryFee(0);
     } else if (selectedAddressId) {
       const address = addresses.find(a => a.id === selectedAddressId);
@@ -74,49 +83,37 @@ export default function ClientCart() {
     } catch (error) { console.log("Erro endereço"); }
   }
 
-  // Lógica de Logística (Espelho do Backend)
   function calculateDeliveryLogistics(neighborhood: string) {
     const bairro = neighborhood.toLowerCase();
-    
-    // Centro e Lapa (Muito perto)
-    if (bairro.includes('centro') || bairro.includes('lapa') || bairro.includes('santa teresa')) {
-      return { fee: 5.00, time: '25-35 min' };
-    }
-    // Zona Sul Próxima
-    if (bairro.includes('flamengo') || bairro.includes('botafogo') || bairro.includes('laranjeiras') || bairro.includes('glória')) {
-      return { fee: 7.00, time: '35-45 min' };
-    }
-    // Zona Sul Distante
-    if (bairro.includes('copacabana') || bairro.includes('ipanema') || bairro.includes('leblon')) {
-      return { fee: 10.00, time: '50-60 min' };
-    }
-    // Tijuca/Maracanã
-    if (bairro.includes('tijuca') || bairro.includes('maracanã') || bairro.includes('vila isabel')) {
-      return { fee: 12.00, time: '50-60 min' };
-    }
-    // Barra e Recreio (Longe)
-    if (bairro.includes('barra') || bairro.includes('recreio')) {
-      return { fee: 20.00, time: '60-80 min' };
-    }
-    
-    // Padrão
+    if (bairro.includes('centro') || bairro.includes('lapa') || bairro.includes('santa teresa')) return { fee: 5.00, time: '25-35 min' };
+    if (bairro.includes('flamengo') || bairro.includes('botafogo') || bairro.includes('laranjeiras')) return { fee: 7.00, time: '35-45 min' };
+    if (bairro.includes('copacabana') || bairro.includes('ipanema') || bairro.includes('leblon')) return { fee: 10.00, time: '50-60 min' };
+    if (bairro.includes('tijuca') || bairro.includes('maracanã')) return { fee: 12.00, time: '50-60 min' };
+    if (bairro.includes('barra') || bairro.includes('recreio')) return { fee: 20.00, time: '60-80 min' };
     return { fee: 15.00, time: '45-55 min' }; 
   }
 
   function groupAddons(addons: Addon[]) {
     const groups: Record<string, number> = {};
-    addons.forEach(addon => {
-      groups[addon.name] = (groups[addon.name] || 0) + 1;
-    });
+    addons.forEach(addon => { groups[addon.name] = (groups[addon.name] || 0) + 1; });
     return Object.entries(groups);
   }
 
   async function handleFinishOrder() {
     setErrorMsg('');
-    if (!isAuthenticated) {
-      if(confirm('Faça login para finalizar.')) navigate('/signin');
+    
+    // Bloqueio de Equipe
+    if (isStaff) {
+      setErrorMsg('🚫 Membros da equipe não podem realizar pedidos.');
       return;
     }
+
+    // Validação de Login com Modal
+    if (!isAuthenticated) {
+      setIsLoginModalOpen(true);
+      return;
+    }
+
     if (orderType === 'DELIVERY' && !selectedAddressId) {
       setErrorMsg('⚠️ Selecione um endereço para entrega.');
       return;
@@ -164,6 +161,17 @@ export default function ClientCart() {
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-40">
       <h1 className="text-2xl font-bold text-gray-800">Carrinho</h1>
+
+      {/* ALERTA DE EQUIPE (Somente Staff) */}
+      {isStaff && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 animate-pulse">
+          <ShieldAlert className="text-red-600 mt-0.5" size={20} />
+          <div>
+            <h3 className="font-bold text-red-700">Modo Visualização (Equipe)</h3>
+            <p className="text-sm text-red-600 mt-1">A finalização de pedidos está desabilitada para contas administrativas e operacionais.</p>
+          </div>
+        </div>
+      )}
 
       {/* Lista de Itens */}
       <div className="space-y-4">
@@ -233,10 +241,8 @@ export default function ClientCart() {
           <button onClick={() => setOrderType('DELIVERY')} className={`p-3 rounded-xl border-2 text-sm font-bold transition-all ${orderType === 'DELIVERY' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-100 text-gray-500'}`}>Delivery</button>
         </div>
 
-        {/* LÓGICA DE EXIBIÇÃO: RETIRADA VS DELIVERY */}
         <div className="mt-4 animate-in slide-in-from-top-2">
           {orderType === 'TAKEOUT' ? (
-            // --- CARD DE RETIRADA (ENDEREÇO DA LOJA) ---
             <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 flex items-start gap-3">
               <div className="bg-white p-2 rounded-full text-orange-600 shadow-sm">
                 <Store size={20} />
@@ -257,7 +263,6 @@ export default function ClientCart() {
               </div>
             </div>
           ) : (
-            // --- LISTA DE ENDEREÇOS (DELIVERY) ---
             <>
               {addresses.length > 0 ? (
                 <div className="space-y-3">
@@ -268,7 +273,6 @@ export default function ClientCart() {
                       <div className="text-sm flex-1">
                         <p className="font-bold text-gray-800">{addr.street}, {addr.number}</p>
                         <p className="text-gray-500">{addr.neighborhood} - {addr.city}</p>
-                        {/* Mostra estimativa específica para este endereço */}
                         {selectedAddressId === addr.id && (
                           <p className="text-xs text-blue-600 font-bold mt-1">
                             Tempo estimado: {calculateDeliveryLogistics(addr.neighborhood).time}
@@ -347,15 +351,30 @@ export default function ClientCart() {
               <p className="text-xs text-gray-500 font-medium uppercase">Total a pagar</p>
               <p className="text-2xl font-bold text-gray-800">{totalFinal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
             </div>
-            <button onClick={handleFinishOrder} disabled={loading} className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50">
-              {loading ? 'Processando...' : 'Finalizar Pedido'}
-              {!loading && <ArrowRight size={20} />}
+            
+            <button 
+              onClick={handleFinishOrder} 
+              disabled={loading || Boolean(isStaff)} // Desabilita se for staff
+              className={`px-8 py-3 rounded-xl font-bold transition-colors flex items-center gap-2 ${isStaff ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700 disabled:opacity-50'}`}
+            >
+              {isStaff ? 'Bloqueado (Staff)' : (loading ? 'Processando...' : 'Finalizar Pedido')}
+              {!loading && !isStaff && <ArrowRight size={20} />}
             </button>
           </div>
         </div>
       </div>
 
       <AddressModal isOpen={isAddressModalOpen} onClose={() => setIsAddressModalOpen(false)} onSuccess={loadAddresses}/>
+      
+      {/* MODAL DE LOGIN SUBSTITUINDO O ALERT */}
+      <ConfirmModal 
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onConfirm={() => navigate('/signin')}
+        title="Faça Login"
+        message="Para finalizar seu pedido, você precisa se identificar. Deseja fazer login agora?"
+        confirmLabel="Entrar na Conta"
+      />
     </div>
   );
 }

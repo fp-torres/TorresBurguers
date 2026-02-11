@@ -62,7 +62,8 @@ export class OrdersService {
       order.estimated_delivery_time = '15-20 min';
     }
 
-    const products = await this.productRepository.findBy({ id: In(createOrderDto.items.map(i => i.productId)) });
+    const productIds = createOrderDto.items.map(i => i.productId);
+    const products = await this.productRepository.findBy({ id: In(productIds) });
 
     for (const itemDto of createOrderDto.items) {
       const product = products.find(p => p.id === itemDto.productId);
@@ -72,6 +73,10 @@ export class OrdersService {
       orderItem.product = product;
       orderItem.quantity = itemDto.quantity;
       orderItem.observation = itemDto.observation || '';
+      
+      // Mapeamento Correto
+      orderItem.meat_point = itemDto.meatPoint || null;
+      orderItem.removed_ingredients = itemDto.removedIngredients || []; 
       
       let price = Number(product.price);
       if (itemDto.addonIds?.length) {
@@ -94,6 +99,7 @@ export class OrdersService {
     });
   }
 
+  // --- GARANTINDO QUE O HISTÓRICO TRAGA TUDO ---
   async findMyOrders(userId: number) {
     return this.orderRepository.find({
       relations: ['items', 'items.product', 'items.addons', 'user', 'address'], 
@@ -109,18 +115,14 @@ export class OrdersService {
     });
   }
 
-  // --- NOVO MÉTODO: CANCELAR PEDIDO (Faltava este) ---
   async cancelOrder(orderId: number, user: any) {
     const order = await this.findOne(orderId);
     if (!order) throw new NotFoundException('Pedido não encontrado');
 
-    // 1. Regra de Permissão: Só Admin ou o Dono podem mexer
     if (user.role !== 'ADMIN' && order.user.id !== user.id) {
       throw new ForbiddenException('Você não tem permissão para cancelar este pedido.');
     }
 
-    // 2. Regra de Negócio: Cliente só cancela se estiver PENDENTE
-    // Admin pode cancelar a qualquer momento (por isso a checagem user.role !== 'ADMIN')
     if (user.role !== 'ADMIN' && order.status !== OrderStatus.PENDING) {
       throw new BadRequestException('O pedido já está em preparo e não pode mais ser cancelado pelo cliente.');
     }
@@ -169,27 +171,16 @@ export class OrdersService {
 
     orders.forEach(order => {
       if (order.status === OrderStatus.CANCELED) return;
-
       const dateKey = new Date(order.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-      if (salesByDate[dateKey] !== undefined) {
-        salesByDate[dateKey] += Number(order.total_price);
-      }
-
+      if (salesByDate[dateKey] !== undefined) salesByDate[dateKey] += Number(order.total_price);
       order.items.forEach(item => {
         const prodName = item.product?.name || 'Item Removido';
         topProducts[prodName] = (topProducts[prodName] || 0) + item.quantity;
       });
     });
 
-    const revenueChart = Object.entries(salesByDate)
-      .map(([date, total]) => ({ date, total }))
-      .reverse();
-
-    const productsChart = Object.entries(topProducts)
-      .map(([name, quantity]) => ({ name, quantity }))
-      .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 5);
-
+    const revenueChart = Object.entries(salesByDate).map(([date, total]) => ({ date, total })).reverse();
+    const productsChart = Object.entries(topProducts).map(([name, quantity]) => ({ name, quantity })).sort((a, b) => b.quantity - a.quantity).slice(0, 5);
     return { revenueChart, productsChart };
   }
 }

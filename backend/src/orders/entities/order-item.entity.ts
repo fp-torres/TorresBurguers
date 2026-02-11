@@ -1,7 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinTable, ManyToMany } from 'typeorm';
 import { Order } from './order.entity';
 import { Product } from '../../products/entities/product.entity';
-import { Addon } from '../../products/entities/addon.entity'; // Ajuste o caminho se necessário
+import { Addon } from '../../products/entities/addon.entity';
 
 @Entity('order_items')
 export class OrderItem {
@@ -14,7 +14,6 @@ export class OrderItem {
   @ManyToOne(() => Product)
   product: Product;
 
-  // Adicionais escolhidos pelo cliente neste item
   @ManyToMany(() => Addon)
   @JoinTable({ name: 'order_item_addons' })
   addons: Addon[];
@@ -22,14 +21,15 @@ export class OrderItem {
   @Column('int')
   quantity: number;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true }) // Adicionei type: 'text' por segurança
   observation: string;
 
-  // --- NOVO: Ponto da Carne ---
-  @Column({ nullable: true })
-  meat_point: string; // Ex: "Ao Ponto", "Bem Passado"
+  // --- A CORREÇÃO ESTÁ AQUI ---
+  // O erro ocorria porque o TypeORM lia "string | null" como Objeto.
+  // Agora forçamos ele a entender que é um texto ('varchar' ou 'text').
+  @Column({ type: 'varchar', nullable: true }) 
+  meat_point: string | null; 
 
-  // --- NOVO: Ingredientes Removidos ---
   @Column({ type: 'simple-array', nullable: true })
-  removed_ingredients: string[]; // Ex: ["Cebola", "Picles"]
+  removed_ingredients: string[]; 
 }

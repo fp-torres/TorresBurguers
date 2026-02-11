@@ -1,11 +1,10 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import type { JSX } from 'react/jsx-dev-runtime';
 
-// Layouts
-import DefaultLayout from '../layouts/DefaultLayout'; // Admin
-import ClientLayout from '../layouts/ClientLayout';   // Cliente
+import DefaultLayout from '../layouts/DefaultLayout'; 
+import ClientLayout from '../layouts/ClientLayout';   
 
-// Pages - Admin
+// Pages - Admin/Staff
 import Login from '../pages/Login';
 import Dashboard from '../pages/Dashboard';
 import Products from '../pages/Products'; 
@@ -18,9 +17,8 @@ import ClientCart from '../pages/Client/Cart';
 import ClientLogin from '../pages/Client/Login';
 import ClientSignup from '../pages/Client/Signup';
 import OrderSuccess from '../pages/Client/OrderSuccess';
-import ClientOrders from '../pages/Client/Orders'; // <--- Importa a página de pedidos do cliente
+import ClientOrders from '../pages/Client/Orders'; 
 
-// --- PROTEÇÃO DE ROTA (ADMIN/FUNCIONÁRIO) ---
 function PrivateRoute({ children }: { children: JSX.Element }) {
   const token = localStorage.getItem('torresburgers.token');
   const userStored = localStorage.getItem('torresburgers.user');
@@ -31,6 +29,7 @@ function PrivateRoute({ children }: { children: JSX.Element }) {
 
   try {
     const user = JSON.parse(userStored);
+    // Se for CLIENTE tentando acessar área administrativa, manda pra Home
     if (user.role === 'CLIENT') {
       return <Navigate to="/" />;
     }
@@ -46,34 +45,20 @@ function PrivateRoute({ children }: { children: JSX.Element }) {
 export default function AppRoutes() {
   return (
     <Routes>
-      
-      {/* =========================================================
-          ÁREA PÚBLICA (CLIENTE)
-      ========================================================= */}
       <Route path="/" element={<ClientLayout />}>
         <Route index element={<ClientHome />} />
         <Route path="cart" element={<ClientCart />} />
         <Route path="order-success" element={<OrderSuccess />} />
-        <Route path="my-orders" element={<ClientOrders />} /> {/* <--- ROTA CONFIRMADA */}
+        <Route path="my-orders" element={<ClientOrders />} />
       </Route>
 
-      {/* Auth do Cliente (Tela Cheia) */}
       <Route path="/signin" element={<ClientLogin />} />
       <Route path="/signup" element={<ClientSignup />} />
 
-
-      {/* =========================================================
-          ÁREA ADMINISTRATIVA (PROTEGIDA)
-      ========================================================= */}
-      
-      {/* Login do Admin */}
+      {/* Login Corporativo (Admin, Cozinha, Motoboy) */}
       <Route path="/login" element={<Login />} />
 
-      <Route element={
-        <PrivateRoute>
-          <DefaultLayout />
-        </PrivateRoute>
-      }>
+      <Route element={<PrivateRoute><DefaultLayout /></PrivateRoute>}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/products" element={<Products />} /> 
         <Route path="/orders" element={<Orders />} /> 
@@ -81,7 +66,6 @@ export default function AppRoutes() {
       </Route>
 
       <Route path="/admin" element={<Navigate to="/dashboard" />} />
-
     </Routes>
   );
 }

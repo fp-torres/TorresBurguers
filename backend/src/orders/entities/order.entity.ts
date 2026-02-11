@@ -7,11 +7,12 @@ import { Address } from '../../addresses/entities/address.entity';
 import { OrderItem } from './order-item.entity';
 
 export enum OrderStatus {
-  PENDING = 'PENDING',       
-  PREPARING = 'PREPARING',   
-  DELIVERING = 'DELIVERING', 
-  DONE = 'DONE',             
-  CANCELED = 'CANCELED'      
+  PENDING = 'PENDING',               // Aguardando Cozinha
+  PREPARING = 'PREPARING',           // Em preparo (Cozinha)
+  READY_FOR_PICKUP = 'READY_FOR_PICKUP', // Pronto (Aguardando Motoboy) <--- NOVO
+  DELIVERING = 'DELIVERING',         // Saiu para entrega (Motoboy)
+  DONE = 'DONE',                     // Entregue/Finalizado
+  CANCELED = 'CANCELED'              // Cancelado
 }
 
 export enum OrderType {
@@ -60,7 +61,6 @@ export class Order {
   @Column()
   payment_method: string; 
 
-  // NOVO: Tempo estimado em minutos (Ex: "45-55")
   @Column({ nullable: true })
   estimated_delivery_time: string;
 
