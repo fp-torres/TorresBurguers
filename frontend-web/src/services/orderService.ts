@@ -36,11 +36,19 @@ export interface Order {
 }
 
 export const orderService = {
+  // Busca TODOS os pedidos (Exclusivo Painel Admin)
   getAll: async () => {
     const response = await api.get<Order[]>('/orders');
     return response.data;
   },
 
+  // Busca APENAS os pedidos do usuário logado (Histórico Pessoal)
+  getMyOrders: async () => {
+    const response = await api.get<Order[]>('/orders/my-orders');
+    return response.data;
+  },
+
+  // Atualiza o status do pedido
   updateStatus: async (id: number, status: string) => {
     await api.patch(`/orders/${id}`, { status });
   },
@@ -50,7 +58,6 @@ export const orderService = {
     return response.data;
   },
 
-  // --- NOVO ---
   getCharts: async () => {
     const response = await api.get('/orders/charts');
     return response.data;

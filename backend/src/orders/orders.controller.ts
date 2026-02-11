@@ -1,6 +1,6 @@
 import { 
   Controller, Get, Post, Body, Patch, Param, 
-  UseGuards, Request, ParseIntPipe 
+  UseGuards, Request, ParseIntPipe, ForbiddenException 
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -16,7 +16,20 @@ export class OrdersController {
   @Post()
   @UseGuards(AuthGuard('jwt')) 
   create(@Body() createOrderDto: CreateOrderDto, @Request() req) {
+    // --- TRAVA DE SEGURANÇA ---
+    // Impede que Admin ou Funcionário criem pedidos para si mesmos
+    if (req.user.role !== 'CLIENT') {
+      throw new ForbiddenException('Administradores e Funcionários não podem realizar pedidos pelo sistema.');
+    }
+
     return this.ordersService.create(createOrderDto, req.user.id);
+  }
+
+  // --- ROTA DEDICADA: HISTÓRICO PESSOAL (BLINDADA) ---
+  @Get('my-orders')
+  @UseGuards(AuthGuard('jwt'))
+  findMyOrders(@Request() req) {
+    return this.ordersService.findMyOrders(req.user.id);
   }
 
   // --- DADOS PARA O DASHBOARD (GRÁFICOS) ---
@@ -34,10 +47,12 @@ export class OrdersController {
     return this.ordersService.getDashboardSummary();
   }
 
+  // --- ROTA GERAL (DASHBOARD DO ADMIN) ---
   @Get()
-  @UseGuards(AuthGuard('jwt'))
-  findAll(@Request() req) {
-    return this.ordersService.findAll(req.user);
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN') 
+  findAll() {
+    return this.ordersService.findAll();
   }
 
   @Get(':id')

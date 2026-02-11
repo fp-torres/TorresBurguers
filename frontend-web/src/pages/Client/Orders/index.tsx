@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Clock, Package, Truck, CheckCircle, XCircle, 
-  MapPin, ShoppingBag, ChevronDown, ChevronUp 
+  MapPin, ShoppingBag, ChevronDown, ChevronUp, LayoutDashboard 
 } from 'lucide-react';
 import { orderService, type Order } from '../../../services/orderService';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -11,20 +11,47 @@ export default function ClientOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
-  const { isAuthenticated } = useAuth();
+  
+  const { isAuthenticated, user } = useAuth(); // Pegamos o user aqui
+
+  // --- BLOQUEIO VISUAL PARA EQUIPE ---
+  // Se for Admin ou Funcionário, não mostra histórico de compras (pois eles não compram)
+  if (user?.role === 'ADMIN' || user?.role === 'EMPLOYEE') {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center space-y-6 animate-in fade-in">
+        <div className="bg-gray-100 p-6 rounded-full text-gray-500">
+          <LayoutDashboard size={48} />
+        </div>
+        <div className="max-w-md px-4">
+          <h2 className="text-xl font-bold text-gray-800">Visualização de Equipe</h2>
+          <p className="text-gray-500 mt-2">
+            Como membro da equipe, você não possui histórico de compras pessoal. 
+            Para gerenciar os pedidos da loja, acesse o Painel Administrativo.
+          </p>
+        </div>
+        <Link 
+          to="/dashboard" 
+          className="bg-gray-800 text-white px-6 py-3 rounded-xl font-bold hover:bg-gray-900 transition-colors flex items-center gap-2"
+        >
+          <LayoutDashboard size={18} />
+          Ir para o Painel
+        </Link>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (isAuthenticated) {
       loadOrders();
-      const interval = setInterval(loadOrders, 10000); // Atualiza a cada 10s
+      const interval = setInterval(loadOrders, 10000); 
       return () => clearInterval(interval);
     }
   }, [isAuthenticated]);
 
   async function loadOrders() {
     try {
-      const data = await orderService.getAll();
-      // Ordena do mais recente para o mais antigo
+      // --- CORREÇÃO: Usa getMyOrders para trazer SÓ os pedidos deste cliente ---
+      const data = await orderService.getMyOrders();
       setOrders(data.sort((a, b) => b.id - a.id));
     } catch (error) {
       console.error("Erro ao carregar histórico", error);
@@ -33,7 +60,7 @@ export default function ClientOrders() {
     }
   }
 
-  // Mapa de Status (Backend -> Frontend Visual)
+  // Mapa de Status
   const statusMap: Record<string, { label: string, color: string, icon: any }> = {
     'PENDING': { label: 'Aguardando Confirmação', color: 'text-yellow-600 bg-yellow-50 border-yellow-200', icon: Clock },
     'PREPARING': { label: 'Preparando seu Pedido', color: 'text-blue-600 bg-blue-50 border-blue-200', icon: Package },
@@ -71,7 +98,6 @@ export default function ClientOrders() {
           return (
             <div key={order.id} className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all">
               
-              {/* Resumo do Card (Sempre Visível) */}
               <div 
                 onClick={() => setExpandedOrderId(isExpanded ? null : order.id)}
                 className="p-4 cursor-pointer flex justify-between items-center"
@@ -97,21 +123,15 @@ export default function ClientOrders() {
                 </div>
               </div>
 
-              {/* Detalhes (Expansível) */}
               {isExpanded && (
                 <div className="bg-gray-50 p-4 border-t border-gray-100 space-y-4 animate-in slide-in-from-top-2">
-                  
-                  {/* Lista de Itens */}
                   <div className="space-y-2">
                     <p className="text-xs font-bold text-gray-500 uppercase">Itens</p>
                     {order.items.map(item => (
                       <div key={item.id} className="flex justify-between text-sm">
                         <div className="text-gray-700">
                           <span className="font-bold mr-2">{item.quantity}x</span>
-                          {/* BLINDAGEM: Evita crash se produto foi deletado */}
                           {item.product?.name || <span className="italic text-gray-400">Item indisponível</span>}
-                          
-                          {/* Adicionais */}
                           {item.addons?.length > 0 && (
                             <div className="ml-6 text-xs text-gray-500">
                               + {item.addons.map(a => a.name).join(', ')}
@@ -122,7 +142,6 @@ export default function ClientOrders() {
                     ))}
                   </div>
 
-                  {/* Endereço ou Retirada */}
                   <div className="pt-2 border-t border-gray-200">
                     {isDelivery ? (
                       <div className="flex items-start gap-2 text-sm text-gray-600">
@@ -140,7 +159,6 @@ export default function ClientOrders() {
                     )}
                   </div>
 
-                  {/* Pagamento */}
                   <div className="pt-2 border-t border-gray-200 flex justify-between text-sm">
                     <span className="text-gray-500">Pagamento:</span>
                     <span className="font-bold text-gray-700">

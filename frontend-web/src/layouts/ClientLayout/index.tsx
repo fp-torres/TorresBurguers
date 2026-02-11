@@ -8,103 +8,75 @@ import { StoreStatusBadge } from '../../components/StoreStatusBadge';
 export default function ClientLayout() {
   const { cartCount } = useCart();
   const { user, signOut } = useAuth();
-
-  // Verifica se é equipe (para mostrar botão de dashboard)
   const isStaff = user?.role === 'ADMIN' || user?.role === 'EMPLOYEE';
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
       <header className="bg-white shadow-sm sticky top-0 z-50 h-16 px-4 lg:px-8 flex items-center justify-between border-b border-gray-100">
         
-        {/* LADO ESQUERDO: Logo + Status */}
-        <div className="flex items-center gap-4 sm:gap-6">
+        {/* LADO ESQUERDO */}
+        <div className="flex items-center gap-4">
           <Link to="/" className="flex items-center gap-2 group">
             <div className="bg-orange-600 text-white p-1.5 rounded-lg group-hover:bg-orange-700 transition-colors">
               <Menu size={20} />
             </div>
-            <span className="font-bold text-gray-800 text-lg tracking-tight">
+            <span className="font-bold text-gray-800 text-lg tracking-tight hidden min-[350px]:inline">
               Torres<span className="text-orange-600">Burgers</span>
             </span>
           </Link>
 
-          <div className="hidden min-[350px]:block">
+          {/* STATUS + HORÁRIO */}
+          <div className="hidden md:flex items-center gap-3 pl-4 border-l border-gray-200 h-8">
              <StoreStatusBadge />
+             <div className="flex flex-col leading-none">
+               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Funcionamento</span>
+               <span className="text-xs font-bold text-gray-700 flex items-center gap-1">
+                 <Clock size={10} className="text-orange-500"/> Ter a Dom: 12h às 04h
+               </span>
+             </div>
           </div>
         </div>
 
-        {/* LADO DIREITO: Ações */}
-        <div className="flex items-center gap-3 sm:gap-4">
+        {/* LADO DIREITO */}
+        <div className="flex items-center gap-3">
           
-          {/* Painel Admin (Só Equipe) */}
+          {/* Horário Mobile (Ícone apenas se pouco espaço) */}
+          <div className="md:hidden">
+            <StoreStatusBadge />
+          </div>
+
           {isStaff ? (
-            <Link 
-              to="/dashboard" 
-              className="flex items-center gap-1 text-xs font-bold text-white bg-gray-800 hover:bg-gray-900 transition-colors px-3 py-1.5 rounded-full"
-            >
-              <LayoutDashboard size={14} />
-              <span className="hidden sm:inline">Painel Admin</span>
+            <Link to="/dashboard" className="hidden sm:flex items-center gap-1 text-xs font-bold text-white bg-gray-800 px-3 py-1.5 rounded-full">
+              <LayoutDashboard size={14} /> Painel
             </Link>
-          ) : (
-            !user && (
-              <Link 
-                to="/login" 
-                className="hidden md:flex items-center gap-1 text-xs font-bold text-gray-400 hover:text-orange-600 transition-colors border border-gray-200 px-3 py-1.5 rounded-full"
-              >
-                <Briefcase size={14} />
-                <span>Sou Funcionário</span>
-              </Link>
-            )
+          ) : !user && (
+            <Link to="/login" className="hidden md:flex items-center gap-1 text-xs font-bold text-gray-400 border border-gray-200 px-3 py-1.5 rounded-full hover:text-orange-600">
+              <Briefcase size={14} /> Equipe
+            </Link>
           )}
 
-          {/* Botão Meus Pedidos (Só Logado) - CORRIGIDO AQUI */}
           {user && (
-            <Link 
-              to="/my-orders" // <--- ROTA CORRETA
-              className="p-2 text-gray-600 hover:text-orange-600 transition-colors bg-gray-50 rounded-full hover:bg-orange-50"
-              title="Meus Pedidos"
-            >
+            <Link to="/my-orders" className="p-2 text-gray-600 hover:text-orange-600 bg-gray-50 rounded-full">
               <Clock size={20} />
             </Link>
           )}
 
-          {/* Carrinho */}
-          <Link to="/cart" className="relative p-2 text-gray-600 hover:text-orange-600 transition-colors bg-orange-50 rounded-full hover:bg-orange-100">
+          <Link to="/cart" className="relative p-2 text-gray-600 hover:text-orange-600 bg-orange-50 rounded-full">
             <ShoppingBag size={20} />
             {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-white animate-in zoom-in">
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full">
                 {cartCount}
               </span>
             )}
           </Link>
 
-          {/* Perfil / Login */}
           {user ? (
-            <div className="flex items-center gap-2 pl-2 sm:pl-4 border-l border-gray-100 animate-in fade-in">
-              <div className="text-right hidden sm:block">
-                <p className="text-[10px] uppercase text-gray-400 font-bold tracking-wide">Olá,</p>
-                <p className="text-sm font-bold text-gray-800 leading-none max-w-[100px] truncate">
-                  {user.name ? user.name.split(' ')[0] : 'Cliente'}
-                </p>
-              </div>
-
-              <button 
-                onClick={signOut}
-                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                title="Sair"
-              >
-                <LogOut size={20} />
-              </button>
-            </div>
+            <button onClick={signOut} className="p-2 text-gray-400 hover:text-red-500"><LogOut size={20} /></button>
           ) : (
-            <Link 
-              to="/signin" 
-              className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 sm:px-4 sm:py-2 rounded-xl font-bold text-sm transition-colors"
-            >
-              <User size={18} />
-              <span className="hidden sm:inline">Entrar</span>
+            <Link to="/signin" className="flex items-center gap-2 bg-gray-100 text-gray-700 px-3 py-2 rounded-xl font-bold text-sm">
+              <User size={18} /> <span className="hidden sm:inline">Entrar</span>
             </Link>
           )}
-
         </div>
       </header>
       

@@ -113,31 +113,36 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* GRÁFICO 1: VENDAS ÚLTIMOS 7 DIAS */}
-        {/* Adicionei 'min-w-0' no container pai para evitar colapso no Grid */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 min-w-0">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-bold text-gray-800 flex items-center gap-2"><TrendingUp size={20} className="text-orange-600"/> Vendas (7 dias)</h3>
           </div>
-          {/* Defini altura fixa no estilo e removi classes conflitantes */}
-          <div style={{ width: '100%', height: 300 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartsData.revenueChart}>
-                <defs>
-                  <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ea580c" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="#ea580c" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} tickFormatter={(value) => `R$${value}`} />
-                <Tooltip 
-                  formatter={(value: any) => [Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 'Vendas']}
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                />
-                <Area type="monotone" dataKey="total" stroke="#ea580c" strokeWidth={3} fillOpacity={1} fill="url(#colorTotal)" />
-              </AreaChart>
-            </ResponsiveContainer>
+          
+          <div className="h-[300px] w-full">
+            {loading ? (
+              <div className="h-full w-full flex items-center justify-center text-gray-400">
+                <Loader2 className="animate-spin" size={32} />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                <AreaChart data={chartsData.revenueChart}>
+                  <defs>
+                    <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ea580c" stopOpacity={0.2}/>
+                      <stop offset="95%" stopColor="#ea580c" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                  <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} tickFormatter={(value) => `R$${value}`} />
+                  <Tooltip 
+                    formatter={(value: any) => [Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 'Vendas']}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  />
+                  <Area type="monotone" dataKey="total" stroke="#ea580c" strokeWidth={3} fillOpacity={1} fill="url(#colorTotal)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -146,21 +151,27 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-bold text-gray-800 flex items-center gap-2"><PieIcon size={20} className="text-blue-600"/> Top 5 Produtos</h3>
           </div>
-          {/* Altura fixa aqui também */}
-          <div style={{ width: '100%', height: 300 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartsData.productsChart} layout="vertical" margin={{ left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-                <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} tick={{fill: '#4b5563', fontSize: 11, fontWeight: 'bold'}} />
-                <Tooltip cursor={{fill: '#f9fafb'}} contentStyle={{ borderRadius: '8px' }} />
-                <Bar dataKey="quantity" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20}>
-                  {chartsData.productsChart.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={index === 0 ? '#ea580c' : '#3b82f6'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          
+          <div className="h-[300px] w-full">
+            {loading ? (
+              <div className="h-full w-full flex items-center justify-center text-gray-400">
+                <Loader2 className="animate-spin" size={32} />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                <BarChart data={chartsData.productsChart} layout="vertical" margin={{ left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} tick={{fill: '#4b5563', fontSize: 11, fontWeight: 'bold'}} />
+                  <Tooltip cursor={{fill: '#f9fafb'}} contentStyle={{ borderRadius: '8px' }} />
+                  <Bar dataKey="quantity" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20}>
+                    {chartsData.productsChart.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={index === 0 ? '#ea580c' : '#3b82f6'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 

@@ -20,6 +20,7 @@ export interface Product {
 }
 
 export const productService = {
+  // Busca todos os produtos do cardápio
   getAll: async () => {
     const response = await api.get<Product[]>('/products');
     return response.data;
@@ -30,12 +31,10 @@ export const productService = {
     return response.data;
   },
 
-  // Soft delete (Arquivar)
   delete: async (id: number) => {
     await api.delete(`/products/${id}`);
   },
 
-  // Hard delete (Permanente)
   deletePermanent: async (id: number) => {
     await api.delete(`/products/${id}/permanent`);
   },
@@ -47,7 +46,6 @@ export const productService = {
     return response.data;
   },
 
-  // Atualizar (PUT/PATCH)
   update: async (id: number, data: FormData) => {
     const response = await api.patch(`/products/${id}`, data, {
       headers: { 'Content-Type': 'multipart/form-data' }
