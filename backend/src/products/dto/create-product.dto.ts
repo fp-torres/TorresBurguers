@@ -1,5 +1,5 @@
 import { IsString, IsNotEmpty, IsNumber, IsEnum, IsBoolean, IsOptional, Min, IsArray } from 'class-validator';
-import { Type, Transform } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import { ProductCategory } from '../entities/product.entity';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -15,7 +15,10 @@ export class CreateProductDto {
   description: string;
 
   @ApiProperty({ example: 29.90 })
-  @Transform(({ value }) => parseFloat(String(value).replace(',', '.')))
+  @Transform(({ value }) => {
+    // Garante que converte "29,90" ou "29.90" para número 29.9
+    return parseFloat(String(value).replace(',', '.'));
+  })
   @IsNumber()
   @Min(0)
   price: number;
@@ -27,7 +30,10 @@ export class CreateProductDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
-  @Transform(({ value }) => value ? parseFloat(String(value).replace(',', '.')) : undefined)
+  @Transform(({ value }) => {
+    if (!value) return undefined;
+    return parseFloat(String(value).replace(',', '.'));
+  })
   @IsNumber()
   @Min(0)
   promotion_price?: number;
@@ -51,22 +57,33 @@ export class CreateProductDto {
   @IsBoolean()
   available?: boolean;
 
-  // --- TRANSFORMAÇÃO DE INGREDIENTES ---
+  // --- INGREDIENTES (String única -> Array) ---
   @ApiProperty({ required: false })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   @Transform(({ value }) => {
-    // Se vier como string única (ex: "Alface, Tomate"), transforma em array
+    if (!value) return [];
+    // Se vier "Alface, Tomate", vira ["Alface", "Tomate"]
     if (typeof value === 'string') {
       return value.split(',').map((v: string) => v.trim()).filter((v: string) => v.length > 0);
     }
+    // Se já for array, retorna ele mesmo
     return value;
   })
   ingredients?: string[];
 
-  @ApiProperty({ required: false })
+  // --- ADICIONAIS (CORREÇÃO DO ERRO 400) ---
+  @ApiProperty({ required: false, type: [Number] })
   @IsOptional()
   @IsArray()
+  @IsNumber({}, { each: true }) // Valida se cada item é número
+  @Transform(({ value }) => {
+    if (!value) return [];
+    // Se vier um único valor (ex: "1"), transforma em ["1"]
+    const values = Array.isArray(value) ? value : [value];
+    // Converte tudo para número (ex: ["1", "2"] -> [1, 2])
+    return values.map((v: any) => Number(v));
+  })
   allowed_addons_ids?: number[];
 }
