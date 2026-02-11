@@ -6,17 +6,23 @@ export class Addon {
   id: number;
 
   @Column()
-  name: string; // Ex: Bacon
+  name: string; 
 
   @Column('text', { nullable: true })
-  description: string; // Ex: Fatias crocantes
+  description: string;
 
+  // Use 'numeric' ou 'decimal' dependendo do seu banco, garantindo precisão
   @Column({ type: 'decimal', precision: 10, scale: 2 })
-  price: number; // Ex: 4.00
+  price: number; 
 
   @Column({ nullable: true })
-  image: string; // Foto do adicional (opcional)
+  image: string; 
 
   @Column({ default: true })
   available: boolean;
+
+  // --- NOVO CAMPO: Categoria do Adicional ---
+  // Ex: 'hamburgueres', 'bebidas', 'geral'
+  @Column({ default: 'geral' })
+  category: string; 
 }

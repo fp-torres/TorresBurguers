@@ -1,6 +1,5 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
 import { ProductsService } from './products.service';
-import { Addon } from './entities/addon.entity';
 
 @Controller('addons')
 export class AddonsController {
@@ -12,7 +11,20 @@ export class AddonsController {
   }
 
   @Post()
-  create(@Body() createAddonDto: { name: string; price: number; description?: string }) {
-    return this.productsService.createAddon(createAddonDto);
+  create(@Body() body: { name: string; price: number; category?: string }) {
+    return this.productsService.createAddon(body);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id', ParseIntPipe) id: number, 
+    @Body() body: { name?: string; price?: number; category?: string }
+  ) {
+    return this.productsService.updateAddon(id, body);
+  }
+
+  @Delete(':id')
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.productsService.deleteAddon(id);
   }
 }

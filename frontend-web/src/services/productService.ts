@@ -5,6 +5,7 @@ export interface Addon {
   name: string;
   price: number | string;
   description?: string;
+  category?: string; // Novo campo
 }
 
 export interface Product {
@@ -20,36 +21,44 @@ export interface Product {
 }
 
 export const productService = {
-  // Busca todos os produtos do cardápio
+  // ... (MÉTODOS DE PRODUTOS IGUAIS) ...
   getAll: async () => {
     const response = await api.get<Product[]>('/products');
     return response.data;
   },
 
-  getAllAddons: async () => {
-    const response = await api.get<Addon[]>('/addons'); 
+  create: async (data: FormData) => {
+    const response = await api.post('/products', data, { headers: { 'Content-Type': 'multipart/form-data' } });
     return response.data;
   },
 
-  delete: async (id: number) => {
-    await api.delete(`/products/${id}`);
+  update: async (id: number, data: FormData) => {
+    const response = await api.patch(`/products/${id}`, data, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return response.data;
   },
 
   deletePermanent: async (id: number) => {
     await api.delete(`/products/${id}/permanent`);
   },
 
-  create: async (data: FormData) => {
-    const response = await api.post('/products', data, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
+  // --- MÉTODOS DE ADICIONAIS ---
+  
+  getAllAddons: async () => {
+    const response = await api.get<Addon[]>('/addons'); 
     return response.data;
   },
 
-  update: async (id: number, data: FormData) => {
-    const response = await api.patch(`/products/${id}`, data, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
+  createAddon: async (data: { name: string, price: number, category: string }) => {
+    const response = await api.post('/addons', data);
     return response.data;
+  },
+
+  updateAddon: async (id: number, data: { name?: string, price?: number, category?: string }) => {
+    const response = await api.patch(`/addons/${id}`, data);
+    return response.data;
+  },
+
+  deleteAddon: async (id: number) => {
+    await api.delete(`/addons/${id}`);
   }
 };

@@ -15,6 +15,8 @@ export class ProductsService {
     private addonRepository: Repository<Addon>,
   ) {}
 
+  // ... (MÉTODOS DE PRODUTO MANTIDOS IGUAIS) ...
+
   async create(createProductDto: CreateProductDto) {
     const product = this.productRepository.create(createProductDto);
     if (createProductDto.allowed_addons_ids?.length) {
@@ -31,50 +33,53 @@ export class ProductsService {
   }
 
   findOne(id: number) {
-    return this.productRepository.findOne({ 
-      where: { id },
-      relations: ['allowed_addons'] 
-    });
+    return this.productRepository.findOne({ where: { id }, relations: ['allowed_addons'] });
   }
 
   async update(id: number, updateProductDto: UpdateProductDto) {
     const product = await this.findOne(id);
     if (!product) throw new NotFoundException('Produto não encontrado');
 
-    // Limpa campos undefined para não sobrescrever
+    // Remove undefined
     Object.keys(updateProductDto).forEach(key => updateProductDto[key] === undefined && delete updateProductDto[key]);
 
-    // Mescla dados
     this.productRepository.merge(product, updateProductDto);
 
-    // Atualiza adicionais se necessário
     if (updateProductDto.allowed_addons_ids) {
-      product.allowed_addons = await this.addonRepository.findBy({
-        id: In(updateProductDto.allowed_addons_ids),
-      });
+      product.allowed_addons = await this.addonRepository.findBy({ id: In(updateProductDto.allowed_addons_ids) });
     }
 
     return this.productRepository.save(product);
   }
 
-  // Soft Delete: Apenas esconde
   async remove(id: number) {
     return await this.productRepository.update(id, { available: false });
   }
 
-  // Hard Delete: Tenta apagar do banco
   async removePermanent(id: number) {
     try {
-      // Tenta apagar fisicamente
       return await this.productRepository.delete(id);
     } catch (error) {
-      // Se der erro (ex: tem pedidos vinculados), apenas desativa
-      console.log(`Não foi possível excluir o produto ${id} (Vendas vinculadas). Arquivando.`);
       return await this.productRepository.update(id, { available: false });
     }
   }
 
-  // --- ADICIONAIS ---
-  findAllAddons() { return this.addonRepository.find({ order: { name: 'ASC' } }); }
-  createAddon(data: any) { return this.addonRepository.save(this.addonRepository.create(data)); }
+  // --- MÉTODOS DE ADICIONAIS (NOVOS E ATUALIZADOS) ---
+
+  findAllAddons() { 
+    return this.addonRepository.find({ order: { category: 'ASC', name: 'ASC' } }); 
+  }
+
+  createAddon(data: any) { 
+    return this.addonRepository.save(this.addonRepository.create(data)); 
+  }
+
+  async updateAddon(id: number, data: any) {
+    await this.addonRepository.update(id, data);
+    return this.addonRepository.findOneBy({ id });
+  }
+
+  async deleteAddon(id: number) {
+    return this.addonRepository.delete(id);
+  }
 }
