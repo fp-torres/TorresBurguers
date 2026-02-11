@@ -16,23 +16,18 @@ export class OrdersController {
   @Post()
   @UseGuards(AuthGuard('jwt')) 
   create(@Body() createOrderDto: CreateOrderDto, @Request() req) {
-    // --- TRAVA DE SEGURANÇA ---
-    // Impede que Admin ou Funcionário criem pedidos para si mesmos
     if (req.user.role !== 'CLIENT') {
       throw new ForbiddenException('Administradores e Funcionários não podem realizar pedidos pelo sistema.');
     }
-
     return this.ordersService.create(createOrderDto, req.user.id);
   }
 
-  // --- ROTA DEDICADA: HISTÓRICO PESSOAL (BLINDADA) ---
   @Get('my-orders')
   @UseGuards(AuthGuard('jwt'))
   findMyOrders(@Request() req) {
     return this.ordersService.findMyOrders(req.user.id);
   }
 
-  // --- DADOS PARA O DASHBOARD (GRÁFICOS) ---
   @Get('charts')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
@@ -47,7 +42,6 @@ export class OrdersController {
     return this.ordersService.getDashboardSummary();
   }
 
-  // --- ROTA GERAL (DASHBOARD DO ADMIN) ---
   @Get()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN') 
@@ -59,6 +53,14 @@ export class OrdersController {
   @UseGuards(AuthGuard('jwt'))
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.ordersService.findOne(id);
+  }
+
+  // --- NOVA ROTA: CANCELAR PEDIDO (CLIENTE) ---
+  @Patch(':id/cancel')
+  @UseGuards(AuthGuard('jwt'))
+  async cancelMyOrder(@Param('id', ParseIntPipe) id: number, @Request() req) {
+    // Permite cancelar se for o dono do pedido OU se for Admin
+    return this.ordersService.cancelOrder(id, req.user);
   }
 
   @Patch(':id')

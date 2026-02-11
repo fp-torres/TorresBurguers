@@ -21,27 +21,27 @@ export default function DefaultLayout() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Sidebar Responsiva (Passamos o estado para ela) */}
       <Sidebar 
         isOpen={isSidebarOpen} 
         onClose={() => setSidebarOpen(false)} 
       />
       
-      <main className="flex-1 flex flex-col min-w-0 transition-all duration-300">
+      <div className="flex-1 flex flex-col min-w-0 transition-all duration-300 relative">
         {/* Header Sticky (Fixo no topo) */}
-        <header className="h-20 bg-white shadow-sm flex items-center justify-between px-4 lg:px-8 sticky top-0 z-30">
+        <header className="h-16 lg:h-20 bg-white shadow-sm flex items-center justify-between px-4 lg:px-8 shrink-0 z-20">
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 lg:gap-4">
             {/* Botão Menu Hambúrguer (Só aparece no mobile: lg:hidden) */}
             <button 
               onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              className="lg:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <Menu size={24} />
             </button>
             
-            <h2 className="text-xl lg:text-2xl font-bold text-gray-800 truncate">
+            <h2 className="text-lg lg:text-2xl font-bold text-gray-800 truncate">
               Painel <span className="hidden sm:inline">Administrativo</span>
             </h2>
           </div>
@@ -51,17 +51,17 @@ export default function DefaultLayout() {
               <p className="text-sm font-bold text-gray-900">{user.name}</p>
               <p className="text-xs text-gray-500">{user.email}</p>
             </div>
-            <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center text-orange-600 font-bold border border-orange-200">
+            <div className="w-9 h-9 lg:w-10 lg:h-10 bg-orange-100 rounded-full flex items-center justify-center text-orange-600 font-bold border border-orange-200 text-sm lg:text-base">
               {user.name ? user.name[0].toUpperCase() : 'A'}
             </div>
           </div>
         </header>
 
-        {/* Conteúdo Principal com padding responsivo */}
-        <div className="p-4 lg:p-8 overflow-auto flex-1">
+        {/* Conteúdo Principal com Scroll Próprio */}
+        <main className="flex-1 overflow-auto p-4 lg:p-8 relative">
           <Outlet />
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Mail, Loader2, ArrowLeft, HelpCircle } from 'lucide-react';
 import api from '../../../services/api';
 import { useAuth } from '../../../contexts/AuthContext';
-import { useCart } from '../../../contexts/CartContext'; // <--- Importamos o carrinho
+import { useCart } from '../../../contexts/CartContext'; 
+import toast from 'react-hot-toast'; // NOVO
 
 export default function ClientLogin() {
   const [email, setEmail] = useState('');
@@ -12,9 +13,8 @@ export default function ClientLogin() {
   const navigate = useNavigate();
   
   const { signIn } = useAuth();
-  const { cartItems } = useCart(); // <--- Para checar se tem itens
+  const { cartItems } = useCart(); 
 
-  // Função auxiliar para decodificar JWT
   function parseJwt(token: string) {
     try {
       const base64Url = token.split('.')[1];
@@ -23,9 +23,7 @@ export default function ClientLogin() {
           return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
       }).join(''));
       return JSON.parse(jsonPayload);
-    } catch (e) {
-      return null;
-    }
+    } catch (e) { return null; }
   }
 
   async function handleLogin(e: React.FormEvent) {
@@ -51,21 +49,19 @@ export default function ClientLogin() {
 
       if (access_token && userData) {
         signIn(access_token, userData);
+        toast.success(`Bem-vindo, ${userData.name.split(' ')[0]}!`); // NOVO
 
-        // LÓGICA INTELIGENTE:
-        // Se tem coisa no carrinho, vai pro carrinho finalizar.
-        // Se não tem nada, vai pra Home escolher lanche.
         if (cartItems.length > 0) {
           navigate('/cart');
         } else {
           navigate('/');
         }
       } else {
-        alert("Erro ao recuperar dados do usuário.");
+        toast.error("Erro ao recuperar dados do usuário."); // NOVO
       }
 
     } catch (error) {
-      alert('Email ou senha inválidos');
+      toast.error('Email ou senha inválidos.'); // NOVO
     } finally {
       setLoading(false);
     }
@@ -104,7 +100,11 @@ export default function ClientLogin() {
               <input required type="password" value={password} onChange={e => setPassword(e.target.value)} className="pl-10 block w-full border-gray-300 rounded-xl border p-3 focus:ring-orange-500 focus:border-orange-500" placeholder="******" />
             </div>
             <div className="flex justify-end mt-1">
-              <a href="#" onClick={(e) => {e.preventDefault(); alert("Entre em contato com o suporte ou envie email para contato@torresburgers.com")}} className="text-sm text-orange-600 hover:text-orange-800 font-medium">
+              <a 
+                href="#" 
+                onClick={(e) => { e.preventDefault(); toast('Envie um e-mail para contato@torresburgers.com', { icon: '📧' }); }} 
+                className="text-sm text-orange-600 hover:text-orange-800 font-medium"
+              >
                 Esqueceu a senha?
               </a>
             </div>

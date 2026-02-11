@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, MoreThanOrEqual } from 'typeorm';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -87,7 +87,6 @@ export class OrdersService {
     return this.orderRepository.save(order);
   }
 
-  // --- LISTA TUDO (USO EXCLUSIVO DO ADMIN NO DASHBOARD) ---
   async findAll() {
     return this.orderRepository.find({
       relations: ['items', 'items.product', 'items.addons', 'user', 'address'], 
@@ -95,11 +94,10 @@ export class OrdersService {
     });
   }
 
-  // --- LISTA APENAS DO USUÁRIO (HISTÓRICO PESSOAL) ---
   async findMyOrders(userId: number) {
     return this.orderRepository.find({
       relations: ['items', 'items.product', 'items.addons', 'user', 'address'], 
-      where: { user: { id: userId } }, // <--- FILTRO OBRIGATÓRIO
+      where: { user: { id: userId } }, 
       order: { created_at: 'DESC' } as any,
     });
   }
@@ -109,6 +107,26 @@ export class OrdersService {
       where: { id },
       relations: ['items', 'items.product', 'items.addons', 'user', 'address'],
     });
+  }
+
+  // --- NOVO MÉTODO: CANCELAR PEDIDO (Faltava este) ---
+  async cancelOrder(orderId: number, user: any) {
+    const order = await this.findOne(orderId);
+    if (!order) throw new NotFoundException('Pedido não encontrado');
+
+    // 1. Regra de Permissão: Só Admin ou o Dono podem mexer
+    if (user.role !== 'ADMIN' && order.user.id !== user.id) {
+      throw new ForbiddenException('Você não tem permissão para cancelar este pedido.');
+    }
+
+    // 2. Regra de Negócio: Cliente só cancela se estiver PENDENTE
+    // Admin pode cancelar a qualquer momento (por isso a checagem user.role !== 'ADMIN')
+    if (user.role !== 'ADMIN' && order.status !== OrderStatus.PENDING) {
+      throw new BadRequestException('O pedido já está em preparo e não pode mais ser cancelado pelo cliente.');
+    }
+
+    order.status = OrderStatus.CANCELED;
+    return this.orderRepository.save(order);
   }
 
   async update(id: number, updateOrderDto: UpdateOrderDto) {

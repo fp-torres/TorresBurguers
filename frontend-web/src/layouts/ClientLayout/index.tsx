@@ -1,14 +1,18 @@
+import { useState } from 'react';
 import { Outlet, Link } from 'react-router-dom';
 import { ShoppingBag, Menu, User, LogOut, Briefcase, LayoutDashboard, Clock } from 'lucide-react';
 import { useCart } from '../../contexts/CartContext';
 import { useAuth } from '../../contexts/AuthContext';
 import ClientFooter from '../../components/ClientFooter'; 
 import { StoreStatusBadge } from '../../components/StoreStatusBadge';
+import ConfirmModal from '../../components/ConfirmModal'; // NOVO
 
 export default function ClientLayout() {
   const { cartCount } = useCart();
   const { user, signOut } = useAuth();
   const isStaff = user?.role === 'ADMIN' || user?.role === 'EMPLOYEE';
+  
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
@@ -25,7 +29,6 @@ export default function ClientLayout() {
             </span>
           </Link>
 
-          {/* STATUS + HORÁRIO */}
           <div className="hidden md:flex items-center gap-3 pl-4 border-l border-gray-200 h-8">
              <StoreStatusBadge />
              <div className="flex flex-col leading-none">
@@ -39,43 +42,27 @@ export default function ClientLayout() {
 
         {/* LADO DIREITO */}
         <div className="flex items-center gap-3">
-          
-          {/* Horário Mobile (Ícone apenas se pouco espaço) */}
-          <div className="md:hidden">
-            <StoreStatusBadge />
-          </div>
+          <div className="md:hidden"><StoreStatusBadge /></div>
 
           {isStaff ? (
-            <Link to="/dashboard" className="hidden sm:flex items-center gap-1 text-xs font-bold text-white bg-gray-800 px-3 py-1.5 rounded-full">
-              <LayoutDashboard size={14} /> Painel
-            </Link>
+            <Link to="/dashboard" className="hidden sm:flex items-center gap-1 text-xs font-bold text-white bg-gray-800 px-3 py-1.5 rounded-full"><LayoutDashboard size={14} /> Painel</Link>
           ) : !user && (
-            <Link to="/login" className="hidden md:flex items-center gap-1 text-xs font-bold text-gray-400 border border-gray-200 px-3 py-1.5 rounded-full hover:text-orange-600">
-              <Briefcase size={14} /> Equipe
-            </Link>
+            <Link to="/login" className="hidden md:flex items-center gap-1 text-xs font-bold text-gray-400 border border-gray-200 px-3 py-1.5 rounded-full hover:text-orange-600"><Briefcase size={14} /> Equipe</Link>
           )}
 
           {user && (
-            <Link to="/my-orders" className="p-2 text-gray-600 hover:text-orange-600 bg-gray-50 rounded-full">
-              <Clock size={20} />
-            </Link>
+            <Link to="/my-orders" className="p-2 text-gray-600 hover:text-orange-600 bg-gray-50 rounded-full"><Clock size={20} /></Link>
           )}
 
           <Link to="/cart" className="relative p-2 text-gray-600 hover:text-orange-600 bg-orange-50 rounded-full">
             <ShoppingBag size={20} />
-            {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full">
-                {cartCount}
-              </span>
-            )}
+            {cartCount > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full">{cartCount}</span>}
           </Link>
 
           {user ? (
-            <button onClick={signOut} className="p-2 text-gray-400 hover:text-red-500"><LogOut size={20} /></button>
+            <button onClick={() => setIsLogoutModalOpen(true)} className="p-2 text-gray-400 hover:text-red-500"><LogOut size={20} /></button>
           ) : (
-            <Link to="/signin" className="flex items-center gap-2 bg-gray-100 text-gray-700 px-3 py-2 rounded-xl font-bold text-sm">
-              <User size={18} /> <span className="hidden sm:inline">Entrar</span>
-            </Link>
+            <Link to="/signin" className="flex items-center gap-2 bg-gray-100 text-gray-700 px-3 py-2 rounded-xl font-bold text-sm"><User size={18} /> <span className="hidden sm:inline">Entrar</span></Link>
           )}
         </div>
       </header>
@@ -85,6 +72,16 @@ export default function ClientLayout() {
       </main>
       
       <ClientFooter />
+
+      <ConfirmModal 
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={signOut}
+        title="Sair da conta?"
+        message="Deseja realmente desconectar?"
+        confirmLabel="Sair"
+        isDestructive
+      />
     </div>
   );
 }

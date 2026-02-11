@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Mail, User, Loader2, ArrowLeft, Phone } from 'lucide-react';
 import api from '../../../services/api';
+import toast from 'react-hot-toast'; // NOVO
 
 export default function ClientSignup() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState(''); // <--- Novo Estado
+  const [phone, setPhone] = useState(''); 
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -15,12 +16,11 @@ export default function ClientSignup() {
     e.preventDefault();
     setLoading(true);
     try {
-      // Envia celular junto
       await api.post('/users', { name, email, password, phone, role: 'CLIENT' });
-      alert('Conta criada com sucesso! Faça login.');
+      toast.success('Conta criada com sucesso! Faça login.'); // NOVO
       navigate('/signin');
     } catch (error) {
-      alert('Erro ao criar conta. Verifique os dados.');
+      toast.error('Erro ao criar conta. Verifique os dados.'); // NOVO
     } finally {
       setLoading(false);
     }
@@ -29,7 +29,7 @@ export default function ClientSignup() {
   return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md space-y-8 animate-in fade-in slide-in-from-bottom-4">
-        <Link to="/signin" className="text-gray-500 flex items-center gap-2 mb-4 hover:text-orange-600"><ArrowLeft size={20}/> Voltar ao Login</Link>
+        <Link to="/signin" className="text-gray-500 flex items-center gap-2 mb-4 hover:text-orange-600 w-fit"><ArrowLeft size={20}/> Voltar ao Login</Link>
         
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-900">Crie sua conta 🚀</h1>
