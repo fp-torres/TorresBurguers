@@ -1,6 +1,7 @@
 import { 
   Entity, PrimaryGeneratedColumn, Column, 
-  CreateDateColumn, UpdateDateColumn, OneToMany, ManyToMany, JoinTable 
+  CreateDateColumn, UpdateDateColumn, DeleteDateColumn, // <--- Importado
+  OneToMany, ManyToMany, JoinTable 
 } from 'typeorm';
 import { OrderItem } from '../../orders/entities/order-item.entity';
 import { Addon } from './addon.entity'; 
@@ -12,7 +13,8 @@ export enum ProductCategory {
   DRINK = 'bebidas',
   DESSERT = 'sobremesas',
   SAUCE = 'molhos',
-  ADDON = 'adicionais'
+  ADDON = 'adicionais',
+  COMBO = 'combos'
 }
 
 @Entity('products')
@@ -48,7 +50,6 @@ export class Product {
   @Column({ type: 'simple-array', nullable: true })
   ingredients: string[];
 
-  // RELACIONAMENTO: Um produto pode ter vários adicionais
   @ManyToMany(() => Addon, { cascade: true })
   @JoinTable({ 
     name: 'product_allowed_addons', 
@@ -65,6 +66,10 @@ export class Product {
 
   @UpdateDateColumn()
   updated_at: Date;
+
+  // --- NOVA COLUNA PARA SOFT DELETE ---
+  @DeleteDateColumn() 
+  deleted_at: Date; 
 
   @OneToMany(() => OrderItem, (item) => item.product)
   items: OrderItem[];

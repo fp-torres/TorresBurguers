@@ -28,7 +28,7 @@ export class OrdersController {
     return this.ordersService.findMyOrders(req.user.id);
   }
 
-  // Dados do Dashboard (Financeiro) -> Continua apenas ADMIN
+  // --- DASHBOARD (Financeiro) ---
   @Get('charts')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
@@ -43,8 +43,8 @@ export class OrdersController {
     return this.ordersService.getDashboardSummary();
   }
 
-  // --- ROTA GERAL (LISTAR PEDIDOS) ---
-  // LIBERADO PARA: ADMIN, COZINHA e MOTOBOY
+  // --- LISTAR PEDIDOS GERAIS ---
+  // Acessível para Admin, Cozinha e Motoboy
   @Get()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN', 'KITCHEN', 'COURIER') 
@@ -65,8 +65,8 @@ export class OrdersController {
     return this.ordersService.cancelOrder(id, req.user);
   }
 
-  // --- ATUALIZAR STATUS (MUDAR DE FASE) ---
-  // LIBERADO PARA: ADMIN, COZINHA e MOTOBOY
+  // --- ATUALIZAR STATUS ---
+  // Acessível para Admin, Cozinha e Motoboy
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN', 'KITCHEN', 'COURIER')

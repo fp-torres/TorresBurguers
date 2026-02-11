@@ -1,6 +1,7 @@
 import { 
   Entity, PrimaryGeneratedColumn, Column, 
-  CreateDateColumn, UpdateDateColumn, OneToMany 
+  CreateDateColumn, UpdateDateColumn, DeleteDateColumn, // <--- Importado
+  OneToMany 
 } from 'typeorm';
 import { Order } from '../../orders/entities/order.entity';
 import { Address } from '../../addresses/entities/address.entity';
@@ -8,9 +9,9 @@ import { Address } from '../../addresses/entities/address.entity';
 export enum UserRole {
   CLIENT = 'CLIENT',     
   ADMIN = 'ADMIN',       
-  KITCHEN = 'KITCHEN',   // Cozinha
-  COURIER = 'COURIER',   // Motoboy
-  EMPLOYEE = 'EMPLOYEE', // Funcionário Genérico (se ainda usar)
+  KITCHEN = 'KITCHEN',   
+  COURIER = 'COURIER',   
+  EMPLOYEE = 'EMPLOYEE', 
 }
 
 @Entity('users')
@@ -44,4 +45,8 @@ export class User {
 
   @UpdateDateColumn()
   updated_at: Date;
+
+  // --- NOVA COLUNA PARA SOFT DELETE ---
+  @DeleteDateColumn()
+  deleted_at: Date;
 }

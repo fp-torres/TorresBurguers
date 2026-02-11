@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, DeleteDateColumn } from 'typeorm'; // <--- Importado
 
 @Entity('addons')
 export class Addon {
@@ -11,7 +11,6 @@ export class Addon {
   @Column('text', { nullable: true })
   description: string;
 
-  // Use 'numeric' ou 'decimal' dependendo do seu banco, garantindo precisão
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   price: number; 
 
@@ -21,8 +20,10 @@ export class Addon {
   @Column({ default: true })
   available: boolean;
 
-  // --- NOVO CAMPO: Categoria do Adicional ---
-  // Ex: 'hamburgueres', 'bebidas', 'geral'
   @Column({ default: 'geral' })
   category: string; 
+
+  // --- NOVA COLUNA PARA SOFT DELETE ---
+  @DeleteDateColumn()
+  deleted_at: Date;
 }

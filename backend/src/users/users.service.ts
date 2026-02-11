@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull, Not } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -25,8 +25,6 @@ export class UsersService {
       name: createUserDto.name,
       email: createUserDto.email,
       role: createUserDto.role as any,
-      // CORREÇÃO AQUI: Removido "|| null". Deixe apenas a propriedade.
-      // Se vier undefined, o TypeORM ignora (fica null no banco se nullable=true)
       phone: createUserDto.phone, 
       password_hash: passwordHash, 
     });
@@ -36,6 +34,15 @@ export class UsersService {
 
   findAll() {
     return this.usersRepository.find({ order: { created_at: 'DESC' } });
+  }
+
+  // Buscar Usuários na Lixeira
+  findDeleted() {
+    return this.usersRepository.find({
+      withDeleted: true,
+      where: { deleted_at: Not(IsNull()) },
+      order: { deleted_at: 'DESC' }
+    });
   }
 
   findOne(id: number) {
@@ -61,7 +68,18 @@ export class UsersService {
     return this.findOne(id);
   }
 
+  // Enviar para Lixeira
   remove(id: number) {
+    return this.usersRepository.softDelete(id);
+  }
+
+  // Restaurar da Lixeira
+  restore(id: number) {
+    return this.usersRepository.restore(id);
+  }
+
+  // Excluir Permanentemente
+  hardDelete(id: number) {
     return this.usersRepository.delete(id);
   }
 }

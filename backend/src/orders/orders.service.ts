@@ -74,7 +74,6 @@ export class OrdersService {
       orderItem.quantity = itemDto.quantity;
       orderItem.observation = itemDto.observation || '';
       
-      // Mapeamento Correto
       orderItem.meat_point = itemDto.meatPoint || null;
       orderItem.removed_ingredients = itemDto.removedIngredients || []; 
       
@@ -99,7 +98,6 @@ export class OrdersService {
     });
   }
 
-  // --- GARANTINDO QUE O HISTÓRICO TRAGA TUDO ---
   async findMyOrders(userId: number) {
     return this.orderRepository.find({
       relations: ['items', 'items.product', 'items.addons', 'user', 'address'], 
@@ -138,14 +136,41 @@ export class OrdersService {
     return this.orderRepository.save(order);
   }
 
+  // --- CORREÇÃO DO DASHBOARD AQUI ---
   async getDashboardSummary() {
-    const totalOrders = await this.orderRepository.count();
-    const revenueQuery = await this.orderRepository.createQueryBuilder('order').select('SUM(order.total_price)', 'total').where('order.status != :st', { st: OrderStatus.CANCELED }).getRawOne();
+    // 1. Total de pedidos (exceto cancelados)
+    const totalOrders = await this.orderRepository.count({
+      where: { status: In([OrderStatus.PENDING, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.DELIVERED]) }
+    });
+
+    // 2. Faturamento (seguro contra NULL)
+    const revenueQuery = await this.orderRepository
+      .createQueryBuilder('order')
+      .select('SUM(order.total_price)', 'total')
+      .where('order.status != :st', { st: OrderStatus.CANCELED })
+      .getRawOne();
+    
+    // Se revenueQuery for null ou undefined, retorna 0. Senão, converte string para float.
+    const revenue = revenueQuery && revenueQuery.total ? parseFloat(revenueQuery.total) : 0;
+
+    // 3. Contadores de status
+    const pendingOrders = await this.orderRepository.count({ where: { status: OrderStatus.PENDING } });
+    const preparingOrders = await this.orderRepository.count({ where: { status: OrderStatus.PREPARING } });
+    
+    // 4. Pagamentos pendentes (apenas de pedidos ativos)
+    const pendingPayments = await this.orderRepository.count({ 
+      where: { 
+        payment_status: PaymentStatus.PENDING,
+        status: In([OrderStatus.PENDING, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.DELIVERED])
+      } 
+    });
+
     return {
-      totalOrders, revenue: Number(revenueQuery.total) || 0,
-      pendingOrders: await this.orderRepository.count({ where: { status: OrderStatus.PENDING } }),
-      preparingOrders: await this.orderRepository.count({ where: { status: OrderStatus.PREPARING } }),
-      pendingPayments: await this.orderRepository.count({ where: { payment_status: PaymentStatus.PENDING } })
+      totalOrders,
+      revenue, // Agora garantido que é number
+      pendingOrders,
+      preparingOrders,
+      pendingPayments
     };
   }
 
@@ -160,6 +185,7 @@ export class OrdersService {
     });
 
     const salesByDate: Record<string, number> = {};
+    // Inicializa os últimos 7 dias com 0
     for (let i = 0; i < 7; i++) {
       const d = new Date();
       d.setDate(d.getDate() - i);
@@ -171,16 +197,28 @@ export class OrdersService {
 
     orders.forEach(order => {
       if (order.status === OrderStatus.CANCELED) return;
+      
       const dateKey = new Date(order.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-      if (salesByDate[dateKey] !== undefined) salesByDate[dateKey] += Number(order.total_price);
+      // Verifica se a data está no range (segurança)
+      if (salesByDate[dateKey] !== undefined) {
+        salesByDate[dateKey] += Number(order.total_price);
+      }
+
       order.items.forEach(item => {
         const prodName = item.product?.name || 'Item Removido';
         topProducts[prodName] = (topProducts[prodName] || 0) + item.quantity;
       });
     });
 
-    const revenueChart = Object.entries(salesByDate).map(([date, total]) => ({ date, total })).reverse();
-    const productsChart = Object.entries(topProducts).map(([name, quantity]) => ({ name, quantity })).sort((a, b) => b.quantity - a.quantity).slice(0, 5);
+    const revenueChart = Object.entries(salesByDate)
+      .map(([date, total]) => ({ date, total }))
+      .reverse(); // Coloca em ordem cronológica
+      
+    const productsChart = Object.entries(topProducts)
+      .map(([name, quantity]) => ({ name, quantity }))
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 5);
+      
     return { revenueChart, productsChart };
   }
 }
