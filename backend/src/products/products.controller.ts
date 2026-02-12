@@ -16,7 +16,6 @@ import { RolesGuard } from '../auth/roles.guard';
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
-  // --- LIXEIRA: Listar Excluídos ---
   @Get('trash')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
@@ -24,7 +23,6 @@ export class ProductsController {
     return this.productsService.findDeleted();
   }
 
-  // --- LIXEIRA: Restaurar Produto ---
   @Patch(':id/restore')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
@@ -46,12 +44,15 @@ export class ProductsController {
     }),
   }))
   create(
-    @Body() createProductDto: any, // Usando any temporário para facilitar o FormData
+    @Body() createProductDto: any, 
     @UploadedFile() file?: Express.Multer.File,
   ) {
     if (file) createProductDto.image = file.filename;
-    // Conversão manual de tipos vindos do FormData (que são strings)
+    
+    // Conversões manuais de segurança para FormData
     if (createProductDto.price) createProductDto.price = parseFloat(createProductDto.price);
+    if (createProductDto.available) createProductDto.available = createProductDto.available === 'true'; // <--- GARANTIA
+
     return this.productsService.create(createProductDto);
   }
 
@@ -84,11 +85,18 @@ export class ProductsController {
     @UploadedFile() file?: Express.Multer.File
   ) {
     if (file) updateProductDto.image = file.filename;
+    
+    // Conversões manuais de segurança para FormData
     if (updateProductDto.price) updateProductDto.price = parseFloat(updateProductDto.price);
+    
+    // Correção Crítica: Conversão de 'true'/'false' string para boolean
+    if (updateProductDto.available !== undefined) {
+      updateProductDto.available = String(updateProductDto.available) === 'true';
+    }
+
     return this.productsService.update(id, updateProductDto);
   }
 
-  // --- SOFT DELETE (Mover para Lixeira) ---
   @Delete(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
@@ -96,7 +104,6 @@ export class ProductsController {
     return this.productsService.remove(id); 
   }
 
-  // --- HARD DELETE (Excluir Permanentemente) ---
   @Delete(':id/permanent')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')

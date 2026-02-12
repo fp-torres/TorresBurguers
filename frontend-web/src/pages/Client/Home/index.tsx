@@ -1,52 +1,18 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Search, ShoppingBag, Flame, ChevronRight, ChevronLeft, Star, Utensils, Coffee, IceCream, Plus, Clock } from 'lucide-react'; 
+import { Search, ShoppingBag, Flame, ChevronRight, Star, Utensils, Coffee, IceCream, Plus, Clock, Trophy } from 'lucide-react'; 
 import { productService, type Product } from '../../../services/productService';
+import api from '../../../services/api';
 import ProductModal from '../../../components/ProductModal';
 
-// --- CONFIGURAÇÃO DOS BANNERS POR DIA DA SEMANA ---
+// Configuração Estática dos Banners (Fallback)
 const DAILY_OFFERS: Record<number, any> = {
-  0: { // Domingo
-    title: "Domingo em Família 👨‍👩‍👧‍👦",
-    subtitle: "Combos gigantes para fechar o fim de semana com chave de ouro.",
-    color: "from-blue-600 to-indigo-600",
-    icon: <ShoppingBag size={48} className="text-white/20 absolute right-4 bottom-4 -rotate-12" />
-  },
-  1: { // Segunda
-    title: "Segunda sem Desculpas 🥗",
-    subtitle: "Opções leves e saborosas para começar a semana.",
-    color: "from-green-600 to-emerald-600",
-    icon: <Star size={48} className="text-white/20 absolute right-4 bottom-4" />
-  },
-  2: { // Terça
-    title: "Terça do Smash 🍔",
-    subtitle: "Smash burgers a partir de R$ 19,90. Imperdível!",
-    color: "from-orange-500 to-red-500",
-    icon: <Flame size={48} className="text-white/20 absolute right-4 bottom-4" />
-  },
-  3: { // Quarta
-    title: "Quarta do Futebol ⚽",
-    subtitle: "Frete grátis para acompanhar o jogão.",
-    color: "from-green-700 to-green-500",
-    icon: <Star size={48} className="text-white/20 absolute right-4 bottom-4 rotate-12" />
-  },
-  4: { // Quinta
-    title: "Quinta dos Acompanhamentos 🍟",
-    subtitle: "Batata ou Onion Rings pela metade do preço na compra de 2 burgers.",
-    color: "from-yellow-500 to-orange-500",
-    icon: <Utensils size={48} className="text-white/20 absolute right-4 bottom-4" />
-  },
-  5: { // Sexta
-    title: "Sexta do Bacon 🥓",
-    subtitle: "Todo o cardápio de bacon com adicionais em dobro!",
-    color: "from-red-700 to-orange-700",
-    icon: <Flame size={48} className="text-white/20 absolute right-4 bottom-4 rotate-12" />
-  },
-  6: { // Sábado
-    title: "Sabadou com Torres 🍻",
-    subtitle: "Bebidas geladas e os melhores burgers da cidade.",
-    color: "from-purple-600 to-pink-600",
-    icon: <Coffee size={48} className="text-white/20 absolute right-4 bottom-4" />
-  }
+  0: { title: "Domingo em Família 👨‍👩‍👧‍👦", subtitle: "Combos gigantes para fechar o fim de semana.", color: "from-blue-600 to-indigo-600", icon: <ShoppingBag size={48} className="text-white/20 absolute right-4 bottom-4 -rotate-12" /> },
+  1: { title: "Segunda Leve 🥗", subtitle: "Opções leves e saborosas para começar a semana.", color: "from-green-600 to-emerald-600", icon: <Star size={48} className="text-white/20 absolute right-4 bottom-4" /> },
+  2: { title: "Terça do Smash 🍔", subtitle: "Smash burgers a partir de R$ 19,90.", color: "from-orange-500 to-red-500", icon: <Flame size={48} className="text-white/20 absolute right-4 bottom-4" /> },
+  3: { title: "Quarta do Futebol ⚽", subtitle: "Frete grátis para acompanhar o jogão.", color: "from-green-700 to-green-500", icon: <Trophy size={48} className="text-white/20 absolute right-4 bottom-4 rotate-12" /> },
+  4: { title: "Quinta dos Acompanhamentos 🍟", subtitle: "Batata pela metade do preço na compra de 2 burgers.", color: "from-yellow-500 to-orange-500", icon: <Utensils size={48} className="text-white/20 absolute right-4 bottom-4" /> },
+  5: { title: "Sexta do Bacon 🥓", subtitle: "Todo o cardápio de bacon com adicionais em dobro!", color: "from-red-700 to-orange-700", icon: <Flame size={48} className="text-white/20 absolute right-4 bottom-4 rotate-12" /> },
+  6: { title: "Sabadou com Torres 🍻", subtitle: "Bebidas geladas e os melhores burgers.", color: "from-purple-600 to-pink-600", icon: <Coffee size={48} className="text-white/20 absolute right-4 bottom-4" /> }
 };
 
 const CATEGORIES = [
@@ -62,18 +28,61 @@ export default function ClientHome() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   
+  // Inicia com o banner padrão (será atualizado no useEffect)
+  const [banner, setBanner] = useState<any>(DAILY_OFFERS[0]);
+  
   const [selectedCategory, setSelectedCategory] = useState('todos');
   const [searchTerm, setSearchTerm] = useState('');
   
-  const todayIndex = new Date().getDay();
-  const [currentBanner, setCurrentBanner] = useState(todayIndex);
-
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     loadCatalog();
+    loadBanner();
   }, []);
+
+  async function loadBanner() {
+    // =================================================================
+    // 🎛️ ÁREA DE SIMULAÇÃO (FRONTEND)
+    // Descomente a linha do dia que deseja simular visualmente.
+    // =================================================================
+    
+    // const simulacaoDia = null; // 🟢 MODO AUTOMÁTICO (Usa data real)
+    // const simulacaoDia = 0;    // 🔴 Simula DOMINGO
+    // const simulacaoDia = 1;    // 🔴 Simula SEGUNDA
+    // const simulacaoDia = 2;    // 🔴 Simula TERÇA
+    const simulacaoDia = 3;    // 🟢 Simula QUARTA (Chama API Backend)
+    // const simulacaoDia = 4;    // 🔴 Simula QUINTA
+    // const simulacaoDia = 5;    // 🔴 Simula SEXTA
+    // const simulacaoDia = 6;    // 🔴 Simula SÁBADO
+
+    // =================================================================
+
+    const todayIndex = simulacaoDia !== null ? simulacaoDia : new Date().getDay();
+    
+    // 1. Define o banner base (estático)
+    setBanner(DAILY_OFFERS[todayIndex] || DAILY_OFFERS[0]);
+
+    // 2. Se for Quarta (3), busca dados dinâmicos no backend
+    if (todayIndex === 3) {
+      try {
+        const { data } = await api.get('/promotions/football');
+        
+        if (data && data.hasGame) {
+          // Atualiza o banner com os dados do jogo (Real ou Mock)
+          setBanner({
+            title: "Quarta de Futebol ⚽",
+            subtitle: `${data.home} x ${data.away} às ${data.time} - ${data.tournament}. Peça agora!`,
+            color: "from-green-800 to-emerald-600",
+            icon: <Trophy size={48} className="text-white/20 absolute right-4 bottom-4 rotate-12" />
+          });
+        }
+      } catch (error) {
+        console.log("Erro ao carregar dados de futebol, mantendo banner padrão.");
+      }
+    }
+  }
 
   async function loadCatalog() {
     try {
@@ -91,42 +100,36 @@ export default function ClientHome() {
     setIsModalOpen(true);
   }
 
-  // --- SEÇÕES ESPECÍFICAS ---
   const comboProducts = useMemo(() => products.filter(p => p.category === 'combos'), [products]);
-  
-  // CORREÇÃO AQUI: Convertendo p.price para Number antes de comparar
   const promoProducts = useMemo(() => products.filter(p => Number(p.price) < 30 && p.category === 'hamburgueres'), [products]);
 
-  // --- LISTA PRINCIPAL (Filtrada) ---
   const mainList = products.filter(product => {
     const matchesCategory = selectedCategory === 'todos' || product.category === selectedCategory;
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesCategory && matchesSearch;
   });
 
-  const bannerData = DAILY_OFFERS[currentBanner] || DAILY_OFFERS[0];
-
   return (
     <div className="space-y-10 pb-20 animate-in fade-in duration-500">
       
-      {/* --- BANNER INTELIGENTE (DIA DA SEMANA) --- */}
+      {/* Banner Principal */}
       <div className="relative w-full h-48 sm:h-64 rounded-3xl overflow-hidden shadow-xl group">
-        <div className={`absolute inset-0 bg-gradient-to-r ${bannerData.color} p-8 flex flex-col justify-center transition-all duration-700`}>
+        <div className={`absolute inset-0 bg-gradient-to-r ${banner.color} p-8 flex flex-col justify-center transition-all duration-700`}>
           <div className="relative z-10 max-w-lg">
             <span className="bg-white/20 text-white text-xs font-bold px-3 py-1 rounded-full backdrop-blur-md mb-3 inline-block shadow-sm flex items-center gap-1 w-fit">
               <Clock size={12}/> Oferta de Hoje
             </span>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-white mb-2 leading-tight drop-shadow-md">{bannerData.title}</h2>
-            <p className="text-white/95 text-sm sm:text-lg font-medium drop-shadow-sm">{bannerData.subtitle}</p>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-white mb-2 leading-tight drop-shadow-md">{banner.title}</h2>
+            <p className="text-white/95 text-sm sm:text-lg font-medium drop-shadow-sm">{banner.subtitle}</p>
             <button className="mt-6 bg-white text-gray-900 px-6 py-2.5 rounded-xl font-bold text-sm hover:scale-105 transition-transform shadow-lg flex items-center gap-2">
               Peça Agora <ChevronRight size={16}/>
             </button>
           </div>
-          {bannerData.icon}
+          {banner.icon}
         </div>
       </div>
 
-      {/* --- BARRA DE BUSCA --- */}
+      {/* Busca */}
       <div className="relative -mt-6 mx-4">
         <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
           <Search className="h-5 w-5 text-gray-400" />
@@ -140,7 +143,7 @@ export default function ClientHome() {
         />
       </div>
 
-      {/* --- SEÇÃO: COMBOS MATADORES (Horizontal) --- */}
+      {/* Seções */}
       {selectedCategory === 'todos' && !searchTerm && comboProducts.length > 0 && (
         <section>
           <div className="flex items-center justify-between px-1 mb-4">
@@ -157,7 +160,6 @@ export default function ClientHome() {
         </section>
       )}
 
-      {/* --- SEÇÃO: PROMOÇÕES DO DIA (Horizontal) --- */}
       {selectedCategory === 'todos' && !searchTerm && promoProducts.length > 0 && (
         <section>
           <div className="flex items-center justify-between px-1 mb-4">
@@ -173,7 +175,7 @@ export default function ClientHome() {
         </section>
       )}
 
-      {/* --- CARDÁPIO COMPLETO --- */}
+      {/* Lista Principal */}
       <section>
         <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
           {CATEGORIES.map(cat => {
@@ -197,7 +199,7 @@ export default function ClientHome() {
              [1,2,3].map(i => <div key={i} className="h-32 bg-gray-200 rounded-2xl animate-pulse"></div>)
           ) : mainList.length === 0 ? (
             <div className="col-span-full text-center py-20 text-gray-400">
-              <p>Nenhum produto encontrado.</p>
+              <p>Nenhum produto encontrado nesta categoria.</p>
             </div>
           ) : (
             mainList.map(product => (
@@ -230,7 +232,6 @@ export default function ClientHome() {
   );
 }
 
-// Componente Auxiliar para Cards Horizontais
 function ProductHorizontalCard({ product, onClick, isPromo }: { product: Product, onClick: () => void, isPromo?: boolean }) {
   return (
     <div 

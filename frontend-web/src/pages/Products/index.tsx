@@ -13,12 +13,12 @@ const CATEGORIES = [
   { id: 'acompanhamentos', label: 'Acomp.', icon: Utensils },
   { id: 'bebidas', label: 'Bebidas', icon: Coffee },
   { id: 'sobremesas', label: 'Sobremesas', icon: IceCream },
-  { id: 'lixeira', label: 'Lixeira', icon: Trash2 }, // <--- NOVA ABA
+  { id: 'lixeira', label: 'Lixeira', icon: Trash2 },
 ];
 
 export default function Products() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [deletedProducts, setDeletedProducts] = useState<Product[]>([]); // Lista da Lixeira
+  const [deletedProducts, setDeletedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
@@ -43,7 +43,6 @@ export default function Products() {
 
   async function loadDeletedProducts() {
     try {
-      // Endpoint novo que você deve criar no controller: GET /products/trash
       const { data } = await api.get('/products/trash'); 
       setDeletedProducts(data);
     } catch { console.log("Erro ao carregar lixeira"); }
@@ -59,17 +58,28 @@ export default function Products() {
     setIsModalOpen(true);
   }
 
+  // --- CORREÇÃO DO TOGGLE (ATUALIZAÇÃO OTIMISTA) ---
   async function toggleAvailability(product: Product) {
     try {
+      const newStatus = !product.available;
+
+      // 1. Atualiza visualmente NA HORA (sem esperar o servidor)
+      setProducts(prevProducts => 
+        prevProducts.map(p => p.id === product.id ? { ...p, available: newStatus } : p)
+      );
+
+      // 2. Envia para o servidor em segundo plano
       const formData = new FormData();
-      formData.append('available', String(!product.available));
+      formData.append('available', String(newStatus));
       await productService.update(product.id, formData);
-      toast.success(`Status atualizado!`);
-      loadProducts();
-    } catch { toast.error('Erro ao atualizar.'); }
+      
+      toast.success(newStatus ? 'Produto Ativado!' : 'Produto Pausado!');
+    } catch { 
+      toast.error('Erro ao atualizar.');
+      loadProducts(); // Reverte se der erro no servidor
+    }
   }
 
-  // Lógica de Exclusão (Soft Delete)
   function requestDelete(product: Product) {
     setConfirmMessage({
       title: 'Mover para Lixeira?',
@@ -79,7 +89,7 @@ export default function Products() {
     });
     setActionToConfirm(() => async () => {
       try {
-        await api.delete(`/products/${product.id}`); // Soft Delete
+        await api.delete(`/products/${product.id}`);
         toast.success('Produto movido para a lixeira.');
         loadProducts();
         loadDeletedProducts();
@@ -88,7 +98,6 @@ export default function Products() {
     setConfirmOpen(true);
   }
 
-  // Lógica de Restauração
   function requestRestore(product: Product) {
     setConfirmMessage({
       title: 'Restaurar Produto?',
@@ -107,7 +116,6 @@ export default function Products() {
     setConfirmOpen(true);
   }
 
-  // Lógica de Exclusão Permanente
   function requestPermanentDelete(product: Product) {
     setConfirmMessage({
       title: 'Excluir Permanentemente?',
@@ -196,18 +204,29 @@ export default function Products() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredList.map(product => (
-                <tr key={product.id} className={`transition-colors group ${activeTab === 'lixeira' ? 'opacity-60 bg-red-50/30' : 'hover:bg-gray-50'}`}>
+                <tr key={product.id} className={`transition-colors group ${activeTab === 'lixeira' || !product.available ? 'bg-gray-50' : 'hover:bg-gray-50'}`}>
                   <td className="p-4">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden shrink-0 relative border border-gray-200">
+                        {/* CORREÇÃO DA IMAGEM: 
+                           A classe 'grayscale' só é aplicada se:
+                           1. O produto estiver NÃO disponível (!available)
+                           OU
+                           2. A aba atual for a lixeira
+                        */}
                         {product.image ? (
-                          <img src={`http://localhost:3000/uploads/${product.image}`} className="w-full h-full object-cover grayscale" />
+                          <img 
+                            src={`http://localhost:3000/uploads/${product.image}`} 
+                            className={`w-full h-full object-cover transition-all duration-300 ${(!product.available || activeTab === 'lixeira') ? 'grayscale opacity-75' : ''}`} 
+                          />
                         ) : (
                           <div className="flex items-center justify-center h-full text-gray-400"><PackageX size={20}/></div>
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className="font-bold text-gray-800 truncate">{product.name}</p>
+                        <p className={`font-bold truncate ${!product.available || activeTab === 'lixeira' ? 'text-gray-500' : 'text-gray-800'}`}>
+                          {product.name}
+                        </p>
                         <p className="text-xs text-gray-500 truncate max-w-[250px]">{product.description}</p>
                       </div>
                     </div>
@@ -221,7 +240,15 @@ export default function Products() {
                   
                   {activeTab !== 'lixeira' && (
                     <td className="p-4 text-center">
-                      <button onClick={() => toggleAvailability(product)} className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center justify-center gap-1.5 mx-auto w-28 border ${product.available ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
+                      {/* O estado 'available' aqui já estará atualizado pelo toggleAvailability */}
+                      <button 
+                        onClick={() => toggleAvailability(product)} 
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center justify-center gap-1.5 mx-auto w-28 border transition-all active:scale-95 ${
+                          product.available 
+                            ? 'bg-green-50 text-green-700 border-green-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200' 
+                            : 'bg-red-50 text-red-600 border-red-200 hover:bg-green-50 hover:text-green-700 hover:border-green-200'
+                        }`}
+                      >
                         {product.available ? <><CheckCircle2 size={14}/> Disponível</> : <><AlertTriangle size={14}/> Esgotado</>}
                       </button>
                     </td>
