@@ -1,8 +1,10 @@
 import { useEffect, useState, useMemo } from 'react';
+import type { ChangeEvent, FormEvent } from 'react'; // <--- CORREÇÃO: Tipos importados separadamente
 import { Plus, Trash2, Shield, Mail, X, Loader2, Edit, Phone, ChefHat, Truck, User as UserIcon, Search, Users as UsersGroup } from 'lucide-react';
 import { userService, type User, type CreateUserDTO } from '../../services/userService';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../../components/ConfirmModal';
+import { normalizePhone } from '../../utils/masks'; 
 
 // Categorias para as Abas
 const ROLES = [
@@ -27,8 +29,6 @@ export default function Users() {
   });
   
   const [saving, setSaving] = useState(false);
-
-  // Estados para Modal de Exclusão
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<number | null>(null);
 
@@ -37,13 +37,8 @@ export default function Users() {
   async function loadUsers() {
     try {
       const data = await userService.getAll();
-      // Ordena por ID decrescente (mais novos primeiro)
       setUsers(data.sort((a, b) => b.id - a.id));
-    } catch (error) { 
-      toast.error('Erro ao buscar usuários');
-    } finally { 
-      setLoading(false); 
-    }
+    } catch (error) { toast.error('Erro ao buscar usuários'); } finally { setLoading(false); }
   }
 
   function openCreateModal() {
@@ -58,13 +53,18 @@ export default function Users() {
       name: user.name, 
       email: user.email, 
       password: '', 
-      phone: user.phone || '', 
+      phone: normalizePhone(user.phone || ''), 
       role: user.role 
     });
     setIsModalOpen(true);
   }
 
-  async function handleSave(e: React.FormEvent) {
+  // Novo Handler para telefone com tipo correto
+  function handlePhoneChange(e: ChangeEvent<HTMLInputElement>) {
+    setFormData({ ...formData, phone: normalizePhone(e.target.value) });
+  }
+
+  async function handleSave(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
@@ -97,30 +97,19 @@ export default function Users() {
       await userService.delete(userToDelete);
       toast.success('Usuário removido.');
       loadUsers();
-    } catch (error) {
-      toast.error('Erro ao excluir usuário.');
-    } finally {
-      setConfirmDeleteOpen(false);
-      setUserToDelete(null);
-    }
+    } catch (error) { toast.error('Erro ao excluir usuário.'); } finally { setConfirmDeleteOpen(false); setUserToDelete(null); }
   }
 
-  // Filtragem Otimizada (Busca por Nome ou ID + Filtro por Aba)
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
-      const matchesSearch = 
-        user.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        String(user.id).includes(searchTerm); // Busca por ID
-      
+      const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) || String(user.id).includes(searchTerm);
       const matchesRole = activeTab === 'ALL' || user.role === activeTab;
-      
       return matchesSearch && matchesRole;
     });
   }, [users, searchTerm, activeTab]);
 
   return (
     <div className="space-y-6 pb-20 h-full flex flex-col">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Equipe</h1>
@@ -131,7 +120,6 @@ export default function Users() {
         </button>
       </div>
 
-      {/* Barra de Filtros e Busca */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 shrink-0">
         <div className="flex overflow-x-auto p-2 border-b border-gray-100 custom-scrollbar gap-2">
           {ROLES.map(role => (
@@ -155,16 +143,10 @@ export default function Users() {
 
         <div className="p-4 bg-gray-50 flex gap-3 items-center">
           <Search className="text-gray-400" />
-          <input 
-            placeholder="Buscar por Nome ou ID..." 
-            className="bg-transparent outline-none flex-1 text-sm font-medium text-gray-700 placeholder-gray-400"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-          />
+          <input placeholder="Buscar por Nome ou ID..." className="bg-transparent outline-none flex-1 text-sm font-medium text-gray-700 placeholder-gray-400" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
         </div>
       </div>
 
-      {/* Tabela de Usuários */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex-1 flex flex-col">
         <div className="overflow-auto custom-scrollbar flex-1">
           <table className="w-full text-left">
@@ -183,12 +165,7 @@ export default function Users() {
                 <tr key={user.id} className="hover:bg-gray-50 transition-colors group">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border ${
-                        user.role === 'ADMIN' ? 'bg-purple-100 text-purple-600 border-purple-200' :
-                        user.role === 'KITCHEN' ? 'bg-orange-100 text-orange-600 border-orange-200' :
-                        user.role === 'COURIER' ? 'bg-blue-100 text-blue-600 border-blue-200' :
-                        'bg-gray-100 text-gray-500 border-gray-200'
-                      }`}>
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-600 border-purple-200' : user.role === 'KITCHEN' ? 'bg-orange-100 text-orange-600 border-orange-200' : user.role === 'COURIER' ? 'bg-blue-100 text-blue-600 border-blue-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
                         {user.name[0]?.toUpperCase()}
                       </div>
                       <div>
@@ -202,12 +179,7 @@ export default function Users() {
                     {user.phone && <div className="flex items-center gap-2"><Phone size={14} className="text-gray-400"/> {user.phone}</div>}
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center gap-1.5 w-fit ${
-                      user.role === 'ADMIN' ? 'bg-purple-50 text-purple-700 border-purple-100' :
-                      user.role === 'KITCHEN' ? 'bg-orange-50 text-orange-700 border-orange-100' :
-                      user.role === 'COURIER' ? 'bg-blue-50 text-blue-700 border-blue-100' :
-                      'bg-gray-50 text-gray-600 border-gray-100'
-                    }`}>
+                    <span className={`px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center gap-1.5 w-fit ${user.role === 'ADMIN' ? 'bg-purple-50 text-purple-700 border-purple-100' : user.role === 'KITCHEN' ? 'bg-orange-50 text-orange-700 border-orange-100' : user.role === 'COURIER' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-gray-50 text-gray-600 border-gray-100'}`}>
                       {user.role === 'ADMIN' && <Shield size={14} />}
                       {user.role === 'KITCHEN' && <ChefHat size={14} />}
                       {user.role === 'COURIER' && <Truck size={14} />}
@@ -216,12 +188,8 @@ export default function Users() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right space-x-2">
-                    <button onClick={() => openEditModal(user)} className="p-2 text-blue-400 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors" title="Editar">
-                      <Edit size={18} />
-                    </button>
-                    <button onClick={() => requestDelete(user.id)} className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors" title="Excluir">
-                      <Trash2 size={18} />
-                    </button>
+                    <button onClick={() => openEditModal(user)} className="p-2 text-blue-400 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors" title="Editar"><Edit size={18} /></button>
+                    <button onClick={() => requestDelete(user.id)} className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors" title="Excluir"><Trash2 size={18} /></button>
                   </td>
                 </tr>
               ))}
@@ -253,7 +221,12 @@ export default function Users() {
                 </div>
                 <div>
                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Celular</label>
-                   <input value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" placeholder="(99) 99999-9999" />
+                   <input 
+                      value={formData.phone} 
+                      onChange={handlePhoneChange} 
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" 
+                      placeholder="(99) 99999-9999" 
+                    />
                 </div>
               </div>
               
@@ -293,17 +266,7 @@ export default function Users() {
           </div>
         </div>
       )}
-
-      {/* Modal de Confirmação para Excluir Usuário */}
-      <ConfirmModal 
-        isOpen={confirmDeleteOpen}
-        onClose={() => setConfirmDeleteOpen(false)}
-        onConfirm={executeDelete}
-        title="Remover Membro?"
-        message="Tem certeza que deseja remover este usuário? Essa ação não pode ser desfeita."
-        confirmLabel="Sim, Remover"
-        isDestructive
-      />
+      <ConfirmModal isOpen={confirmDeleteOpen} onClose={() => setConfirmDeleteOpen(false)} onConfirm={executeDelete} title="Remover Membro?" message="Tem certeza que deseja remover este usuário? Essa ação não pode ser desfeita." confirmLabel="Sim, Remover" isDestructive />
     </div>
   );
 }

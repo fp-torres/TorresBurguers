@@ -1,4 +1,4 @@
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength, Matches } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '../entities/user.entity';
 
@@ -15,6 +15,9 @@ export class CreateUserDto {
   @ApiProperty({ example: '21999999999', required: false })
   @IsString()
   @IsOptional()
+  // Valida se tem pelo menos 10 dígitos (considerando DDD) e permite caracteres de formatação
+  // Ou usa uma regex para garantir formato, ou apenas verifica tamanho mínimo limpo
+  @MinLength(10, { message: 'O telefone deve ter pelo menos 10 dígitos (DDD + Número)' })
   phone?: string;
 
   @ApiProperty({ example: '123456', minLength: 6 })
@@ -25,5 +28,5 @@ export class CreateUserDto {
   @ApiProperty({ enum: UserRole, default: UserRole.CLIENT, required: false })
   @IsEnum(UserRole)
   @IsOptional()
-  role?: UserRole; // Se não enviar, o backend define como CLIENT
+  role?: UserRole; 
 }

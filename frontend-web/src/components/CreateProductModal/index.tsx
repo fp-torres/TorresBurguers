@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import type { ChangeEvent, SyntheticEvent } from 'react'; 
-import { X, Upload, Loader2, CheckCircle, Plus, Save, Trash2, Edit2, Check } from 'lucide-react';
+import { X, Upload, Loader2, CheckCircle, Plus, Trash2, Edit2, Check } from 'lucide-react';
 import { productService, type Addon, type Product } from '../../services/productService';
 import toast from 'react-hot-toast';
-import ConfirmModal from '../ConfirmModal'; // <--- 1. Import do Modal de Confirmação
+import ConfirmModal from '../ConfirmModal'; 
+import { normalizeCurrency, currencyToNumber } from '../../utils/masks'; // <--- IMPORT NOVO
 
 interface CreateProductModalProps {
   isOpen: boolean;
@@ -25,31 +26,26 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Estados do Produto
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [price, setPrice] = useState('');
+  const [price, setPrice] = useState(''); // Agora armazena string formatada (R$)
   const [category, setCategory] = useState('hamburgueres');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [ingredientsText, setIngredientsText] = useState('');
   
-  // Estados do Gerenciador de Adicionais
   const [allAddons, setAllAddons] = useState<Addon[]>([]);
   const [selectedAddonIds, setSelectedAddonIds] = useState<number[]>([]);
   const [addonTab, setAddonTab] = useState('todos');
   
-  // Criar Novo Adicional
   const [newAddonName, setNewAddonName] = useState('');
   const [newAddonPrice, setNewAddonPrice] = useState('');
   const [creatingAddon, setCreatingAddon] = useState(false);
 
-  // Edição Inline de Adicional
   const [editingAddonId, setEditingAddonId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
   const [editPrice, setEditPrice] = useState('');
 
-  // Estados para Modal de Exclusão de Adicional
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [addonToDelete, setAddonToDelete] = useState<number | null>(null);
 
@@ -59,7 +55,8 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
       if (productToEdit) {
         setName(productToEdit.name);
         setDescription(productToEdit.description);
-        setPrice(String(productToEdit.price).replace('.', ','));
+        // Formata o preço vindo do banco (number -> R$ string)
+        setPrice(normalizeCurrency(productToEdit.price));
         setCategory(productToEdit.category);
         setIngredientsText(productToEdit.ingredients ? productToEdit.ingredients.join(', ') : '');
         
@@ -89,6 +86,20 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
     } catch (error) { console.log("Erro addons"); }
   }
 
+  // --- Handlers de Input com Máscara ---
+  
+  const handlePriceChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setPrice(normalizeCurrency(e.target.value));
+  };
+
+  const handleNewAddonPriceChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setNewAddonPrice(normalizeCurrency(e.target.value));
+  };
+
+  const handleEditPriceChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setEditPrice(normalizeCurrency(e.target.value));
+  };
+
   // --- GERENCIAMENTO DE ADICIONAIS ---
 
   async function handleCreateAddon() {
@@ -99,7 +110,7 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
       
       const created = await productService.createAddon({ 
         name: newAddonName, 
-        price: parseFloat(newAddonPrice.replace(',', '.')),
+        price: currencyToNumber(newAddonPrice), // Converte R$ -> number
         category: catToSave
       });
       
@@ -114,14 +125,12 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
     }
   }
 
-  // 1. Solicita a exclusão (abre o modal)
   function requestDeleteAddon(id: number, e: React.MouseEvent) {
     e.stopPropagation();
     setAddonToDelete(id);
     setConfirmDeleteOpen(true);
   }
 
-  // 2. Executa a exclusão de fato
   async function executeDeleteAddon() {
     if (!addonToDelete) return;
     try {
@@ -141,7 +150,7 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
     e.stopPropagation();
     setEditingAddonId(addon.id);
     setEditName(addon.name);
-    setEditPrice(String(addon.price).replace('.', ','));
+    setEditPrice(normalizeCurrency(addon.price));
   }
 
   async function saveEditAddon(id: number, e: React.MouseEvent) {
@@ -149,7 +158,7 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
     try {
       await productService.updateAddon(id, {
         name: editName,
-        price: parseFloat(editPrice.replace(',', '.'))
+        price: currencyToNumber(editPrice)
       });
       setEditingAddonId(null);
       await loadAddons();
@@ -177,7 +186,10 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
       const formData = new FormData();
       formData.append('name', name);
       formData.append('description', description);
-      formData.append('price', price.replace(',', '.'));
+      
+      // Converte o valor formatado para número float antes de enviar
+      formData.append('price', String(currencyToNumber(price))); 
+      
       formData.append('category', category.toLowerCase());
       
       if (!productToEdit) formData.append('available', 'true');
@@ -253,8 +265,8 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Preço (R$)</label>
-                  <input required value={price} onChange={e => setPrice(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" placeholder="0,00" />
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Preço</label>
+                  <input required value={price} onChange={handlePriceChange} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" placeholder="R$ 0,00" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Categoria</label>
@@ -313,7 +325,7 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
                 />
                 <input 
                   value={newAddonPrice} 
-                  onChange={e => setNewAddonPrice(e.target.value)} 
+                  onChange={handleNewAddonPriceChange} 
                   placeholder="R$ 0,00" 
                   className="w-24 px-3 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:border-orange-500" 
                 />
@@ -347,7 +359,7 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
                     {editingAddonId === addon.id ? (
                       <div className="flex gap-2 flex-1" onClick={e => e.stopPropagation()}>
                         <input value={editName} onChange={e => setEditName(e.target.value)} className="w-full text-xs px-1 border rounded" autoFocus />
-                        <input value={editPrice} onChange={e => setEditPrice(e.target.value)} className="w-16 text-xs px-1 border rounded" />
+                        <input value={editPrice} onChange={handleEditPriceChange} className="w-16 text-xs px-1 border rounded" />
                       </div>
                     ) : (
                       <div className="flex flex-col truncate">
@@ -368,7 +380,6 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
                       </button>
                     )}
                     
-                    {/* Botão de Excluir usando a nova função com Modal */}
                     <button type="button" onClick={(e) => requestDeleteAddon(addon.id, e)} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded">
                       <Trash2 size={14} />
                     </button>
@@ -394,7 +405,6 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
         </div>
       </div>
 
-      {/* Modal de Confirmação para Excluir Adicional */}
       <ConfirmModal 
         isOpen={confirmDeleteOpen}
         onClose={() => setConfirmDeleteOpen(false)}

@@ -16,8 +16,11 @@ export class CreateProductDto {
 
   @ApiProperty({ example: 29.90 })
   @Transform(({ value }) => {
-    // Garante que converte "29,90" ou "29.90" para número 29.9
-    return parseFloat(String(value).replace(',', '.'));
+    // Se vier "29,90" ou "29.90" ou "R$ 29,90", converte para número
+    if (typeof value === 'string') {
+      return parseFloat(value.replace('R$', '').replace(/\./g, '').replace(',', '.'));
+    }
+    return value;
   })
   @IsNumber()
   @Min(0)
@@ -32,7 +35,10 @@ export class CreateProductDto {
   @IsOptional()
   @Transform(({ value }) => {
     if (!value) return undefined;
-    return parseFloat(String(value).replace(',', '.'));
+    if (typeof value === 'string') {
+       return parseFloat(value.replace('R$', '').replace(/\./g, '').replace(',', '.'));
+    }
+    return value;
   })
   @IsNumber()
   @Min(0)
@@ -57,32 +63,26 @@ export class CreateProductDto {
   @IsBoolean()
   available?: boolean;
 
-  // --- INGREDIENTES (String única -> Array) ---
   @ApiProperty({ required: false })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   @Transform(({ value }) => {
     if (!value) return [];
-    // Se vier "Alface, Tomate", vira ["Alface", "Tomate"]
     if (typeof value === 'string') {
       return value.split(',').map((v: string) => v.trim()).filter((v: string) => v.length > 0);
     }
-    // Se já for array, retorna ele mesmo
     return value;
   })
   ingredients?: string[];
 
-  // --- ADICIONAIS (CORREÇÃO DO ERRO 400) ---
   @ApiProperty({ required: false, type: [Number] })
   @IsOptional()
   @IsArray()
-  @IsNumber({}, { each: true }) // Valida se cada item é número
+  @IsNumber({}, { each: true }) 
   @Transform(({ value }) => {
     if (!value) return [];
-    // Se vier um único valor (ex: "1"), transforma em ["1"]
     const values = Array.isArray(value) ? value : [value];
-    // Converte tudo para número (ex: ["1", "2"] -> [1, 2])
     return values.map((v: any) => Number(v));
   })
   allowed_addons_ids?: number[];

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Mail, User, Loader2, ArrowLeft, Phone } from 'lucide-react';
 import api from '../../../services/api';
-import toast from 'react-hot-toast'; // NOVO
+import toast from 'react-hot-toast'; 
+import { normalizePhone } from '../../../utils/masks'; // <--- IMPORT NOVO
 
 export default function ClientSignup() {
   const [name, setName] = useState('');
@@ -12,15 +13,19 @@ export default function ClientSignup() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPhone(normalizePhone(e.target.value));
+  };
+
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
       await api.post('/users', { name, email, password, phone, role: 'CLIENT' });
-      toast.success('Conta criada com sucesso! Faça login.'); // NOVO
+      toast.success('Conta criada com sucesso! Faça login.');
       navigate('/signin');
     } catch (error) {
-      toast.error('Erro ao criar conta. Verifique os dados.'); // NOVO
+      toast.error('Erro ao criar conta. Verifique os dados.');
     } finally {
       setLoading(false);
     }
@@ -53,7 +58,13 @@ export default function ClientSignup() {
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Phone className="h-5 w-5 text-gray-400" />
               </div>
-              <input required value={phone} onChange={e => setPhone(e.target.value)} className="pl-10 block w-full border-gray-300 rounded-xl border p-3 focus:ring-orange-500 focus:border-orange-500" placeholder="(21) 99999-9999" />
+              <input 
+                required 
+                value={phone} 
+                onChange={handlePhoneChange} // <--- Handler com Máscara
+                className="pl-10 block w-full border-gray-300 rounded-xl border p-3 focus:ring-orange-500 focus:border-orange-500" 
+                placeholder="(21) 99999-9999" 
+              />
             </div>
           </div>
 
