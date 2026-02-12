@@ -10,6 +10,7 @@ import Dashboard from '../pages/Dashboard';
 import Products from '../pages/Products'; 
 import Orders from '../pages/Orders'; 
 import Users from '../pages/Users';
+import Trash from '../pages/Trash'; // <--- NOVA PÁGINA
 
 // Pages - Client
 import ClientHome from '../pages/Client/Home';
@@ -23,19 +24,13 @@ function PrivateRoute({ children }: { children: JSX.Element }) {
   const token = localStorage.getItem('torresburgers.token');
   const userStored = localStorage.getItem('torresburgers.user');
   
-  if (!token || !userStored) {
-    return <Navigate to="/login" />;
-  }
+  if (!token || !userStored) return <Navigate to="/login" />;
 
   try {
     const user = JSON.parse(userStored);
-    // Se for CLIENTE tentando acessar área administrativa, manda pra Home
-    if (user.role === 'CLIENT') {
-      return <Navigate to="/" />;
-    }
-  } catch (error) {
-    localStorage.removeItem('torresburgers.token');
-    localStorage.removeItem('torresburgers.user');
+    if (user.role === 'CLIENT') return <Navigate to="/" />;
+  } catch {
+    localStorage.clear();
     return <Navigate to="/login" />;
   }
 
@@ -54,8 +49,6 @@ export default function AppRoutes() {
 
       <Route path="/signin" element={<ClientLogin />} />
       <Route path="/signup" element={<ClientSignup />} />
-
-      {/* Login Corporativo (Admin, Cozinha, Motoboy) */}
       <Route path="/login" element={<Login />} />
 
       <Route element={<PrivateRoute><DefaultLayout /></PrivateRoute>}>
@@ -63,6 +56,9 @@ export default function AppRoutes() {
         <Route path="/products" element={<Products />} /> 
         <Route path="/orders" element={<Orders />} /> 
         <Route path="/users" element={<Users />} />
+        
+        {/* NOVA ROTA DE LIXEIRA */}
+        <Route path="/trash" element={<Trash />} /> 
       </Route>
 
       <Route path="/admin" element={<Navigate to="/dashboard" />} />

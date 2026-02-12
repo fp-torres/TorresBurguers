@@ -137,13 +137,22 @@ export class OrdersService {
   }
 
   // --- CORREÇÃO DO DASHBOARD AQUI ---
+  // Atualizado para usar os status novos: READY_FOR_PICKUP, DELIVERING, DONE
   async getDashboardSummary() {
     // 1. Total de pedidos (exceto cancelados)
     const totalOrders = await this.orderRepository.count({
-      where: { status: In([OrderStatus.PENDING, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.DELIVERED]) }
+      where: { 
+        status: In([
+          OrderStatus.PENDING, 
+          OrderStatus.PREPARING, 
+          OrderStatus.READY_FOR_PICKUP, // Era 'READY'
+          OrderStatus.DELIVERING,       // Era 'DELIVERED'
+          OrderStatus.DONE              // Status final
+        ]) 
+      }
     });
 
-    // 2. Faturamento (seguro contra NULL)
+    // 2. Faturamento (seguro contra NULL e apenas pedidos válidos)
     const revenueQuery = await this.orderRepository
       .createQueryBuilder('order')
       .select('SUM(order.total_price)', 'total')
@@ -153,7 +162,7 @@ export class OrdersService {
     // Se revenueQuery for null ou undefined, retorna 0. Senão, converte string para float.
     const revenue = revenueQuery && revenueQuery.total ? parseFloat(revenueQuery.total) : 0;
 
-    // 3. Contadores de status
+    // 3. Contadores de status específicos
     const pendingOrders = await this.orderRepository.count({ where: { status: OrderStatus.PENDING } });
     const preparingOrders = await this.orderRepository.count({ where: { status: OrderStatus.PREPARING } });
     
@@ -161,13 +170,19 @@ export class OrdersService {
     const pendingPayments = await this.orderRepository.count({ 
       where: { 
         payment_status: PaymentStatus.PENDING,
-        status: In([OrderStatus.PENDING, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.DELIVERED])
+        status: In([
+          OrderStatus.PENDING, 
+          OrderStatus.PREPARING, 
+          OrderStatus.READY_FOR_PICKUP, 
+          OrderStatus.DELIVERING, 
+          OrderStatus.DONE
+        ])
       } 
     });
 
     return {
       totalOrders,
-      revenue, // Agora garantido que é number
+      revenue,
       pendingOrders,
       preparingOrders,
       pendingPayments
@@ -199,7 +214,6 @@ export class OrdersService {
       if (order.status === OrderStatus.CANCELED) return;
       
       const dateKey = new Date(order.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-      // Verifica se a data está no range (segurança)
       if (salesByDate[dateKey] !== undefined) {
         salesByDate[dateKey] += Number(order.total_price);
       }
@@ -212,7 +226,7 @@ export class OrdersService {
 
     const revenueChart = Object.entries(salesByDate)
       .map(([date, total]) => ({ date, total }))
-      .reverse(); // Coloca em ordem cronológica
+      .reverse();
       
     const productsChart = Object.entries(topProducts)
       .map(([name, quantity]) => ({ name, quantity }))

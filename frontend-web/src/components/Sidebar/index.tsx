@@ -13,7 +13,6 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const location = useLocation();
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
-  // Recupera usuário para filtrar menu
   const userStored = localStorage.getItem('torresburgers.user');
   let userRole = 'ADMIN';
   if (userStored) {
@@ -25,9 +24,10 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     { name: 'Pedidos', icon: 'solar:bag-check-bold-duotone', path: '/orders', roles: ['ADMIN', 'KITCHEN', 'COURIER', 'EMPLOYEE'] },
     { name: 'Cardápio', icon: 'solar:chef-hat-bold-duotone', path: '/products', roles: ['ADMIN'] },
     { name: 'Equipe', icon: 'solar:users-group-rounded-bold-duotone', path: '/users', roles: ['ADMIN'] },
+    // --- NOVO ITEM: LIXEIRA ---
+    { name: 'Lixeira', icon: 'solar:trash-bin-trash-bold-duotone', path: '/trash', roles: ['ADMIN'] },
   ];
 
-  // Filtra itens permitidos para o cargo atual
   const menuItems = allMenuItems.filter(item => item.roles.includes(userRole));
 
   function executeLogout() {

@@ -1,6 +1,6 @@
 import { 
   Controller, Get, Post, Body, Patch, Param, Delete, 
-  UseGuards, UseInterceptors, UploadedFile, BadRequestException, ParseIntPipe, HttpStatus, ParseFilePipeBuilder 
+  UseGuards, UseInterceptors, UploadedFile, ParseIntPipe 
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -16,6 +16,22 @@ import { RolesGuard } from '../auth/roles.guard';
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
+  // --- LIXEIRA: Listar Excluídos ---
+  @Get('trash')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  findDeleted() {
+    return this.productsService.findDeleted();
+  }
+
+  // --- LIXEIRA: Restaurar Produto ---
+  @Patch(':id/restore')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  restore(@Param('id', ParseIntPipe) id: number) {
+    return this.productsService.restore(id);
+  }
+
   @Post()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
@@ -30,10 +46,12 @@ export class ProductsController {
     }),
   }))
   create(
-    @Body() createProductDto: CreateProductDto,
+    @Body() createProductDto: any, // Usando any temporário para facilitar o FormData
     @UploadedFile() file?: Express.Multer.File,
   ) {
     if (file) createProductDto.image = file.filename;
+    // Conversão manual de tipos vindos do FormData (que são strings)
+    if (createProductDto.price) createProductDto.price = parseFloat(createProductDto.price);
     return this.productsService.create(createProductDto);
   }
 
@@ -47,7 +65,6 @@ export class ProductsController {
     return this.productsService.findOne(id);
   }
 
-  // --- ATUALIZAÇÃO (PUT/PATCH) ---
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
@@ -63,22 +80,23 @@ export class ProductsController {
   }))
   update(
     @Param('id', ParseIntPipe) id: number, 
-    @Body() updateProductDto: UpdateProductDto,
+    @Body() updateProductDto: any,
     @UploadedFile() file?: Express.Multer.File
   ) {
     if (file) updateProductDto.image = file.filename;
+    if (updateProductDto.price) updateProductDto.price = parseFloat(updateProductDto.price);
     return this.productsService.update(id, updateProductDto);
   }
 
-  // --- ARQUIVAR (Soft Delete / Esgotado) ---
+  // --- SOFT DELETE (Mover para Lixeira) ---
   @Delete(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
   remove(@Param('id', ParseIntPipe) id: number) {
-    return this.productsService.remove(id); // Apenas desativa (available = false)
+    return this.productsService.remove(id); 
   }
 
-  // --- DELETAR PERMANENTE (Hard Delete) ---
+  // --- HARD DELETE (Excluir Permanentemente) ---
   @Delete(':id/permanent')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
