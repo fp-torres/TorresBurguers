@@ -11,7 +11,8 @@ import { OrdersModule } from './orders/orders.module';
 import { AuthModule } from './auth/auth.module';
 import { AddressesModule } from './addresses/addresses.module';
 import { StoreModule } from './store/store.module';
-import { PromotionsModule } from './promotions/promotions.module'; // <--- NEW IMPORT
+import { PromotionsModule } from './promotions/promotions.module';
+import { PaymentModule } from './payment/payment.module'; // <--- IMPORTANTE: Importe o módulo novo aqui
 
 // Entities
 import { User } from './users/entities/user.entity';
@@ -41,13 +42,15 @@ import { UploadController } from './common/upload.controller';
       entities: [User, Product, Order, OrderItem, Address, Addon, StoreConfig], 
       synchronize: true,
     }),
+    // Módulos da Aplicação
     UsersModule,
     ProductsModule,
     OrdersModule,
     AuthModule,
     AddressesModule,
     StoreModule,
-    PromotionsModule, // <--- REGISTERED HERE
+    PromotionsModule,
+    PaymentModule, 
   ],
   controllers: [UploadController],
   providers: [],

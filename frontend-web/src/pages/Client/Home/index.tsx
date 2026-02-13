@@ -27,8 +27,6 @@ const CATEGORIES = [
 export default function ClientHome() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Inicia com o banner padrão (será atualizado no useEffect)
   const [banner, setBanner] = useState<any>(DAILY_OFFERS[0]);
   
   const [selectedCategory, setSelectedCategory] = useState('todos');
@@ -45,23 +43,15 @@ export default function ClientHome() {
   async function loadBanner() {
     // =================================================================
     // 🎛️ ÁREA DE SIMULAÇÃO (FRONTEND)
-    // Descomente a linha do dia que deseja simular visualmente.
+    // Para testar visualmente, descomente a linha abaixo.
     // =================================================================
     
-    // const simulacaoDia = null; // 🟢 MODO AUTOMÁTICO (Usa data real)
-    // const simulacaoDia = 0;    // 🔴 Simula DOMINGO
-    // const simulacaoDia = 1;    // 🔴 Simula SEGUNDA
-    // const simulacaoDia = 2;    // 🔴 Simula TERÇA
-    const simulacaoDia = 3;    // 🟢 Simula QUARTA (Chama API Backend)
-    // const simulacaoDia = 4;    // 🔴 Simula QUINTA
-    // const simulacaoDia = 5;    // 🔴 Simula SEXTA
-    // const simulacaoDia = 6;    // 🔴 Simula SÁBADO
-
-    // =================================================================
+    const simulacaoDia = null; // (Produção: Usa data real)
+    // const simulacaoDia = 3; // (Teste: Força banner de Quarta)
 
     const todayIndex = simulacaoDia !== null ? simulacaoDia : new Date().getDay();
     
-    // 1. Define o banner base (estático)
+    // 1. Define o banner base
     setBanner(DAILY_OFFERS[todayIndex] || DAILY_OFFERS[0]);
 
     // 2. Se for Quarta (3), busca dados dinâmicos no backend
@@ -70,7 +60,6 @@ export default function ClientHome() {
         const { data } = await api.get('/promotions/football');
         
         if (data && data.hasGame) {
-          // Atualiza o banner com os dados do jogo (Real ou Mock)
           setBanner({
             title: "Quarta de Futebol ⚽",
             subtitle: `${data.home} x ${data.away} às ${data.time} - ${data.tournament}. Peça agora!`,
@@ -79,7 +68,7 @@ export default function ClientHome() {
           });
         }
       } catch (error) {
-        console.log("Erro ao carregar dados de futebol, mantendo banner padrão.");
+        console.log("Mantendo banner padrão.");
       }
     }
   }

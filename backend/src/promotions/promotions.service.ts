@@ -10,60 +10,58 @@ export class PromotionsService {
   async getFootballBanner() {
     // =================================================================
     // 🎛️ ÁREA DE SIMULAÇÃO (BACKEND)
-    // Descomente a linha do dia que deseja simular.
-    // Para voltar ao automático, deixe apenas 'simulacaoDia = null' ativo.
     // =================================================================
     
-    // const simulacaoDia = null; // 🟢 MODO AUTOMÁTICO (Usa data real)
-    // const simulacaoDia = 0;    // 🔴 Simula DOMINGO
-    // const simulacaoDia = 1;    // 🔴 Simula SEGUNDA
-    // const simulacaoDia = 2;    // 🔴 Simula TERÇA
-    const simulacaoDia = 3;    // 🟢 Simula QUARTA (Libera API Futebol)
-    // const simulacaoDia = 4;    // 🔴 Simula QUINTA
-    // const simulacaoDia = 5;    // 🔴 Simula SEXTA
-    // const simulacaoDia = 6;    // 🔴 Simula SÁBADO
+    const simulacaoDia = 3; // Força ser Quarta-feira
+    
+    // Data com jogos reais (para testar a API). 
+    // Quando for pra produção, mude para: const simulacaoData = null;
+    // const simulacaoData = '2025-02-12';
+    const simulacaoData = null; 
 
     // =================================================================
 
     const today = new Date();
     const currentDay = simulacaoDia !== null ? simulacaoDia : today.getDay();
 
-    // Se não for Quarta (3), retorna null e não gasta processamento
-    if (currentDay !== 3) {
-      return null; 
-    }
+    if (currentDay !== 3) return null;
 
-    // Tenta pegar do cache primeiro
+    // Tenta pegar do cache primeiro (Isso evita o erro 429 - Too Many Requests)
     const cachedMatch = await this.cacheManager.get('football_highlight');
     if (cachedMatch) {
+      console.log("📦 Retornando dados do Cache (Economizando API)");
       return cachedMatch;
     }
 
     try {
-      const dateStr = today.toISOString().split('T')[0];
+      const dateStr = simulacaoData || today.toISOString().split('T')[0];
+      console.log(`🔍 Buscando na API para a data: ${dateStr}...`);
 
-      // Tenta buscar na API Oficial
-      const response = await axios.get('https://v3.football.api-sports.io/fixtures', {
+      const response = await axios.get('https://api-football-v1.p.rapidapi.com/v3/fixtures', {
         params: {
           date: dateStr,
           timezone: 'America/Sao_Paulo',
-          league: '71-72-13-2-5' 
+          // Inclui Premier League (39) e La Liga (140) e Estaduais (475, 479)
+          league: '71-72-13-2-39-140-475-479' 
         },
         headers: {
-          'x-rapidapi-key': 'SUA_CHAVE_AQUI', // Se não tiver chave, vai cair no erro abaixo (o que é bom para teste)
-          'x-rapidapi-host': 'v3.football.api-sports.io'
+          'x-rapidapi-key': 'adcf14f53amsh526811539e882d0p16e623jsnfcad9b566cdb',
+          'x-rapidapi-host': 'api-football-v1.p.rapidapi.com'
         }
       });
 
       const matches = response.data.response;
 
-      // Se a API retornar vazio (sem jogos hoje), geramos um MOCK para não ficar sem banner
       if (!matches || matches.length === 0) {
-        throw new Error("Nenhum jogo encontrado na API hoje.");
+        // Se a API responder mas não tiver jogos (ex: erro de permissão silencioso ou data vazia)
+        throw new Error("Lista de jogos vazia ou erro de permissão.");
       }
 
+      // Ordena pelo jogo mais tarde
       const sorted = matches.sort((a: any, b: any) => b.fixture.timestamp - a.fixture.timestamp);
       const highlight = sorted[0];
+
+      console.log(`✅ Jogo encontrado: ${highlight.teams.home.name} x ${highlight.teams.away.name}`);
 
       const matchData = {
         hasGame: true,
@@ -73,20 +71,21 @@ export class PromotionsService {
         tournament: highlight.league.name
       };
 
+      // Salva no cache por 4 horas
       await this.cacheManager.set('football_highlight', matchData, 14400000);
       return matchData;
 
-    } catch (error) {
-      console.log("⚠️ API de Futebol falhou ou sem jogos. Usando DADOS FICTÍCIOS para teste.");
+    } catch (error: any) {
+      // Loga o erro mas NÃO QUEBRA o sistema
+      console.log(`⚠️ Falha na API (${error.response?.status || '?'}). Usando Mock.`);
       
-      // --- DADOS DE SEGURANÇA (MOCK) ---
-      // Isso garante que você veja o banner funcionando mesmo sem API Key!
+      // MOCK DE SEGURANÇA (Para você ver funcionando enquanto resolve a assinatura)
       return { 
         hasGame: true, 
-        home: "Flamengo", 
-        away: "Palmeiras", 
+        home: "São Paulo (Mock)", 
+        away: "Palmeiras (Mock)", 
         time: "21:30", 
-        tournament: "Brasileirão Série A" 
+        tournament: "Paulistão 2025" 
       };
     }
   }

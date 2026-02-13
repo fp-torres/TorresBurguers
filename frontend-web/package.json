@@ -11,9 +11,13 @@
   },
   "dependencies": {
     "@iconify/react": "^6.0.2",
+    "@mercadopago/sdk-react": "^1.0.7",
     "axios": "^1.13.4",
+    "card-validator": "^10.0.4",
     "lucide-react": "^0.563.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
+    "react-credit-cards-2": "^1.2.0",
     "react-dom": "^19.2.0",
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.13.0",
