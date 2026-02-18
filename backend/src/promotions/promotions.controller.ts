@@ -6,7 +6,7 @@ export class PromotionsController {
   constructor(private readonly promotionsService: PromotionsService) {}
 
   @Get('football')
-  getFootballPromo() {
+  getBanner() {
     return this.promotionsService.getFootballBanner();
   }
 }
