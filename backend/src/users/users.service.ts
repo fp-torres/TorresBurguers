@@ -53,32 +53,33 @@ export class UsersService {
     const user = await this.findOne(id);
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
+    const updateData: any = { ...updateUserDto };
+
+    // Se houver senha nova, criptografa antes de salvar
     if (updateUserDto.password) {
-      updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
-    }
-    
-    const { password, ...data } = updateUserDto;
-    const updateData: any = { ...data };
-    
-    if (password) {
-      updateData.password_hash = password;
+      const saltRounds = 10;
+      updateData.password_hash = await bcrypt.hash(updateUserDto.password, saltRounds);
+      delete updateData.password; // Remove o campo password cru
     }
 
+    // Remove campos que não devem ser atualizados diretamente se vierem vazios
+    if (!updateData.avatar) delete updateData.avatar;
+
     await this.usersRepository.update(id, updateData);
+    
+    // Retorna o usuário atualizado (sem a senha)
     return this.findOne(id);
   }
 
-  // Enviar para Lixeira
+  // Enviar para Lixeira (Soft Delete)
   remove(id: number) {
     return this.usersRepository.softDelete(id);
   }
 
-  // Restaurar da Lixeira
   restore(id: number) {
     return this.usersRepository.restore(id);
   }
 
-  // Excluir Permanentemente
   hardDelete(id: number) {
     return this.usersRepository.delete(id);
   }

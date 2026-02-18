@@ -1,7 +1,10 @@
 import { 
   Controller, Get, Post, Body, Patch, Param, Delete, 
-  UseGuards, ParseIntPipe 
+  UseGuards, ParseIntPipe, UseInterceptors, UploadedFile 
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -13,7 +16,6 @@ import { RolesGuard } from '../auth/roles.guard';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  // --- LIXEIRA: Listar Excluídos ---
   @Get('trash')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
@@ -21,7 +23,6 @@ export class UsersController {
     return this.usersService.findDeleted();
   }
 
-  // --- LIXEIRA: Restaurar Usuário ---
   @Patch(':id/restore')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
@@ -29,8 +30,6 @@ export class UsersController {
     return this.usersService.restore(id);
   }
 
-  // --- CRIAÇÃO DE USUÁRIO (PÚBLICO) ---
-  // Removi os Guards aqui para permitir o cadastro (Sign Up) sem estar logado
   @Post()
   create(@Body() createUserDto: CreateUserDto) {
     return this.usersService.create(createUserDto);
@@ -49,13 +48,36 @@ export class UsersController {
     return this.usersService.findOne(id);
   }
 
+  // --- UPDATE COM UPLOAD DE AVATAR ---
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'))
-  update(@Param('id', ParseIntPipe) id: number, @Body() updateUserDto: UpdateUserDto) {
+  @UseInterceptors(FileInterceptor('file', {
+    storage: diskStorage({
+      destination: './uploads',
+      filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        cb(null, `${uniqueSuffix}${extname(file.originalname)}`);
+      },
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 }, // LIMITE 5MB
+    fileFilter: (req, file, cb) => {
+      if (!file.mimetype.match(/\/(jpg|jpeg|png)$/)) {
+        return cb(new Error('Somente imagens são permitidas!'), false);
+      }
+      cb(null, true);
+    },
+  }))
+  update(
+    @Param('id', ParseIntPipe) id: number, 
+    @Body() updateUserDto: UpdateUserDto,
+    @UploadedFile() file?: Express.Multer.File
+  ) {
+    if (file) {
+      updateUserDto.avatar = `/uploads/${file.filename}`;
+    }
     return this.usersService.update(id, updateUserDto);
   }
 
-  // --- SOFT DELETE ---
   @Delete(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
@@ -63,7 +85,6 @@ export class UsersController {
     return this.usersService.remove(id);
   }
 
-  // --- HARD DELETE ---
   @Delete(':id/permanent')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')

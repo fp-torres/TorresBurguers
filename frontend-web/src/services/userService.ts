@@ -1,40 +1,40 @@
 import api from './api';
 
-// CORREÇÃO: Adicionamos os novos cargos na tipagem
 export interface User {
   id: number;
   name: string;
   email: string;
   phone?: string; 
+  avatar?: string;
   role: 'ADMIN' | 'CLIENT' | 'KITCHEN' | 'COURIER';
 }
 
-// DTO para o formulário
-export interface CreateUserDTO {
-  name: string;
-  email: string;
-  password?: string;
-  phone?: string;
-  role: string; // Pode ser string genérica aqui para facilitar o select
-}
-
 export const userService = {
-  getAll: async () => {
-    const response = await api.get<User[]>('/users');
+  // ... outros métodos (getAll, create, etc)
+
+  // ATUALIZAÇÃO: Suporte a FormData para Upload de Imagem
+  update: async (id: number, data: any, file?: File) => {
+    const formData = new FormData();
+    
+    // Adiciona apenas campos que possuem valor
+    Object.keys(data).forEach(key => {
+      if (data[key] !== undefined && data[key] !== null && data[key] !== '') {
+        formData.append(key, data[key]);
+      }
+    });
+
+    // Adiciona o arquivo binário (limitado a 5MB no front e back)
+    if (file) {
+      formData.append('file', file);
+    }
+
+    const response = await api.patch(`/users/${id}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
     return response.data;
   },
 
-  create: async (data: CreateUserDTO) => {
-    const response = await api.post('/users', data);
-    return response.data;
-  },
-
-  update: async (id: number, data: Partial<CreateUserDTO>) => {
-    const response = await api.patch(`/users/${id}`, data);
-    return response.data;
-  },
-
-  delete: async (id: number) => {
+  deleteAccount: async (id: number) => {
     await api.delete(`/users/${id}`);
   }
 };

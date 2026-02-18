@@ -10,7 +10,7 @@ import Dashboard from '../pages/Dashboard';
 import Products from '../pages/Products'; 
 import Orders from '../pages/Orders'; 
 import Users from '../pages/Users';
-import Trash from '../pages/Trash'; // <--- NOVA PÁGINA
+import Trash from '../pages/Trash';
 
 // Pages - Client
 import ClientHome from '../pages/Client/Home';
@@ -19,6 +19,7 @@ import ClientLogin from '../pages/Client/Login';
 import ClientSignup from '../pages/Client/Signup';
 import OrderSuccess from '../pages/Client/OrderSuccess';
 import ClientOrders from '../pages/Client/Orders'; 
+import ClientProfile from '../pages/Client/Profile'; // <--- IMPORT NOVO
 
 function PrivateRoute({ children }: { children: JSX.Element }) {
   const token = localStorage.getItem('torresburgers.token');
@@ -45,6 +46,9 @@ export default function AppRoutes() {
         <Route path="cart" element={<ClientCart />} />
         <Route path="order-success" element={<OrderSuccess />} />
         <Route path="my-orders" element={<ClientOrders />} />
+        
+        {/* NOVA ROTA CORRIGIDA */}
+        <Route path="profile" element={<ClientProfile />} />
       </Route>
 
       <Route path="/signin" element={<ClientLogin />} />
@@ -56,8 +60,6 @@ export default function AppRoutes() {
         <Route path="/products" element={<Products />} /> 
         <Route path="/orders" element={<Orders />} /> 
         <Route path="/users" element={<Users />} />
-        
-        {/* NOVA ROTA DE LIXEIRA */}
         <Route path="/trash" element={<Trash />} /> 
       </Route>
 
