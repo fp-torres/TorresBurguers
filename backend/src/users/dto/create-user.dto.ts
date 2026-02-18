@@ -15,14 +15,16 @@ export class CreateUserDto {
   @ApiProperty({ example: '21999999999', required: false })
   @IsString()
   @IsOptional()
-  // Valida se tem pelo menos 10 dígitos (considerando DDD) e permite caracteres de formatação
-  // Ou usa uma regex para garantir formato, ou apenas verifica tamanho mínimo limpo
   @MinLength(10, { message: 'O telefone deve ter pelo menos 10 dígitos (DDD + Número)' })
   phone?: string;
 
-  @ApiProperty({ example: '123456', minLength: 6 })
+  @ApiProperty({ example: 'SenhaForte123!', minLength: 9 })
   @IsString()
-  @MinLength(6, { message: 'A senha deve ter no mínimo 6 caracteres' })
+  @MinLength(9, { message: 'A senha deve ter no mínimo 9 caracteres' })
+  // Regex: Pelo menos 1 maiúscula, E (1 número OU 1 símbolo)
+  @Matches(/((?=.*\d)|(?=.*\W+))(?![.\n])(?=.*[A-Z]).*$/, { 
+    message: 'A senha deve conter pelo menos uma letra maiúscula e um número ou símbolo.' 
+  })
   password: string;
 
   @ApiProperty({ enum: UserRole, default: UserRole.CLIENT, required: false })

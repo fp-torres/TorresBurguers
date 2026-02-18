@@ -12,15 +12,38 @@ export const maskMoney = (value: string | number) => {
 export const normalizeCurrency = maskMoney;
 export const maskCurrency = maskMoney;
 
-// Formata Celular: (99) 99999-9999
+// Formata Celular ou Fixo:
+// 11 dígitos: (21) 96760-0280
+// 10 dígitos: (21) 2555-5555
 export const maskPhone = (value: string) => {
   if (!value) return '';
+  
+  // Remove tudo que não é dígito
   let r = value.replace(/\D/g, '');
-  r = r.replace(/^0/, '');
-  if (r.length > 11) r = r.replace(/^(\d\d)(\d{5})(\d{4}).*/, '($1) $2-$3');
-  else if (r.length > 5) r = r.replace(/^(\d\d)(\d{4})(\d{0,4}).*/, '($1) $2-$3');
-  else if (r.length > 2) r = r.replace(/^(\d\d)(\d{0,5}).*/, '($1) $2');
-  else r = r.replace(/^(\d*)/, '($1');
+  
+  // Limita a 11 dígitos (2 DDD + 9 Número)
+  r = r.substring(0, 11);
+
+  // Se tiver mais de 10 dígitos, é Celular (9 dígitos no número)
+  if (r.length > 10) {
+    return r.replace(/^(\d\d)(\d{5})(\d{4}).*/, '($1) $2-$3');
+  }
+  
+  // Se tiver mais de 5 dígitos, já começa a formatar como Fixo ou Celular incompleto
+  if (r.length > 5) {
+    return r.replace(/^(\d\d)(\d{4})(\d{0,4}).*/, '($1) $2-$3');
+  }
+  
+  // Apenas DDD e começo do número
+  if (r.length > 2) {
+    return r.replace(/^(\d\d)(\d{0,5}).*/, '($1) $2');
+  }
+  
+  // Apenas DDD
+  if (r.length > 0) {
+    return r.replace(/^(\d*)/, '($1');
+  }
+  
   return r;
 };
 

@@ -29,9 +29,9 @@ export class UsersController {
     return this.usersService.restore(id);
   }
 
+  // --- CRIAÇÃO DE USUÁRIO (PÚBLICO) ---
+  // Removi os Guards aqui para permitir o cadastro (Sign Up) sem estar logado
   @Post()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN')
   create(@Body() createUserDto: CreateUserDto) {
     return this.usersService.create(createUserDto);
   }
