@@ -1,21 +1,20 @@
 import { useEffect, useState } from 'react';
 import { 
-  Clock, CheckCircle, Truck, Package, XCircle, 
-  MapPin, User, AlertCircle, ChefHat, Bike, Bell, ExternalLink, Navigation 
+  Clock, CheckCircle, XCircle, 
+  MapPin, User, AlertCircle, ChefHat, Bike, Bell, ExternalLink, Navigation, Banknote 
 } from 'lucide-react';
-import { orderService, type Order } from '../../services/orderService';
+import { orderService, type Order, type OrderItem } from '../../services/orderService';
 import ConfirmModal from '../../components/ConfirmModal';
 import toast from 'react-hot-toast';
+import { currencyToNumber } from '../../utils/masks'; 
 
 export default function Orders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Estado para Modal de Cancelamento
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<number | null>(null);
 
-  // Identificar o Papel do Usuário (Role)
   const userStored = localStorage.getItem('torresburgers.user');
   let userRole = 'ADMIN';
   try {
@@ -41,7 +40,6 @@ export default function Orders() {
 
   async function updateStatus(id: number, newStatus: string) {
     try {
-      // Atualização Otimista
       setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus as any } : o));
       await orderService.updateStatus(id, newStatus);
       
@@ -53,10 +51,10 @@ export default function Orders() {
         'CANCELED': 'Cancelado.'
       };
       toast.success(msgMap[newStatus] || 'Status atualizado');
-      loadOrders(); // Recarrega para garantir sincronia
+      loadOrders();
     } catch (error) {
       toast.error('Erro ao atualizar status.');
-      loadOrders(); // Reverte se der erro
+      loadOrders();
     }
   }
 
@@ -77,14 +75,22 @@ export default function Orders() {
   const OrderCard = ({ order }: { order: Order }) => {
     const isDelivery = order.type === 'DELIVERY';
     
-    // Gera Link do Google Maps
+    // --- LÓGICA DE TROCO CORRIGIDA ---
+    const totalOrder = Number(order.total_price);
+    let changeForValue = 0;
+    
+    if (order.change_for) {
+       // Usa a função utilitária importada para garantir a conversão correta
+       changeForValue = currencyToNumber(order.change_for);
+    }
+    
+    const changeToReturn = changeForValue > 0 ? (changeForValue - totalOrder) : 0;
+
     const mapsLink = order.address 
-      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${order.address.street}, ${order.address.number} - ${order.address.neighborhood}, ${order.address.city} - ${order.address.state}`)}`
+      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${order.address.street}, ${order.address.number} - ${order.address.neighborhood}, ${order.address.city}`)}`
       : '#';
 
-    // Ações por Role e Status
     const renderActions = () => {
-      // 1. PENDENTE (Admin e Cozinha veem)
       if (order.status === 'PENDING' && (userRole === 'ADMIN' || userRole === 'KITCHEN')) {
         return (
           <button onClick={() => updateStatus(order.id, 'PREPARING')} className="w-full bg-blue-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-blue-700 shadow-sm transition-colors">
@@ -92,7 +98,6 @@ export default function Orders() {
           </button>
         );
       }
-      // 2. PREPARANDO (Admin e Cozinha veem)
       if (order.status === 'PREPARING' && (userRole === 'ADMIN' || userRole === 'KITCHEN')) {
         return (
           <button onClick={() => updateStatus(order.id, 'READY_FOR_PICKUP')} className="w-full bg-orange-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-orange-700 shadow-sm transition-colors">
@@ -100,7 +105,6 @@ export default function Orders() {
           </button>
         );
       }
-      // 3. AGUARDANDO RETIRADA (Admin e Motoboy veem)
       if (order.status === 'READY_FOR_PICKUP' && (userRole === 'ADMIN' || userRole === 'COURIER')) {
         return (
           <button onClick={() => updateStatus(order.id, 'DELIVERING')} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-indigo-700 shadow-sm transition-colors animate-pulse">
@@ -108,7 +112,6 @@ export default function Orders() {
           </button>
         );
       }
-      // 4. EM ENTREGA (Admin e Motoboy veem)
       if (order.status === 'DELIVERING' && (userRole === 'ADMIN' || userRole === 'COURIER')) {
         return (
           <button onClick={() => updateStatus(order.id, 'DONE')} className="w-full bg-green-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-green-700 shadow-sm transition-colors">
@@ -122,7 +125,7 @@ export default function Orders() {
     return (
       <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col gap-3 min-w-[300px]">
         
-        {/* Header do Card */}
+        {/* Header */}
         <div className="flex justify-between items-start border-b border-gray-50 pb-3">
           <div>
             <h3 className="font-bold text-gray-800 text-lg flex items-center gap-2">
@@ -142,11 +145,36 @@ export default function Orders() {
             order.status === 'DELIVERING' ? 'bg-orange-50 text-orange-700 border-orange-100' :
             order.status === 'DONE' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'
           }`}>
-            {order.status === 'READY_FOR_PICKUP' ? 'Aguardando Retirada' : order.status}
+            {order.status === 'READY_FOR_PICKUP' ? 'Aguardando' : order.status}
           </span>
         </div>
 
-        {/* Endereço (Foco no Motoboy) */}
+        {/* --- ÁREA DE PAGAMENTO E TROCO --- */}
+        <div className="flex justify-between items-center bg-gray-50 p-2 rounded-lg">
+           <span className="text-xs font-bold text-gray-500 uppercase">
+             {order.payment_method === 'CREDIT_CARD' ? 'Cartão' : order.payment_method === 'MONEY' ? 'Dinheiro' : order.payment_method}
+           </span>
+           <span className="font-bold text-gray-900">
+             {Number(order.total_price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+           </span>
+        </div>
+
+        {/* ALERTA DE TROCO (Só para Admin e Motoboy) */}
+        {order.payment_method === 'MONEY' && changeForValue > 0 && (userRole === 'ADMIN' || userRole === 'COURIER') && (
+          <div className="bg-green-100 border border-green-200 p-3 rounded-xl animate-pulse">
+            <div className="flex items-center gap-2 text-green-800 font-bold text-sm mb-1">
+              <Banknote size={18}/> ATENÇÃO: TROCO
+            </div>
+            <div className="text-xs text-green-700 space-y-1">
+              <p>Cliente paga com: <b>{changeForValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</b></p>
+              <p className="text-sm border-t border-green-200 pt-1 mt-1">
+                Devolver: <b className="text-lg">{changeToReturn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</b>
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Endereço */}
         {isDelivery && order.address ? (
            <div className="bg-gray-50 p-3 rounded-xl border border-dashed border-gray-200">
              <div className="flex items-start gap-2">
@@ -158,7 +186,6 @@ export default function Orders() {
                </div>
              </div>
              
-             {/* Link do Maps (Só aparece para Motoboy e Admin) */}
              {(userRole === 'COURIER' || userRole === 'ADMIN') && (
                <a 
                  href={mapsLink} 
@@ -176,9 +203,10 @@ export default function Orders() {
            </div>
         )}
 
-        {/* Lista de Itens (Foco na Cozinha) */}
+        {/* Itens */}
         <div className="space-y-2 py-2">
-          {order.items.map(item => (
+          {/* CORREÇÃO: Tipagem explicita para evitar 'any' */}
+          {order.items.map((item: OrderItem) => (
             <div key={item.id} className="text-sm border-b border-gray-50 last:border-0 pb-2 last:pb-0">
               <div className="flex justify-between items-start">
                 <span className="text-gray-800">
@@ -186,27 +214,18 @@ export default function Orders() {
                   {item.product?.name}
                 </span>
               </div>
-              
-              {/* Detalhes para Cozinha */}
               <div className="pl-8 text-xs space-y-0.5 mt-1">
-                {/* Ponto da Carne */}
                 {item.meat_point && <p className="text-orange-600 font-bold">🔥 Ponto: {item.meat_point}</p>}
-                
-                {/* Ingredientes Removidos (Em Vermelho) */}
                 {item.removed_ingredients && item.removed_ingredients.length > 0 && (
                   <p className="text-red-500 font-bold bg-red-50 inline-block px-1 rounded">
                     🚫 Sem: {Array.isArray(item.removed_ingredients) ? item.removed_ingredients.join(', ') : item.removed_ingredients}
                   </p>
                 )}
-
-                {/* Adicionais */}
                 {item.addons && item.addons.length > 0 && (
                   <p className="text-green-600 font-bold">
                     ✨ + {item.addons.map(a => a.name).join(', ')}
                   </p>
                 )}
-
-                {/* Observação Livre */}
                 {item.observation && (
                   <p className="text-gray-500 italic bg-yellow-50 p-1 rounded border border-yellow-100 mt-1">
                     "Obs: {item.observation}"
@@ -217,11 +236,9 @@ export default function Orders() {
           ))}
         </div>
 
-        {/* Footer com Ações */}
+        {/* Footer Actions */}
         <div className="pt-2 mt-auto">
           {renderActions()}
-          
-          {/* Cancelar (Admin e Cozinha se Pendente) */}
           {order.status !== 'DONE' && order.status !== 'CANCELED' && userRole === 'ADMIN' && (
              <button onClick={() => handleRequestCancel(order.id)} className="w-full text-center text-red-400 text-xs hover:text-red-600 hover:underline mt-2">
                Cancelar Pedido
@@ -232,21 +249,30 @@ export default function Orders() {
     );
   };
 
-  // --- FILTRAGEM E COLUNAS (LÓGICA KANBAN) ---
+  // Kanban logic
   const pendingOrders = orders.filter(o => o.status === 'PENDING');
   const preparingOrders = orders.filter(o => o.status === 'PREPARING');
   const readyOrders = orders.filter(o => o.status === 'READY_FOR_PICKUP'); 
   const deliveringOrders = orders.filter(o => o.status === 'DELIVERING');
-  const doneOrders = orders.filter(o => o.status === 'DONE').slice(0, 10); // Mostra só os últimos 10 concluídos
-  const canceledOrders = orders.filter(o => o.status === 'CANCELED').slice(0, 5); // Mostra só os últimos 5 cancelados
+  const doneOrders = orders.filter(o => o.status === 'DONE').slice(0, 10);
+  const canceledOrders = orders.filter(o => o.status === 'CANCELED').slice(0, 5);
 
-  // Definição de visibilidade das colunas por Role
   const showNew = ['ADMIN', 'KITCHEN'].includes(userRole);
   const showKitchen = ['ADMIN', 'KITCHEN'].includes(userRole);
-  const showReady = ['ADMIN', 'COURIER', 'KITCHEN'].includes(userRole); // Cozinha vê para saber que finalizou
+  const showReady = ['ADMIN', 'COURIER', 'KITCHEN'].includes(userRole);
   const showDelivery = ['ADMIN', 'COURIER'].includes(userRole);
   const showDone = ['ADMIN'].includes(userRole);
   const showCanceled = ['ADMIN'].includes(userRole);
+
+  // --- TRATAMENTO DE LOADING ---
+  if (loading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-gray-400">
+        <Clock className="animate-spin mb-2" size={32} />
+        <p>Carregando pedidos...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-20 h-full flex flex-col">
@@ -265,7 +291,6 @@ export default function Orders() {
       <div className="flex-1 overflow-x-auto pb-4 -mx-4 px-4 lg:mx-0 lg:px-0">
         <div className="flex gap-6 min-w-max lg:min-w-0 h-full">
           
-          {/* COLUNA 1: NOVOS (Pendente) */}
           {showNew && (
             <div className="w-[320px] flex flex-col gap-4">
               <div className="bg-yellow-50 text-yellow-800 p-3 rounded-xl font-bold flex justify-between items-center border border-yellow-100 sticky top-0 z-10 shadow-sm">
@@ -279,7 +304,6 @@ export default function Orders() {
             </div>
           )}
 
-          {/* COLUNA 2: COZINHA (Preparando) */}
           {showKitchen && (
             <div className="w-[320px] flex flex-col gap-4">
               <div className="bg-blue-50 text-blue-800 p-3 rounded-xl font-bold flex justify-between items-center border border-blue-100 sticky top-0 z-10 shadow-sm">
@@ -293,7 +317,6 @@ export default function Orders() {
             </div>
           )}
 
-          {/* COLUNA 3: AGUARDANDO RETIRADA */}
           {showReady && (
             <div className="w-[320px] flex flex-col gap-4">
               <div className="bg-purple-50 text-purple-800 p-3 rounded-xl font-bold flex justify-between items-center border border-purple-100 sticky top-0 z-10 shadow-sm">
@@ -307,7 +330,6 @@ export default function Orders() {
             </div>
           )}
 
-          {/* COLUNA 4: EM ENTREGA */}
           {showDelivery && (
             <div className="w-[320px] flex flex-col gap-4">
               <div className="bg-orange-50 text-orange-800 p-3 rounded-xl font-bold flex justify-between items-center border border-orange-100 sticky top-0 z-10 shadow-sm">
@@ -321,7 +343,6 @@ export default function Orders() {
             </div>
           )}
 
-          {/* COLUNA 5: CONCLUÍDOS */}
           {showDone && (
             <div className="w-[320px] flex flex-col gap-4">
               <div className="bg-green-50 text-green-800 p-3 rounded-xl font-bold flex justify-between items-center border border-green-100 sticky top-0 z-10 shadow-sm">
@@ -334,7 +355,6 @@ export default function Orders() {
             </div>
           )}
 
-          {/* COLUNA 6: CANCELADOS */}
           {showCanceled && (
             <div className="w-[320px] flex flex-col gap-4 opacity-75">
               <div className="bg-gray-100 text-gray-600 p-3 rounded-xl font-bold flex justify-between items-center border border-gray-200 sticky top-0 z-10 shadow-sm">
@@ -355,7 +375,7 @@ export default function Orders() {
         onClose={() => setCancelModalOpen(false)}
         onConfirm={executeCancel}
         title="Cancelar Pedido?"
-        message="Deseja realmente cancelar este pedido? O cliente será notificado e o valor não será cobrado."
+        message="Deseja realmente cancelar este pedido? O cliente será notificado."
         confirmLabel="Sim, Cancelar Pedido"
         isDestructive
       />

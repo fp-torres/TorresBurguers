@@ -1,57 +1,60 @@
-// --- MÁSCARAS DE PAGAMENTO (Novas) ---
+// --- MÁSCARAS GERAIS ---
 
-// Formata: 0000 0000 0000 0000
-export const maskCardNumber = (value: string) => {
-  return value
-    .replace(/\D/g, '') // Remove letras
-    .replace(/(\d{4})/g, '$1 ') // Adiciona espaço a cada 4 dígitos
-    .trim()
-    .substring(0, 19); // Limita tamanho máximo
+// Formata Moeda (Input): Transforma 1000 em "R$ 10,00"
+export const maskMoney = (value: string | number) => {
+  if (!value) return '';
+  const onlyDigits = String(value).replace(/\D/g, '');
+  const number = Number(onlyDigits) / 100;
+  return number.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
-// Formata: MM/AA
-export const maskDate = (value: string) => {
-  return value
-    .replace(/\D/g, '')
-    .replace(/(\d{2})(\d)/, '$1/$2') // Adiciona a barra depois do mês
-    .substring(0, 5); // Limita tamanho (ex: 12/25)
+// Aliases para evitar erros de importação em outros componentes
+export const normalizeCurrency = maskMoney;
+export const maskCurrency = maskMoney;
+
+// Formata Celular: (99) 99999-9999
+export const maskPhone = (value: string) => {
+  if (!value) return '';
+  let r = value.replace(/\D/g, '');
+  r = r.replace(/^0/, '');
+  if (r.length > 11) r = r.replace(/^(\d\d)(\d{5})(\d{4}).*/, '($1) $2-$3');
+  else if (r.length > 5) r = r.replace(/^(\d\d)(\d{4})(\d{0,4}).*/, '($1) $2-$3');
+  else if (r.length > 2) r = r.replace(/^(\d\d)(\d{0,5}).*/, '($1) $2');
+  else r = r.replace(/^(\d*)/, '($1');
+  return r;
 };
 
-// Formata: 000.000.000-00
+export const normalizePhone = maskPhone;
+
+// Formata CPF: 000.000.000-00
 export const maskCPF = (value: string) => {
   return value
     .replace(/\D/g, '')
     .replace(/(\d{3})(\d)/, '$1.$2')
     .replace(/(\d{3})(\d)/, '$1.$2')
     .replace(/(\d{3})(\d{1,2})/, '$1-$2')
-    .replace(/(-\d{2})\d+?$/, '$1'); // Impede digitar mais que o necessário
+    .replace(/(-\d{2})\d+?$/, '$1');
 };
 
-// --- SUAS MÁSCARAS EXISTENTES (Formatadas e Padronizadas) ---
+// --- MÁSCARAS DE CARTÃO ---
 
-// Formata Telefone: (99) 99999-9999
-export const maskPhone = (value: string) => {
-  if (!value) return '';
-  const onlyDigits = value.replace(/\D/g, '');
-  return onlyDigits
-    .replace(/^(\d{2})(\d)/g, '($1) $2')
-    .replace(/(\d)(\d{4})$/, '$1-$2')
-    .slice(0, 15);
+export const maskCardNumber = (value: string) => {
+  return value
+    .replace(/\D/g, '')
+    .replace(/(\d{4})/g, '$1 ')
+    .trim()
+    .substring(0, 19);
 };
-// Mantive o nome antigo também caso você use em outros lugares
-export const normalizePhone = maskPhone;
 
-// Formata Moeda Visualmente: R$ 10,00
-export const maskCurrency = (value: string | number) => {
-  if (!value) return 'R$ 0,00';
-  const onlyDigits = String(value).replace(/\D/g, '');
-  const number = Number(onlyDigits) / 100;
-  return number.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+export const maskDate = (value: string) => {
+  return value
+    .replace(/\D/g, '')
+    .replace(/(\d{2})(\d)/, '$1/$2')
+    .substring(0, 5);
 };
-// Mantive o nome antigo também
-export const normalizeCurrency = maskCurrency;
 
-// Converte R$ 10,00 para number (10.00) - Útil para enviar ao Backend
+// --- UTILITÁRIOS EXTRAS ---
+
 export const currencyToNumber = (value: string) => {
   if (!value) return 0;
   return Number(value.replace(/\D/g, '')) / 100;

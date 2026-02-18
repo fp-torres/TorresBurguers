@@ -1,4 +1,4 @@
-import { IsArray, IsInt, IsNotEmpty, IsString, ValidateNested, Min, IsOptional, IsEnum } from 'class-validator';
+import { IsArray, IsInt, IsNotEmpty, IsString, ValidateNested, Min, IsOptional, IsEnum, IsNumber } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { OrderType } from '../entities/order.entity';
@@ -24,12 +24,12 @@ export class OrderItemDto {
   @IsOptional() 
   observation?: string;
 
-  @ApiProperty({ required: false, example: 'Ao Ponto' })
+  @ApiProperty({ required: false })
   @IsString()
   @IsOptional()
   meatPoint?: string;
 
-  @ApiProperty({ required: false, type: [String], example: ['Cebola'] })
+  @ApiProperty({ required: false })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
@@ -43,17 +43,28 @@ export class CreateOrderDto {
   @Type(() => OrderItemDto)
   items: OrderItemDto[];
 
-  @ApiProperty({ enum: OrderType, example: OrderType.DELIVERY })
+  @ApiProperty({ enum: OrderType })
   @IsEnum(OrderType)
   type: OrderType;
 
-  @ApiProperty({ example: 1, required: false })
+  @ApiProperty({ required: false })
   @IsInt()
   @IsOptional()
   addressId?: number;
 
-  @ApiProperty({ example: 'PIX' })
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
   paymentMethod: string;
+
+  // --- CORREÇÃO 1: Liberar o paymentId ---
+  @ApiProperty({ required: false })
+  @IsNumber()
+  @IsOptional()
+  paymentId?: number;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  changeFor?: string;
 }

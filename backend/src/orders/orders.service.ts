@@ -39,13 +39,29 @@ export class OrdersService {
     if (!isOpen) throw new BadRequestException('A loja está fechada.');
 
     const order = new Order();
-    order.user = { id: userId } as User;
+    // Força a tipagem do user para evitar erro de compatibilidade
+    order.user = { id: userId } as any; 
     order.status = OrderStatus.PENDING;
-    order.payment_status = PaymentStatus.PENDING;
+    
+    // --- LÓGICA DE PAGAMENTO AUTOMÁTICO ---
+    // Se o pedido já vem com ID de pagamento (aprovado no front), marcamos como PAGO
+    if (createOrderDto.paymentId) {
+      order.payment_status = PaymentStatus.PAID;
+      // @ts-ignore: Ignora erro se a tipagem da entity ainda não atualizou no hot-reload
+      order.payment_id = createOrderDto.paymentId; 
+    } else {
+      order.payment_status = PaymentStatus.PENDING;
+    }
+
     order.items = [];
     order.total_price = 0;
     order.payment_method = createOrderDto.paymentMethod;
     order.type = createOrderDto.type;
+    
+    // --- CORREÇÃO DE TIPAGEM (TROCO) ---
+    // Garante que se for undefined, passa null (compatível com banco de dados)
+    // O 'as any' é uma segurança caso a entity esteja estrita como string
+    order.change_for = (createOrderDto.changeFor || null) as any;
 
     if (order.type === OrderType.DELIVERY) {
       if (!createOrderDto.addressId) throw new BadRequestException('Endereço obrigatório');
@@ -53,7 +69,7 @@ export class OrdersService {
       if (!address) throw new NotFoundException('Endereço não encontrado');
       
       order.address = address;
-      const logistics = this.calculateDeliveryFee(address.neighborhood);
+      const logistics = this.calculateDeliveryFee(address.neighborhood || '');
       order.delivery_fee = logistics.fee;
       order.estimated_delivery_time = logistics.time;
     } else {
@@ -136,37 +152,30 @@ export class OrdersService {
     return this.orderRepository.save(order);
   }
 
-  // --- CORREÇÃO DO DASHBOARD AQUI ---
-  // Atualizado para usar os status novos: READY_FOR_PICKUP, DELIVERING, DONE
   async getDashboardSummary() {
-    // 1. Total de pedidos (exceto cancelados)
     const totalOrders = await this.orderRepository.count({
       where: { 
         status: In([
           OrderStatus.PENDING, 
           OrderStatus.PREPARING, 
-          OrderStatus.READY_FOR_PICKUP, // Era 'READY'
-          OrderStatus.DELIVERING,       // Era 'DELIVERED'
-          OrderStatus.DONE              // Status final
+          OrderStatus.READY_FOR_PICKUP, 
+          OrderStatus.DELIVERING,       
+          OrderStatus.DONE              
         ]) 
       }
     });
 
-    // 2. Faturamento (seguro contra NULL e apenas pedidos válidos)
     const revenueQuery = await this.orderRepository
       .createQueryBuilder('order')
       .select('SUM(order.total_price)', 'total')
       .where('order.status != :st', { st: OrderStatus.CANCELED })
       .getRawOne();
     
-    // Se revenueQuery for null ou undefined, retorna 0. Senão, converte string para float.
     const revenue = revenueQuery && revenueQuery.total ? parseFloat(revenueQuery.total) : 0;
 
-    // 3. Contadores de status específicos
     const pendingOrders = await this.orderRepository.count({ where: { status: OrderStatus.PENDING } });
     const preparingOrders = await this.orderRepository.count({ where: { status: OrderStatus.PREPARING } });
     
-    // 4. Pagamentos pendentes (apenas de pedidos ativos)
     const pendingPayments = await this.orderRepository.count({ 
       where: { 
         payment_status: PaymentStatus.PENDING,
@@ -200,7 +209,6 @@ export class OrdersService {
     });
 
     const salesByDate: Record<string, number> = {};
-    // Inicializa os últimos 7 dias com 0
     for (let i = 0; i < 7; i++) {
       const d = new Date();
       d.setDate(d.getDate() - i);

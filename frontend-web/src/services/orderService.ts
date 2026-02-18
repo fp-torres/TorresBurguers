@@ -1,5 +1,11 @@
 import api from './api';
 
+export interface Addon {
+  id: number;
+  name: string;
+  price: string | number;
+}
+
 export interface OrderItem {
   id: number;
   quantity: number;
@@ -8,7 +14,7 @@ export interface OrderItem {
     image: string | null;
   };
   observation?: string;
-  addons: { name: string; price: string | number }[];
+  addons: Addon[]; // Tipagem correta dos adicionais
   
   // --- CAMPOS DETALHADOS (snake_case do Backend) ---
   meat_point?: string;
@@ -21,6 +27,10 @@ export interface Order {
   total_price: string | number; 
   delivery_fee?: string | number;
   payment_method: string;
+  
+  // --- NOVO CAMPO: TROCO ---
+  change_for?: string | null; 
+
   created_at: string;
   estimated_delivery_time?: string;
   type: 'DELIVERY' | 'TAKEOUT';

@@ -1,29 +1,58 @@
+import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Copy, CheckCircle2 } from 'lucide-react';
+import { Copy, CheckCircle2, Timer, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface PixCheckoutProps {
   qrCode: string;
   copyPaste: string;
+  onExpired: () => void; // Callback para quando o tempo acabar ou usuário cancelar
 }
 
-export default function PixCheckout({ qrCode, copyPaste }: PixCheckoutProps) {
+export default function PixCheckout({ qrCode, copyPaste, onExpired }: PixCheckoutProps) {
+  const [timeLeft, setTimeLeft] = useState(600); // 10 minutos em segundos
+
+  useEffect(() => {
+    if (timeLeft <= 0) {
+      onExpired();
+      toast.error('O código PIX expirou.');
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      setTimeLeft((prev) => prev - 1);
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [timeLeft, onExpired]);
+
   function handleCopy() {
     navigator.clipboard.writeText(copyPaste);
     toast.success('Código PIX copiado!');
   }
 
+  // Formata MM:SS
+  const minutes = Math.floor(timeLeft / 60);
+  const seconds = timeLeft % 60;
+  const timeString = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
   return (
     <div className="flex flex-col items-center justify-center space-y-6 py-4 animate-in fade-in zoom-in duration-300">
+      
+      {/* Timer Display */}
+      <div className="bg-orange-50 text-orange-700 px-4 py-2 rounded-full font-bold flex items-center gap-2">
+        <Timer size={18} />
+        Expira em: {timeString}
+      </div>
+
       <div className="bg-white p-4 rounded-xl shadow-lg border-2 border-green-500 relative">
-        {/* CORREÇÃO: level="L" é essencial para códigos PIX longos não quebrarem o componente */}
         <QRCodeSVG 
           value={copyPaste} 
           size={200} 
           level="L"
           includeMargin={true}
         />
-        <div className="absolute -bottom-3 -right-3 bg-green-500 text-white p-2 rounded-full">
+        <div className="absolute -bottom-3 -right-3 bg-green-500 text-white p-2 rounded-full animate-bounce">
           <CheckCircle2 size={24} />
         </div>
       </div>
@@ -53,6 +82,14 @@ export default function PixCheckout({ qrCode, copyPaste }: PixCheckoutProps) {
           Clique para copiar o código "Copia e Cola"
         </p>
       </div>
+
+      {/* Botão de Cancelar */}
+      <button 
+        onClick={onExpired}
+        className="text-red-500 text-sm font-bold flex items-center gap-1 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors"
+      >
+        <XCircle size={16} /> Cancelar Pagamento
+      </button>
     </div>
   );
 }

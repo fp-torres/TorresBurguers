@@ -4,6 +4,7 @@ import { maskCardNumber, maskDate, maskCPF } from '../../../../utils/masks';
 import toast from 'react-hot-toast';
 import { CreditCard as CardIcon, Lock } from 'lucide-react';
 import api from '../../../../services/api';
+import { useAuth } from '../../../../contexts/AuthContext';
 
 declare global {
   interface Window {
@@ -19,6 +20,7 @@ interface PaymentFormProps {
 }
 
 export default function PaymentForm({ total, email, onSuccess, setLoading }: PaymentFormProps) {
+  const { user } = useAuth();
   const [mp, setMp] = useState<any>(null);
   
   const [state, setState] = useState({
@@ -30,10 +32,7 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
     docNumber: '', 
   });
 
-  // O cartão de teste oficial do Mercado Pago
   const TEST_CARD_NUMBER = '5031433215406351';
-
-  // Mantemos o installments fixo em 1 por enquanto (sem warning de linter)
   const [installments] = useState(1);
 
   useEffect(() => {
@@ -48,38 +47,19 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
     }
   }, []);
 
-  // --- FUNÇÃO DE DETECÇÃO ---
   const detectCardBrand = (number: string) => {
     const clean = number.replace(/\D/g, '');
-    
-    // Se for o cartão de teste 5031... retornamos 'master' imediatamente
     if (clean.startsWith('5031')) return 'master';
-
-    // Visa
     if (clean.match(/^4/)) return 'visa';
-    
-    // Mastercard (Intervalo 51-55 e novos bin ranges)
-    if (clean.match(/^5[1-5]/) || clean.match(/^2(22[1-9]|2[3-9][0-9]|[3-6][0-9]{2}|7[01][0-9]|720)/)) {
-        return 'master';
-    }
-    
-    // Amex
+    if (clean.match(/^5[1-5]/) || clean.match(/^2(22[1-9]|2[3-9][0-9]|[3-6][0-9]{2}|7[01][0-9]|720)/)) return 'master';
     if (clean.match(/^3[47]/)) return 'amex';
-    
-    // Elo
-    if (clean.match(/^(4011(78|79)|431274|438935|451416|457393|457631|457632|504175|627780|636297|636368|65003[1-3]|6500(3[5-9]|4[0-9]|5[0-1])|65040[5-9]|6504[1-3][0-9]|65048[5-9]|65049[0-9]|6505[0-2][0-9]|65053[0-8]|65054[1-9]|6505[5-8][0-9]|65059[0-8]|65070[0-9]|65071[0-8]|65072[0-7]|65090[1-9]|65091[0-9]|650920|65165[2-9]|6516[6-7][0-9]|65500[0-9]|65501[0-9]|65502[1-9]|6550[3-4][0-9]|65505[0-8])/)) {
-        return 'elo';
-    }
-
-    // Hipercard
+    if (clean.match(/^(4011(78|79)|431274|438935|451416|457393|457631|457632|504175|627780|636297|636368|65003[1-3]|6500(3[5-9]|4[0-9]|5[0-1])|65040[5-9]|6504[1-3][0-9]|65048[5-9]|65049[0-9]|6505[0-2][0-9]|65053[0-8]|65054[1-9]|6505[5-8][0-9]|65059[0-8]|65070[0-9]|65071[0-8]|65072[0-7]|65090[1-9]|65091[0-9]|650920|65165[2-9]|6516[6-7][0-9]|65500[0-9]|65501[0-9]|65502[1-9]|6550[3-4][0-9]|65505[0-8])/)) return 'elo';
     if (clean.match(/^606282|^3841(?:[0|4|6]{1})0/)) return 'hipercard';
-
-    return 'credit_card'; // Fallback
+    return 'credit_card';
   };
 
   const handleInputChange = (evt: any) => {
     const { name, value } = evt.target;
-    
     let formattedValue = value;
     if (name === 'number') formattedValue = maskCardNumber(value);
     if (name === 'expiry') formattedValue = maskDate(value);
@@ -95,6 +75,12 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
 
   async function handleSubmit(e: any) {
     e.preventDefault();
+    
+    if (user?.role !== 'CLIENT') {
+      toast.error('Administradores não podem realizar pagamentos.');
+      return;
+    }
+
     setLoading(true);
 
     if (!mp) {
@@ -106,17 +92,12 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
     try {
       const cleanNumber = state.number.replace(/\D/g, '');
       const detectedMethod = detectCardBrand(state.number);
-
-      // --- TRUQUE PARA APROVAÇÃO (SIMULAÇÃO) ---
-      // Se for o cartão de teste, enviamos o nome "APRO" para o Mercado Pago
-      // Isso força o retorno "approved" (Tela Verde)
+      
       let nameToSend = state.name;
       if (cleanNumber === TEST_CARD_NUMBER) {
-        console.log("Cartão de Teste detectado: Forçando aprovação...");
         nameToSend = 'APRO'; 
       }
 
-      // Se a detecção falhou e retornou genérico (e não for o teste), avisamos o usuário
       if (detectedMethod === 'credit_card' && cleanNumber !== TEST_CARD_NUMBER) {
          toast.error('Cartão não suportado ou número inválido.');
          setLoading(false);
@@ -125,7 +106,7 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
 
       const tokenObj = await mp.createCardToken({
         cardNumber: cleanNumber,
-        cardholderName: nameToSend, // Usa o nome forçado ou o digitado
+        cardholderName: nameToSend, 
         cardExpirationMonth: state.expiry.split('/')[0],
         cardExpirationYear: '20' + state.expiry.split('/')[1],
         securityCode: state.cvc,
@@ -147,26 +128,29 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
         docNumber: state.docNumber.replace(/\D/g, '')
       });
 
+      console.log('Status Recebido:', data.status);
+
+      // Agora que o backend garante 'approved', podemos confiar nisso
       if (data.status === 'approved' || data.status === 'in_process') {
         toast.success('Pagamento Aprovado!');
-        onSuccess(data.id);
+        onSuccess(data.id); 
       } else {
-        toast.error('Recusado: ' + (data.status_detail || 'Verifique os dados'));
+        toast.error(`Recusado: ${data.status_detail || 'Tente novamente'}`);
       }
 
     } catch (error: any) {
       console.error("Erro Pagamento:", error);
-      const msg = error.cause?.[0]?.description || error.message || 'Erro ao processar pagamento';
-      toast.error('Erro: ' + msg);
+      toast.error('Erro ao processar. Tente novamente.');
     } finally {
       setLoading(false);
     }
   }
 
-  // Define o emissor para o componente visual
   const cardIssuer = detectCardBrand(state.number);
-  // TRUQUE VISUAL: Se detectou 'master' (inclusive o 5031...), força o visual 'mastercard'
   const displayIssuer = cardIssuer === 'master' ? 'mastercard' : cardIssuer;
+  
+  // Define o tamanho máximo do CVV baseado no cartão
+  const cvcMaxLength = cardIssuer === 'amex' ? 4 : 3;
 
   return (
     <div className="space-y-6">
@@ -233,12 +217,12 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
               <input
                 type="tel"
                 name="cvc"
-                placeholder="123"
+                placeholder={cvcMaxLength === 4 ? "1234" : "123"}
                 value={state.cvc}
                 onChange={handleInputChange}
                 onFocus={handleInputFocus}
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 pl-10 focus:ring-2 focus:ring-orange-500 outline-none transition-all font-mono"
-                maxLength={4}
+                maxLength={cvcMaxLength}
                 required
               />
               <Lock className="absolute left-3 top-3.5 text-gray-400" size={18} />
