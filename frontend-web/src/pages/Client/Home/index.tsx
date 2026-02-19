@@ -205,7 +205,7 @@ export default function ClientHome() {
         </div>
       </div>
 
-      {/* --- BARRA DE PESQUISA COM DESTAQUE --- */}
+      {/* --- BARRA DE PESQUISA COM DESTAQUE DARK MODE --- */}
       <div className="relative mt-8 mx-4 z-20 max-w-4xl sm:mx-auto">
         <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
           <Search className="h-5 w-5 text-orange-500" />
@@ -215,15 +215,15 @@ export default function ClientHome() {
           placeholder="O que você quer comer hoje?"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="block w-full pl-12 pr-4 py-5 border-0 rounded-2xl bg-white shadow-2xl shadow-orange-100/50 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 ring-1 ring-orange-100 transition-all text-base font-medium"
+          className="block w-full pl-12 pr-4 py-5 border-0 rounded-2xl bg-white dark:bg-slate-800 shadow-2xl shadow-orange-100/50 dark:shadow-none text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 ring-1 ring-orange-100 dark:ring-slate-700 transition-all text-base font-medium"
         />
       </div>
 
-      {/* --- LISTAGEM DE PRODUTOS --- */}
+      {/* --- SEÇÃO: COMBOS MATADORES --- */}
       {selectedCategory === 'todos' && !searchTerm && comboProducts.length > 0 && (
         <section className="px-2">
           <div className="flex items-center justify-between px-1 mb-4">
-            <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
               <ShoppingBag className="text-orange-600" size={22}/> Combos Matadores
             </h2>
           </div>
@@ -240,10 +240,11 @@ export default function ClientHome() {
         </section>
       )}
 
+      {/* --- SEÇÃO: IMPERDÍVEIS --- */}
       {selectedCategory === 'todos' && !searchTerm && promoProducts.length > 0 && (
         <section className="px-2">
           <div className="flex items-center justify-between px-1 mb-4">
-            <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
               <Flame className="text-red-500 fill-red-500" size={22}/> Imperdíveis
             </h2>
           </div>
@@ -261,8 +262,9 @@ export default function ClientHome() {
         </section>
       )}
 
+      {/* --- SEÇÃO PRINCIPAL DO MENU (DARK MODE) --- */}
       <section id="menu-section" className="pt-4 px-2">
-        <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar sticky top-0 bg-gray-50/95 backdrop-blur-sm z-10 py-2">
+        <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar sticky top-0 bg-gray-50/95 dark:bg-slate-950/95 backdrop-blur-sm z-10 py-2 transition-colors">
           {CATEGORIES.map(cat => {
             const Icon = cat.icon;
             const isSelected = selectedCategory === cat.id;
@@ -270,9 +272,13 @@ export default function ClientHome() {
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold transition-all whitespace-nowrap ${isSelected ? 'bg-gray-900 text-white shadow-lg scale-105' : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-100'}`}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold transition-all whitespace-nowrap 
+                  ${isSelected 
+                    ? 'bg-gray-900 dark:bg-orange-600 text-white shadow-lg scale-105' 
+                    : 'bg-white dark:bg-slate-800 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-700'
+                  }`}
               >
-                <Icon size={16} className={isSelected ? 'text-orange-400' : 'text-gray-400'} />
+                <Icon size={16} className={isSelected ? 'text-orange-400 dark:text-white' : 'text-gray-400'} />
                 {cat.label}
               </button>
             )
@@ -281,10 +287,10 @@ export default function ClientHome() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {loading ? (
-             [1,2,3,4].map(i => <div key={i} className="h-32 bg-gray-200 rounded-3xl animate-pulse"></div>)
+             [1,2,3,4].map(i => <div key={i} className="h-32 bg-gray-200 dark:bg-slate-800 rounded-3xl animate-pulse"></div>)
           ) : mainList.length === 0 ? (
-            <div className="col-span-full text-center py-20 text-gray-400 flex flex-col items-center">
-              <ShoppingBag size={48} className="mb-4 text-gray-300"/>
+            <div className="col-span-full text-center py-20 text-gray-400 dark:text-gray-600 flex flex-col items-center">
+              <ShoppingBag size={48} className="mb-4 text-gray-300 dark:text-gray-700"/>
               <p>Nenhum produto encontrado nesta categoria.</p>
             </div>
           ) : (
@@ -292,23 +298,25 @@ export default function ClientHome() {
               <div 
                 key={product.id} 
                 onClick={() => openProductModal(product)}
-                className={`bg-white p-4 rounded-3xl border border-gray-100 shadow-sm transition-all group flex flex-row gap-4 items-center
-                  ${banner.isClosed ? 'opacity-75 cursor-not-allowed grayscale-[0.5]' : 'hover:shadow-xl hover:-translate-y-1 cursor-pointer'}
+                className={`bg-white dark:bg-slate-900 p-4 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm transition-all group flex flex-row gap-4 items-center
+                  ${banner.isClosed 
+                    ? 'opacity-75 cursor-not-allowed grayscale-[0.5]' 
+                    : 'cursor-pointer hover:shadow-xl dark:hover:shadow-slate-900/50 hover:-translate-y-1'}
                 `}
               >
-                <div className="w-24 h-24 bg-gray-50 rounded-2xl overflow-hidden shrink-0 relative">
+                <div className="w-24 h-24 bg-gray-50 dark:bg-slate-800 rounded-2xl overflow-hidden shrink-0 relative">
                   {product.image ? (
                     <img src={`${API_URL}/uploads/${product.image}`} className="w-full h-full object-cover" />
                   ) : <div className="w-full h-full flex items-center justify-center text-gray-300"><Utensils/></div>}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-gray-800 line-clamp-1 group-hover:text-orange-600 transition-colors">{product.name}</h3>
-                  <p className="text-xs text-gray-500 line-clamp-2 my-1">{product.description}</p>
+                  <h3 className="font-bold text-gray-800 dark:text-white line-clamp-1 group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors">{product.name}</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 my-1">{product.description}</p>
                   <div className="flex justify-between items-center mt-2">
-                    <span className="font-bold text-lg text-gray-900">{Number(product.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    <span className="font-bold text-lg text-gray-900 dark:text-gray-100">{Number(product.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                     <button 
                       disabled={banner.isClosed}
-                      className={`p-2 rounded-xl transition-all shadow-sm ${banner.isClosed ? 'bg-gray-200 text-gray-400' : 'bg-gray-100 text-gray-900 hover:bg-orange-500 hover:text-white'}`}
+                      className={`p-2 rounded-xl transition-all shadow-sm ${banner.isClosed ? 'bg-gray-200 text-gray-400 dark:bg-slate-800 dark:text-gray-600' : 'bg-gray-100 dark:bg-slate-800 text-gray-900 dark:text-white hover:bg-orange-500 hover:text-white'}`}
                     >
                       <Plus size={16}/>
                     </button>
@@ -325,31 +333,37 @@ export default function ClientHome() {
   );
 }
 
+// --- SUB-COMPONENTE: CARD HORIZONTAL (DARK MODE) ---
 function ProductHorizontalCard({ product, onClick, isPromo, disabled }: { product: Product, onClick: () => void, isPromo?: boolean, disabled?: boolean }) {
   const API_URL = 'http://localhost:3000'; 
   return (
     <div 
       onClick={!disabled ? onClick : undefined}
-      className={`min-w-[260px] max-w-[260px] bg-white p-4 rounded-3xl border border-gray-100 shadow-sm transition-all group relative overflow-hidden
-        ${disabled ? 'opacity-80 cursor-not-allowed' : 'cursor-pointer hover:shadow-lg hover:-translate-y-1'}
+      className={`min-w-[260px] max-w-[260px] bg-white dark:bg-slate-900 p-4 rounded-3xl border border-gray-100 dark:border-slate-800 shadow-sm transition-all group relative overflow-hidden
+        ${disabled ? 'opacity-80 cursor-not-allowed' : 'cursor-pointer hover:shadow-lg dark:hover:shadow-slate-900/50 hover:-translate-y-1'}
       `}
     >
       {isPromo && <span className="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-bl-2xl z-10 shadow-sm">OFERTA</span>}
-      <div className="h-36 bg-gray-50 rounded-2xl mb-4 overflow-hidden relative">
+      
+      <div className="h-36 bg-gray-50 dark:bg-slate-800 rounded-2xl mb-4 overflow-hidden relative">
          {product.image ? (
             <img src={`${API_URL}/uploads/${product.image}`} className={`w-full h-full object-cover transition-transform duration-700 ${!disabled && 'group-hover:scale-110'}`} />
          ) : <div className="w-full h-full flex items-center justify-center text-gray-300"><Utensils/></div>}
       </div>
-      <h3 className="font-bold text-gray-800 line-clamp-1 text-lg mb-1">{product.name}</h3>
-      <p className="text-xs text-gray-500 line-clamp-1 mb-4">{product.description}</p>
+      
+      <h3 className="font-bold text-gray-800 dark:text-white line-clamp-1 text-lg mb-1">{product.name}</h3>
+      <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1 mb-4">{product.description}</p>
+      
       <div className="flex justify-between items-center">
-        <span className="font-extrabold text-xl text-gray-900">
+        <span className="font-extrabold text-xl text-gray-900 dark:text-gray-100">
           {Number(product.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
         </span>
         <button 
           disabled={disabled}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors shadow-lg
-            ${disabled ? 'bg-gray-400 text-white' : 'bg-black text-white hover:bg-orange-600'}
+            ${disabled 
+              ? 'bg-gray-400 text-white dark:bg-slate-700 dark:text-gray-500' 
+              : 'bg-black dark:bg-orange-600 text-white hover:bg-orange-600 dark:hover:bg-orange-700'}
           `}
         >
           {disabled ? 'Fechado' : 'Adicionar'}
