@@ -18,6 +18,12 @@ export class CreateUserDto {
   @MinLength(10, { message: 'O telefone deve ter pelo menos 10 dígitos (DDD + Número)' })
   phone?: string;
 
+  // --- CORREÇÃO: Adicionado campo avatar ---
+  @ApiProperty({ example: '/uploads/avatar.jpg', required: false })
+  @IsString()
+  @IsOptional()
+  avatar?: string;
+
   @ApiProperty({ example: 'SenhaForte123!', minLength: 9 })
   @IsString()
   @MinLength(9, { message: 'A senha deve ter no mínimo 9 caracteres' })

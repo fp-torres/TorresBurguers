@@ -25,13 +25,14 @@ export class User {
   @Column({ unique: true })
   email: string;
 
+  // Nome da coluna no banco é 'password_hash', na classe é 'password_hash'
   @Column({ name: 'password_hash' }) 
   password_hash: string;
 
   @Column({ length: 20, nullable: true }) 
   phone: string;
 
-  // --- CORREÇÃO: COLUNA AVATAR ADICIONADA ---
+  // --- CORREÇÃO: Coluna avatar presente ---
   @Column({ nullable: true })
   avatar: string;
 

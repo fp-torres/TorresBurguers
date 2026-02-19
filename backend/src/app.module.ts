@@ -12,7 +12,7 @@ import { AuthModule } from './auth/auth.module';
 import { AddressesModule } from './addresses/addresses.module';
 import { StoreModule } from './store/store.module';
 import { PromotionsModule } from './promotions/promotions.module';
-import { PaymentModule } from './payment/payment.module'; // <--- IMPORTANTE: Importe o módulo novo aqui
+import { PaymentModule } from './payment/payment.module';
 
 // Entities
 import { User } from './users/entities/user.entity';
@@ -23,15 +23,20 @@ import { Address } from './addresses/entities/address.entity';
 import { Addon } from './products/entities/addon.entity';
 import { StoreConfig } from './store/entities/store-config.entity';
 
+// Controllers Globais (se houver)
 import { UploadController } from './common/upload.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    
+    // --- CORREÇÃO IMPORTANTE AQUI ---
+    // ServeStaticModule: Libera o acesso à pasta /uploads para o navegador
     ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'uploads'), 
-      serveRoot: '/uploads',
+      rootPath: join(process.cwd(), 'uploads'), // Usa process.cwd() para garantir que pega a pasta na raiz do projeto
+      serveRoot: '/uploads', // A URL será http://localhost:3000/uploads/arquivo.jpg
     }),
+
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DB_HOST || 'localhost',
@@ -42,6 +47,7 @@ import { UploadController } from './common/upload.controller';
       entities: [User, Product, Order, OrderItem, Address, Addon, StoreConfig], 
       synchronize: true,
     }),
+    
     // Módulos da Aplicação
     UsersModule,
     ProductsModule,
@@ -52,7 +58,7 @@ import { UploadController } from './common/upload.controller';
     PromotionsModule,
     PaymentModule, 
   ],
-  controllers: [UploadController],
+  controllers: [UploadController], // Verifique se este controller realmente existe no seu projeto, senão remova.
   providers: [],
 })
 export class AppModule {}

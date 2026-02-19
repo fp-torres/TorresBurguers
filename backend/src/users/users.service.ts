@@ -21,13 +21,16 @@ export class UsersService {
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(createUserDto.password, saltRounds);
 
+    // --- CORREÇÃO AQUI ---
+    // Usamos o spread operator (...createUserDto) para garantir que
+    // campos opcionais como 'avatar' e 'phone' sejam copiados automaticamente.
     const newUser = this.usersRepository.create({
-      name: createUserDto.name,
-      email: createUserDto.email,
-      role: createUserDto.role as any,
-      phone: createUserDto.phone, 
-      password_hash: passwordHash, 
+      ...createUserDto, 
+      password_hash: passwordHash, // Mapeia a senha crua para o hash
     });
+
+    // Removemos a senha crua do objeto antes de salvar (boas práticas)
+    delete (newUser as any).password;
 
     return this.usersRepository.save(newUser);
   }
@@ -62,12 +65,16 @@ export class UsersService {
       delete updateData.password; // Remove o campo password cru
     }
 
-    // Remove campos que não devem ser atualizados diretamente se vierem vazios
-    if (!updateData.avatar) delete updateData.avatar;
+    // Lógica para Avatar:
+    // Se updateData.avatar vier undefined (não enviou foto), removemos a chave
+    // para não apagar a foto que já existe no banco.
+    if (updateData.avatar === undefined) {
+      delete updateData.avatar;
+    }
 
     await this.usersRepository.update(id, updateData);
     
-    // Retorna o usuário atualizado (sem a senha)
+    // Retorna o usuário atualizado
     return this.findOne(id);
   }
 

@@ -1,52 +1,74 @@
 import { useEffect, useState } from 'react';
-import { DollarSign, ShoppingBag, Clock, AlertCircle, Power, Store, Lock, Loader2, TrendingUp, PieChart as PieIcon } from 'lucide-react';
-import { orderService } from '../../services/orderService';
+import { 
+  DollarSign, ShoppingBag, Clock, AlertCircle, Power, Store, Lock, 
+  Loader2, TrendingUp, PieChart as PieIcon, CreditCard, Wallet, Banknote, Calendar 
+} from 'lucide-react';
+import { orderService, type Order } from '../../services/orderService';
 import api from '../../services/api';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell
+  BarChart, Bar, Cell, PieChart, Pie, Legend
 } from 'recharts';
 
 export default function Dashboard() {
+  const [orders, setOrders] = useState<Order[]>([]);
   const [summary, setSummary] = useState({
-    totalOrders: 0, revenue: 0, pendingOrders: 0, preparingOrders: 0, pendingPayments: 0
+    totalOrders: 0, revenue: 0, activeOrders: 0, avgTicket: 0
   });
   
-  const [chartsData, setChartsData] = useState({
-    revenueChart: [] as any[],
-    productsChart: [] as any[]
-  });
+  // Dados calculados para gráficos
+  const [revenueData, setRevenueData] = useState<any[]>([]);
+  const [productsData, setProductsData] = useState<any[]>([]);
+  const [paymentData, setPaymentData] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [isStoreOpen, setIsStoreOpen] = useState(true);
 
   useEffect(() => {
-    loadAllData();
-    const interval = setInterval(loadAllData, 15000);
+    loadIntelligence();
+    const interval = setInterval(loadIntelligence, 15000);
     return () => clearInterval(interval);
   }, []);
 
-  async function loadAllData() {
+  async function loadIntelligence() {
     try {
-      const [dashData, charts, statusRes] = await Promise.all([
-        orderService.getDashboard(),
+      // 1. Buscamos TODOS os dados brutos para calcular métricas no Front
+      const [allOrders, charts, statusRes] = await Promise.all([
+        orderService.getAll(),
         orderService.getCharts(),
         api.get('/store/status').catch(() => ({ data: { is_open: false } }))
       ]);
 
+      const finishedOrders = allOrders.filter(o => o.status === 'DONE' || o.status === 'FINISHED');
+      const activeOrdersList = allOrders.filter(o => ['PENDING', 'PREPARING', 'READY_FOR_PICKUP', 'DELIVERING'].includes(o.status));
+
+      // 2. Cálculos de Business Intelligence (BI)
+      const totalRevenue = finishedOrders.reduce((acc, curr) => acc + Number(curr.total_price), 0);
+      const ticket = finishedOrders.length > 0 ? totalRevenue / finishedOrders.length : 0;
+
+      // 3. Processamento de Métodos de Pagamento
+      const payMap: Record<string, number> = {};
+      finishedOrders.forEach(o => {
+        const method = o.payment_method === 'CREDIT_CARD' ? 'Cartão' : o.payment_method === 'MONEY' ? 'Dinheiro' : 'Pix/Outros';
+        payMap[method] = (payMap[method] || 0) + 1;
+      });
+      const payChart = Object.keys(payMap).map(k => ({ name: k, value: payMap[k] }));
+
+      setOrders(allOrders.sort((a, b) => b.id - a.id)); // Mais recentes primeiro
       setSummary({
-        totalOrders: Number(dashData.totalOrders || 0),
-        revenue: Number(dashData.revenue || 0),
-        pendingOrders: Number(dashData.pendingOrders || 0),
-        preparingOrders: Number(dashData.preparingOrders || 0),
-        pendingPayments: Number(dashData.pendingPayments || 0)
+        totalOrders: allOrders.length,
+        revenue: totalRevenue,
+        activeOrders: activeOrdersList.length,
+        avgTicket: ticket
       });
 
-      setChartsData(charts);
+      setRevenueData(charts.revenueChart || []);
+      setProductsData(charts.productsChart || []);
+      setPaymentData(payChart);
       setIsStoreOpen(statusRes.data.is_open);
 
     } catch (error) {
-      console.error('Erro ao carregar dados', error);
+      console.error('Erro ao processar inteligência', error);
     } finally {
       setLoading(false);
     }
@@ -60,121 +82,217 @@ export default function Dashboard() {
     } catch { alert('Erro ao alterar status.'); }
   }
 
-  const StatCard = ({ title, value, icon: Icon, color, subtext }: any) => (
-    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-start justify-between hover:shadow-md transition-all group">
-      <div className="flex-1 min-w-0 pr-4">
-        <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">{title}</p>
-        <h3 className="text-2xl font-bold text-gray-800 truncate">
-          {loading ? <Loader2 className="animate-spin w-6 h-6 text-gray-400" /> : value}
-        </h3>
-        {subtext && <p className="text-xs text-gray-400 mt-2 truncate">{subtext}</p>}
+  // --- COMPONENTES VISUAIS ---
+  const KpiCard = ({ title, value, icon: Icon, color, subtext, trend }: any) => (
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between hover:shadow-lg transition-all group h-full relative overflow-hidden">
+      <div className={`absolute -right-4 -top-4 w-24 h-24 rounded-full opacity-10 ${color}`}></div>
+      <div className="flex justify-between items-start mb-4 relative z-10">
+        <div className={`p-3 rounded-xl ${color} text-white shadow-md`}>
+          <Icon size={22} />
+        </div>
+        {trend && (
+          <span className="flex items-center text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-lg">
+            <TrendingUp size={12} className="mr-1"/> {trend}
+          </span>
+        )}
       </div>
-      <div className={`p-3 rounded-xl ${color} text-white shadow-lg shadow-gray-200 group-hover:scale-110 transition-transform`}>
-        <Icon size={24} />
+      <div className="relative z-10">
+        <h3 className="text-2xl font-bold text-gray-800">{loading ? '...' : value}</h3>
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mt-1">{title}</p>
+        {subtext && <p className="text-xs text-gray-400 mt-2">{subtext}</p>}
       </div>
     </div>
   );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-20">
+    <div className="space-y-6 pb-20 animate-in fade-in duration-500 max-w-[1600px] mx-auto">
       
-      {/* STATUS DA LOJA */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+      {/* HEADER E CONTROLE DE LOJA */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Visão Geral</h1>
-          <p className="text-gray-500">Acompanhe o desempenho em tempo real.</p>
+          <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-2">
+            Dashboard <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-lg border border-orange-200">PRO</span>
+          </h1>
+          <p className="text-gray-500 font-medium">Visão geral estratégica do seu negócio.</p>
         </div>
+        
         <button 
           onClick={toggleStore}
-          className={`flex items-center gap-4 px-6 py-3 rounded-xl font-bold text-white shadow-md transition-all hover:scale-105 active:scale-95 ${
+          className={`relative overflow-hidden flex items-center gap-4 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all hover:scale-105 active:scale-95 group ${
             isStoreOpen 
-              ? 'bg-gradient-to-r from-green-600 to-green-500 shadow-green-200' 
-              : 'bg-gradient-to-r from-red-600 to-red-500 shadow-red-200'
+              ? 'bg-gradient-to-br from-green-500 to-green-700 shadow-green-200' 
+              : 'bg-gradient-to-br from-red-500 to-red-700 shadow-red-200'
           }`}
         >
-          <div className="bg-white/20 p-2 rounded-lg">{isStoreOpen ? <Store size={24} /> : <Lock size={24} />}</div>
-          <div className="text-left">
-            <p className="text-[10px] uppercase opacity-90 font-bold tracking-wider">Status da Loja</p>
-            <p className="text-xl leading-none">{isStoreOpen ? 'ABERTA' : 'FECHADA'}</p>
+          <div className="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
+            {isStoreOpen ? <Store size={24} /> : <Lock size={24} />}
           </div>
-          <Power size={20} className="opacity-50 ml-2" />
+          <div className="text-left z-10">
+            <p className="text-[10px] uppercase opacity-80 font-black tracking-widest">Loja Online</p>
+            <p className="text-2xl leading-none tracking-tight">{isStoreOpen ? 'ABERTA' : 'FECHADA'}</p>
+          </div>
+          <Power size={120} className="absolute -right-6 -bottom-8 opacity-10 rotate-12 group-hover:rotate-45 transition-transform duration-500" />
         </button>
       </div>
 
-      {/* CARDS */}
+      {/* KPI GRID */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Faturamento" value={Number(summary.revenue).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color="bg-green-500" subtext="Total acumulado" />
-        <StatCard title="Pedidos Totais" value={summary.totalOrders} icon={ShoppingBag} color="bg-blue-500" subtext="Histórico completo" />
-        <StatCard title="Fila de Produção" value={summary.pendingOrders + summary.preparingOrders} icon={Clock} color="bg-orange-500" subtext="Pendentes e Preparando" />
-        <StatCard title="Aguardando Pagto." value={summary.pendingPayments} icon={AlertCircle} color="bg-red-500" subtext="Pedidos não pagos" />
+        <KpiCard 
+          title="Faturamento Total" 
+          value={Number(summary.revenue).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
+          icon={DollarSign} 
+          color="bg-emerald-500" 
+          subtext="Receita bruta acumulada"
+        />
+        <KpiCard 
+          title="Pedidos Realizados" 
+          value={summary.totalOrders} 
+          icon={ShoppingBag} 
+          color="bg-blue-500" 
+          subtext={`${summary.activeOrders} ativos agora`}
+        />
+        <KpiCard 
+          title="Ticket Médio" 
+          value={Number(summary.avgTicket).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
+          icon={Wallet} 
+          color="bg-violet-500" 
+          subtext="Média por pedido"
+          trend="+4.5%"
+        />
+        <KpiCard 
+          title="Fila de Produção" 
+          value={summary.activeOrders} 
+          icon={Clock} 
+          color="bg-orange-500" 
+          subtext="Pedidos em andamento"
+        />
       </div>
 
-      {/* ÁREA DE GRÁFICOS */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* PAINEL CENTRAL */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 h-full">
         
-        {/* GRÁFICO 1: VENDAS ÚLTIMOS 7 DIAS */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 min-w-0">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="font-bold text-gray-800 flex items-center gap-2"><TrendingUp size={20} className="text-orange-600"/> Vendas (7 dias)</h3>
-          </div>
+        {/* ESQUERDA: GRÁFICOS FINANCEIROS (Ocupa 2 colunas) */}
+        <div className="xl:col-span-2 space-y-6">
           
-          <div className="h-[300px] w-full">
-            {loading ? (
-              <div className="h-full w-full flex items-center justify-center text-gray-400">
-                <Loader2 className="animate-spin" size={32} />
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <AreaChart data={chartsData.revenueChart}>
-                  <defs>
-                    <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#ea580c" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#ea580c" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                  <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} tickFormatter={(value) => `R$${value}`} />
-                  <Tooltip 
-                    formatter={(value: any) => [Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 'Vendas']}
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  />
-                  <Area type="monotone" dataKey="total" stroke="#ea580c" strokeWidth={3} fillOpacity={1} fill="url(#colorTotal)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
+          {/* GRÁFICO DE FATURAMENTO */}
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                <TrendingUp size={20} className="text-emerald-600"/> Desempenho Financeiro
+              </h3>
+              <select className="bg-gray-50 border border-gray-200 text-xs rounded-lg px-3 py-1 outline-none text-gray-600 font-bold">
+                <option>Últimos 7 dias</option>
+              </select>
+            </div>
+            <div className="h-[320px] w-full">
+              {loading ? (
+                <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-gray-300"/></div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={revenueData}>
+                    <defs>
+                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} tickFormatter={(val) => `R$${val}`} />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                      formatter={(val: any) => [`R$ ${val}`, 'Vendas']}
+                    />
+                    <Area type="monotone" dataKey="total" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* GRÁFICO 2: PRODUTOS MAIS VENDIDOS */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 min-w-0">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="font-bold text-gray-800 flex items-center gap-2"><PieIcon size={20} className="text-blue-600"/> Top 5 Produtos</h3>
-          </div>
-          
-          <div className="h-[300px] w-full">
-            {loading ? (
-              <div className="h-full w-full flex items-center justify-center text-gray-400">
-                <Loader2 className="animate-spin" size={32} />
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <BarChart data={chartsData.productsChart} layout="vertical" margin={{ left: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
+          {/* GRÁFICO DE PRODUTOS */}
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2 mb-6">
+              <ShoppingBag size={20} className="text-blue-600"/> Produtos Campeões
+            </h3>
+            <div className="h-[250px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={productsData} layout="vertical" margin={{ left: 40, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                   <XAxis type="number" hide />
-                  <YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} tick={{fill: '#4b5563', fontSize: 11, fontWeight: 'bold'}} />
-                  <Tooltip cursor={{fill: '#f9fafb'}} contentStyle={{ borderRadius: '8px' }} />
-                  <Bar dataKey="quantity" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20}>
-                    {chartsData.productsChart.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={index === 0 ? '#ea580c' : '#3b82f6'} />
+                  <YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12, fontWeight: 600}} />
+                  <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '12px' }} />
+                  <Bar dataKey="quantity" fill="#3b82f6" radius={[0, 6, 6, 0]} barSize={24}>
+                    {productsData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={index === 0 ? '#f59e0b' : '#3b82f6'} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            )}
+            </div>
           </div>
         </div>
 
+        {/* DIREITA: DETALHES E FEED (Ocupa 1 coluna) */}
+        <div className="space-y-6">
+          
+          {/* MEIOS DE PAGAMENTO (PIZZA) */}
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 min-h-[300px]">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2 mb-2">
+              <PieIcon size={20} className="text-violet-600"/> Pagamentos
+            </h3>
+            <div className="h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={paymentData}
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {paymentData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={['#8b5cf6', '#ec4899', '#f59e0b'][index % 3]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* ATIVIDADE RECENTE (FEED) */}
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex-1">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                <Clock size={20} className="text-gray-400"/> Atividade
+              </h3>
+              <span className="text-[10px] font-bold bg-gray-100 px-2 py-1 rounded text-gray-500">Últimos 5</span>
+            </div>
+            
+            <div className="space-y-4">
+              {orders.slice(0, 5).map(order => (
+                <div key={order.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-full ${order.status === 'DONE' ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}`}>
+                      {order.status === 'DONE' ? <Store size={14}/> : <Clock size={14}/>}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-gray-700">Pedido #{order.id}</p>
+                      <p className="text-[10px] text-gray-400 font-medium">{new Date(order.created_at).toLocaleTimeString().slice(0,5)} • {order.items.length} itens</p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold text-gray-800">
+                    {Number(order.total_price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                </div>
+              ))}
+              {orders.length === 0 && <p className="text-center text-gray-400 text-xs py-4">Sem atividade recente.</p>}
+            </div>
+          </div>
+
+        </div>
       </div>
     </div>
   );

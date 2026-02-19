@@ -13,6 +13,30 @@ import { AuthGuard } from '@nestjs/passport';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 
+// Configuração reutilizável do Multer para evitar repetição de código
+const multerConfig = {
+  storage: diskStorage({
+    destination: (req, file, cb) => {
+      const uploadPath = './uploads';
+      if (!fs.existsSync(uploadPath)) {
+        fs.mkdirSync(uploadPath, { recursive: true });
+      }
+      cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      cb(null, `${uniqueSuffix}${extname(file.originalname)}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.match(/\/(jpg|jpeg|png)$/)) {
+      return cb(new Error('Somente imagens são permitidas!'), false);
+    }
+    cb(null, true);
+  },
+};
+
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -31,8 +55,17 @@ export class UsersController {
     return this.usersService.restore(id);
   }
 
+  // --- CORREÇÃO: Upload de imagem na criação ---
   @Post()
-  create(@Body() createUserDto: CreateUserDto) {
+  @UseInterceptors(FileInterceptor('file', multerConfig))
+  create(
+    @Body() createUserDto: CreateUserDto,
+    @UploadedFile() file?: Express.Multer.File
+  ) {
+    if (file) {
+      // Usamos (as any) aqui para corrigir o erro de tipo se o DTO não tiver o campo 'avatar'
+      (createUserDto as any).avatar = `/uploads/${file.filename}`;
+    }
     return this.usersService.create(createUserDto);
   }
 
@@ -51,44 +84,22 @@ export class UsersController {
 
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'))
-  @UseInterceptors(FileInterceptor('file', {
-    storage: diskStorage({
-      destination: (req, file, cb) => {
-        const uploadPath = './uploads';
-        if (!fs.existsSync(uploadPath)) {
-          fs.mkdirSync(uploadPath, { recursive: true });
-        }
-        cb(null, uploadPath);
-      },
-      filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        cb(null, `${uniqueSuffix}${extname(file.originalname)}`);
-      },
-    }),
-    limits: { fileSize: 5 * 1024 * 1024 }, 
-    fileFilter: (req, file, cb) => {
-      if (!file.mimetype.match(/\/(jpg|jpeg|png)$/)) {
-        return cb(new Error('Somente imagens são permitidas!'), false);
-      }
-      cb(null, true);
-    },
-  }))
+  @UseInterceptors(FileInterceptor('file', multerConfig))
   update(
     @Param('id', ParseIntPipe) id: number, 
     @Body() updateUserDto: UpdateUserDto,
     @UploadedFile() file?: Express.Multer.File
   ) {
     if (file) {
-      updateUserDto.avatar = `/uploads/${file.filename}`;
+      // Mesma correção aplicada aqui por segurança
+      (updateUserDto as any).avatar = `/uploads/${file.filename}`;
     }
     return this.usersService.update(id, updateUserDto);
   }
 
-  // --- CORREÇÃO: SOFT DELETE ---
   @Delete(':id')
-  @UseGuards(AuthGuard('jwt')) // Removido RolesGuard e @Roles('ADMIN')
+  @UseGuards(AuthGuard('jwt'))
   remove(@Param('id', ParseIntPipe) id: number, @Request() req) {
-    // Permite exclusão se for ADMIN ou se o próprio usuário estiver excluindo sua conta
     if (req.user.role === 'ADMIN' || req.user.id === id) {
        return this.usersService.remove(id);
     }

@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import type { ChangeEvent, FormEvent } from 'react'; 
-import { Plus, Trash2, Shield, Mail, X, Loader2, Edit, Phone, ChefHat, Truck, User as UserIcon, Search, Users as UsersGroup } from 'lucide-react';
+import { Plus, Trash2, Shield, Mail, X, Loader2, Edit, Phone, ChefHat, Truck, User as UserIcon, Search, Users as UsersGroup, Camera, ZoomIn } from 'lucide-react';
 import { userService, type User, type CreateUserDTO } from '../../services/userService';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -23,9 +23,15 @@ export default function Users() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   
+  // Estado para Zoom da Imagem
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  // Estados do Formulário
   const [formData, setFormData] = useState<CreateUserDTO>({
-    name: '', email: '', password: '', phone: '', role: 'ADMIN'
+    name: '', email: '', confirmEmail: '', password: '', confirmPassword: '', phone: '', role: 'ADMIN'
   });
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   
   const [saving, setSaving] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -42,7 +48,9 @@ export default function Users() {
 
   function openCreateModal() {
     setEditingUser(null);
-    setFormData({ name: '', email: '', password: '', phone: '', role: 'ADMIN' });
+    setFormData({ name: '', email: '', confirmEmail: '', password: '', confirmPassword: '', phone: '', role: 'ADMIN' });
+    setAvatarFile(null);
+    setAvatarPreview(null);
     setIsModalOpen(true);
   }
 
@@ -51,10 +59,14 @@ export default function Users() {
     setFormData({ 
       name: user.name, 
       email: user.email, 
+      confirmEmail: user.email, 
       password: '', 
+      confirmPassword: '',
       phone: normalizePhone(user.phone || ''), 
       role: user.role 
     });
+    setAvatarFile(null);
+    setAvatarPreview(getDisplayAvatar(user.avatar)); 
     setIsModalOpen(true);
   }
 
@@ -62,17 +74,60 @@ export default function Users() {
     setFormData({ ...formData, phone: normalizePhone(e.target.value) });
   }
 
+  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setAvatarFile(file);
+      setAvatarPreview(URL.createObjectURL(file));
+    }
+  }
+
+  const passwordStrength = useMemo(() => {
+    const pass = formData.password || '';
+    let score = 0;
+    if (pass.length > 7) score++;
+    if (/[A-Z]/.test(pass)) score++;
+    if (/[0-9]/.test(pass)) score++;
+    if (/[^A-Za-z0-9]/.test(pass)) score++;
+    return score; 
+  }, [formData.password]);
+
   async function handleSave(e: FormEvent) {
     e.preventDefault();
+    
+    if (formData.email !== formData.confirmEmail) {
+      toast.error('Os e-mails não coincidem.');
+      return;
+    }
+    
+    if (!editingUser) {
+      if (formData.password !== formData.confirmPassword) {
+        toast.error('As senhas não coincidem.');
+        return;
+      }
+      if (!formData.password) {
+        toast.error('Senha é obrigatória para novos usuários.');
+        return;
+      }
+    } else {
+      if (formData.password && formData.password !== formData.confirmPassword) {
+        toast.error('As senhas não coincidem.');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       if (editingUser) {
         const payload: any = { ...formData };
-        if (!payload.password) delete payload.password;
-        await userService.update(editingUser.id, payload);
+        if (!payload.password) delete payload.password; 
+        delete payload.confirmEmail;
+        delete payload.confirmPassword;
+        
+        await userService.update(editingUser.id, payload, avatarFile || undefined);
         toast.success('Membro atualizado com sucesso!');
       } else {
-        await userService.create(formData);
+        await userService.create(formData, avatarFile || undefined);
         toast.success('Novo membro cadastrado!');
       }
       setIsModalOpen(false);
@@ -106,8 +161,7 @@ export default function Users() {
     });
   }, [users, searchTerm, activeTab]);
 
-  // Função para montar a URL correta do Avatar
-  const getDisplayAvatar = (avatar?: string) => {
+  const getDisplayAvatar = (avatar?: string | null) => {
     if (!avatar) return null;
     return avatar.startsWith('http') ? avatar : `http://localhost:3000${avatar}`;
   };
@@ -170,13 +224,21 @@ export default function Users() {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       
-                      {/* CORREÇÃO: Renderiza Avatar Real ou Fallback */}
+                      {/* LÓGICA DE FOTO COM ZOOM */}
                       {user.avatar ? (
-                        <img 
-                          src={getDisplayAvatar(user.avatar)!} 
-                          alt={user.name} 
-                          className="w-10 h-10 rounded-full object-cover border border-gray-200 shadow-sm bg-white" 
-                        />
+                        <div 
+                          className="relative group cursor-pointer" 
+                          onClick={() => setSelectedImage(getDisplayAvatar(user.avatar))}
+                        >
+                          <img 
+                            src={getDisplayAvatar(user.avatar)!} 
+                            alt={user.name} 
+                            className="w-10 h-10 rounded-full object-cover border border-gray-200 shadow-sm bg-white" 
+                          />
+                          <div className="absolute inset-0 bg-black/20 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <ZoomIn size={14} className="text-white drop-shadow-md" />
+                          </div>
+                        </div>
                       ) : (
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-600 border-purple-200' : user.role === 'KITCHEN' ? 'bg-orange-100 text-orange-600 border-orange-200' : user.role === 'COURIER' ? 'bg-blue-100 text-blue-600 border-blue-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
                           {user.name[0]?.toUpperCase()}
@@ -195,10 +257,6 @@ export default function Users() {
                   </td>
                   <td className="px-6 py-4">
                     <span className={`px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center gap-1.5 w-fit ${user.role === 'ADMIN' ? 'bg-purple-50 text-purple-700 border-purple-100' : user.role === 'KITCHEN' ? 'bg-orange-50 text-orange-700 border-orange-100' : user.role === 'COURIER' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-gray-50 text-gray-600 border-gray-100'}`}>
-                      {user.role === 'ADMIN' && <Shield size={14} />}
-                      {user.role === 'KITCHEN' && <ChefHat size={14} />}
-                      {user.role === 'COURIER' && <Truck size={14} />}
-                      {user.role === 'CLIENT' && <UserIcon size={14} />}
                       {user.role}
                     </span>
                   </td>
@@ -208,79 +266,153 @@ export default function Users() {
                   </td>
                 </tr>
               ))}
-              {filteredUsers.length === 0 && !loading && (
-                <tr><td colSpan={4} className="p-12 text-center text-gray-400 italic">Nenhum membro encontrado.</td></tr>
-              )}
             </tbody>
           </table>
         </div>
       </div>
 
+      {/* MODAL DE CADASTRO / EDIÇÃO */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="bg-gray-50 px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 max-h-[90vh] flex flex-col">
+            <div className="bg-gray-50 px-6 py-4 border-b border-gray-100 flex justify-between items-center shrink-0">
               <h2 className="text-lg font-bold text-gray-800">{editingUser ? 'Editar Membro' : 'Novo Membro'}</h2>
               <button onClick={() => setIsModalOpen(false)}><X size={20} className="text-gray-400 hover:text-gray-600" /></button>
             </div>
             
-            <form onSubmit={handleSave} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nome Completo</label>
-                <input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none transition-all" placeholder="Ex: João Silva" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+            <div className="overflow-y-auto p-6 custom-scrollbar">
+              <form onSubmit={handleSave} className="space-y-4">
+                
+                <div className="flex flex-col items-center mb-6">
+                  <div className="relative group cursor-pointer">
+                    <div className="w-24 h-24 rounded-full bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden hover:border-orange-500 transition-colors">
+                      {avatarPreview ? (
+                        <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <Camera size={32} className="text-gray-400" />
+                      )}
+                    </div>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handleFileChange} 
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                    />
+                    <div className="absolute bottom-0 right-0 bg-orange-600 text-white p-1.5 rounded-full shadow-sm border-2 border-white">
+                      <Edit size={12} />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">Clique para alterar a foto</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nome Completo</label>
+                    <input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none transition-all" placeholder="Ex: João Silva" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Celular</label>
+                    <input value={formData.phone} onChange={handlePhoneChange} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" placeholder="(99) 99999-9999" />
+                  </div>
+                </div>
+
                 <div>
                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Email</label>
-                   <input required type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" />
+                   <input required type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none mb-2" />
+                   
+                   <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Confirmar Email</label>
+                   <input required type="email" value={formData.confirmEmail} onChange={e => setFormData({...formData, confirmEmail: e.target.value})} className={`w-full px-4 py-2 border rounded-lg focus:ring-2 outline-none transition-all ${formData.confirmEmail && formData.email !== formData.confirmEmail ? 'border-red-300 focus:ring-red-200' : 'border-gray-200 focus:ring-orange-500'}`} placeholder="Repita o email" />
+                   {formData.confirmEmail && formData.email !== formData.confirmEmail && <p className="text-xs text-red-500 mt-1">Os e-mails não conferem.</p>}
                 </div>
-                <div>
-                   <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Celular</label>
-                   <input 
-                      value={formData.phone} 
-                      onChange={handlePhoneChange} 
-                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" 
-                      placeholder="(99) 99999-9999" 
-                    />
-                </div>
-              </div>
-              
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Cargo / Função</label>
-                <select 
-                  value={formData.role} 
-                  onChange={e => setFormData({...formData, role: e.target.value})} 
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none bg-white"
-                >
-                  <option value="ADMIN">Administrador (Acesso Total)</option>
-                  <option value="KITCHEN">Cozinha (Ver Pedidos)</option>
-                  <option value="COURIER">Motoboy (Ver Entregas)</option>
-                  <option value="CLIENT">Cliente (Apenas Teste)</option>
-                </select>
-              </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
-                   {editingUser ? 'Nova Senha (Deixe vazio para manter)' : 'Senha de Acesso'}
-                </label>
-                <input 
-                  type="password" 
-                  value={formData.password} 
-                  onChange={e => setFormData({...formData, password: e.target.value})} 
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" 
-                  placeholder="******" 
-                  required={!editingUser} 
-                />
-              </div>
-              
-              <button disabled={saving} className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-xl transition-colors flex justify-center items-center gap-2 mt-4 shadow-lg shadow-orange-200">
-                {saving ? <Loader2 className="animate-spin" size={20} /> : (editingUser ? <Edit size={18}/> : <Plus size={18}/>)}
-                {editingUser ? 'Salvar Alterações' : 'Cadastrar Membro'}
-              </button>
-            </form>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Cargo / Função</label>
+                  <select 
+                    value={formData.role} 
+                    onChange={e => setFormData({...formData, role: e.target.value})} 
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none bg-white"
+                  >
+                    <option value="ADMIN">Administrador (Acesso Total)</option>
+                    <option value="KITCHEN">Cozinha (Ver Pedidos)</option>
+                    <option value="COURIER">Motoboy (Ver Entregas)</option>
+                    <option value="CLIENT">Cliente (Apenas Teste)</option>
+                  </select>
+                </div>
+
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Shield size={14} className="text-orange-600"/>
+                    <span className="text-xs font-bold text-gray-700 uppercase">Segurança</span>
+                  </div>
+                  
+                  <div>
+                    <input 
+                      type="password" 
+                      value={formData.password} 
+                      onChange={e => setFormData({...formData, password: e.target.value})} 
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none bg-white" 
+                      placeholder={editingUser ? "Nova Senha (opcional)" : "Senha de Acesso"} 
+                      required={!editingUser} 
+                    />
+                    {formData.password && (
+                      <div className="flex gap-1 mt-2 h-1">
+                        {[1, 2, 3, 4].map((level) => (
+                          <div 
+                            key={level} 
+                            className={`flex-1 rounded-full transition-all duration-300 ${passwordStrength >= level 
+                              ? (passwordStrength <= 2 ? 'bg-red-400' : passwordStrength === 3 ? 'bg-yellow-400' : 'bg-green-500') 
+                              : 'bg-gray-200'}`} 
+                          />
+                        ))}
+                      </div>
+                    )}
+                    {formData.password && <p className="text-[10px] text-gray-400 mt-1 text-right">{['Fraca', 'Média', 'Boa', 'Forte'][passwordStrength - 1] || 'Muito Fraca'}</p>}
+                  </div>
+
+                  <div>
+                    <input 
+                      type="password" 
+                      value={formData.confirmPassword} 
+                      onChange={e => setFormData({...formData, confirmPassword: e.target.value})} 
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 outline-none bg-white ${formData.confirmPassword && formData.password !== formData.confirmPassword ? 'border-red-300 focus:ring-red-200' : 'border-gray-200 focus:ring-orange-500'}`}
+                      placeholder="Confirmar Senha" 
+                      required={!editingUser || !!formData.password} 
+                    />
+                     {formData.confirmPassword && formData.password !== formData.confirmPassword && <p className="text-xs text-red-500 mt-1">As senhas não conferem.</p>}
+                  </div>
+                </div>
+                
+                <button disabled={saving} className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-xl transition-colors flex justify-center items-center gap-2 mt-4 shadow-lg shadow-orange-200">
+                  {saving ? <Loader2 className="animate-spin" size={20} /> : (editingUser ? <Edit size={18}/> : <Plus size={18}/>)}
+                  {editingUser ? 'Salvar Alterações' : 'Cadastrar Membro'}
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       )}
+
+      {/* MODAL DE ZOOM DE IMAGEM */}
+      {selectedImage && (
+        <div 
+          className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300"
+          onClick={() => setSelectedImage(null)}
+        >
+          <button 
+            className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors"
+            onClick={() => setSelectedImage(null)}
+          >
+            <X size={32} />
+          </button>
+          <img 
+            src={selectedImage} 
+            alt="Zoom" 
+            className="max-w-full max-h-[85vh] rounded-lg shadow-2xl object-contain animate-in zoom-in-50 duration-300" 
+            onClick={(e) => e.stopPropagation()} 
+          />
+        </div>
+      )}
+
       <ConfirmModal isOpen={confirmDeleteOpen} onClose={() => setConfirmDeleteOpen(false)} onConfirm={executeDelete} title="Remover Membro?" message="Tem certeza que deseja remover este usuário? Essa ação não pode ser desfeita." confirmLabel="Sim, Remover" isDestructive />
     </div>
   );
