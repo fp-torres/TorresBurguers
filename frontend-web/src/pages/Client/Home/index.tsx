@@ -1,26 +1,18 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Search, ShoppingBag, Flame, ChevronRight, Star, Utensils, Coffee, IceCream, Plus, Clock, Trophy, Bike, Lock, Settings } from 'lucide-react'; 
 import { productService, type Product } from '../../../services/productService';
 import api from '../../../services/api';
 import ProductModal from '../../../components/ProductModal';
 
-// --- CONFIGURAÇÃO DA API ---
-// Se estiver rodando localmente no PC, use localhost. Se for testar no celular, use o IP.
 const API_URL = 'http://localhost:3000'; 
 
 // =================================================================
 // 🎛️ PAINEL DE SIMULAÇÃO (CONTROLE TOTAL AQUI)
 // =================================================================
-// 0 = Dom | 1 = Seg (Fechado) | 2 = Ter | 3 = Qua | 4 = Qui | 5 = Sex | 6 = Sab
-// Mude para 'null' para usar a data REAL do sistema.
 const TEST_DAY: number | null = null; 
-
-// Force um jogo de futebol (Para testar banner de torcida na Quarta/Domingo)
 const FORCE_GAME_DAY = false; 
 // =================================================================
 
-
-// --- CONFIGURAÇÃO DE IMAGENS E OFERTAS ---
 const DAILY_OFFERS: Record<number, any> = {
   0: { 
     title: "Domingo em Família 👨‍👩‍👧‍👦", 
@@ -46,7 +38,6 @@ const DAILY_OFFERS: Record<number, any> = {
   3: { 
     title: "Quarta do Delivery 🛵", 
     subtitle: "Hoje a entrega é por nossa conta! Peça no conforto de casa.", 
-    // IMAGEM NOVA: Entregador/Sacola de papel (Geralmente muito estável)
     image: "https://images.unsplash.com/photo-1550989460-0adf9ea622e2?q=80&w=1600&auto=format&fit=crop", 
     icon: <Bike size={48} className="text-white/80" />,
     isClosed: false
@@ -54,7 +45,6 @@ const DAILY_OFFERS: Record<number, any> = {
   4: { 
     title: "Quinta da Batata 🍟", 
     subtitle: "Comprou burger, a batata sai pela metade do preço.", 
-    // IMAGEM NOVA: Cesta de batatas fritas (Clássica)
     image: "https://images.unsplash.com/photo-1541592106381-b31e9677c0e5?q=80&w=1600&auto=format&fit=crop", 
     icon: <Utensils size={48} className="text-white/80" />,
     isClosed: false
@@ -75,13 +65,14 @@ const DAILY_OFFERS: Record<number, any> = {
   }
 };
 
+// --- CORREÇÃO: Ordem das Categorias Ajustada ---
 const CATEGORIES = [
-  { id: 'todos', label: 'Tudo', icon: Star },
-  { id: 'hamburgueres', label: 'Burgers', icon: Utensils },
   { id: 'combos', label: 'Combos', icon: ShoppingBag },
+  { id: 'hamburgueres', label: 'Burgers', icon: Utensils },
+  { id: 'acompanhamentos', label: 'Acomp.', icon: Utensils }, // Usando Utensils para diferenciar de Combos
   { id: 'bebidas', label: 'Bebidas', icon: Coffee },
-  { id: 'acompanhamentos', label: 'Acomp.', icon: ShoppingBag },
   { id: 'sobremesas', label: 'Doces', icon: IceCream },
+  { id: 'todos', label: 'Tudo', icon: Star },
 ];
 
 export default function ClientHome() {
@@ -94,7 +85,6 @@ export default function ClientHome() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Estado para mostrar aviso visual de que está em modo de teste
   const isTestMode = TEST_DAY !== null || FORCE_GAME_DAY;
 
   useEffect(() => {
@@ -105,11 +95,8 @@ export default function ClientHome() {
   async function loadBanner() {
     const todayIndex = TEST_DAY !== null ? TEST_DAY : new Date().getDay();
     
-    // 1. Carrega Banner Padrão do dia
     let currentBanner = DAILY_OFFERS[todayIndex] || DAILY_OFFERS[0];
     
-    // 2. Lógica de Futebol (Quarta ou Domingo)
-    // Se FORCE_GAME_DAY estiver true, pula a API e já monta o banner
     if ((todayIndex === 3 || todayIndex === 0) && !currentBanner.isClosed) {
       if (FORCE_GAME_DAY) {
          currentBanner = {
@@ -176,7 +163,6 @@ export default function ClientHome() {
   return (
     <div className="space-y-10 pb-20 animate-in fade-in duration-500 relative">
       
-      {/* 🛠️ AVISO DE MODO DE TESTE (Só aparece se você estiver simulando algo) */}
       {isTestMode && (
         <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-2 text-xs font-bold text-center mx-4 rounded mb-[-20px] shadow-sm flex items-center justify-center gap-2">
           <Settings size={14}/> 
@@ -187,17 +173,14 @@ export default function ClientHome() {
       {/* --- BANNER PRINCIPAL --- */}
       <div className="relative w-full h-64 sm:h-80 rounded-3xl overflow-hidden shadow-2xl group mx-auto max-w-[98%] mt-4">
         
-        {/* Imagem */}
         <img 
           src={banner.image} 
           alt={banner.title}
           className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
         />
         
-        {/* Overlay */}
         <div className={`absolute inset-0 ${banner.isClosed ? 'bg-black/80' : 'bg-gradient-to-r from-black/90 via-black/50 to-transparent'}`}></div>
 
-        {/* Conteúdo */}
         <div className="absolute inset-0 p-6 sm:p-12 flex flex-col justify-center">
           <div className="relative z-10 max-w-xl">
             
@@ -232,7 +215,6 @@ export default function ClientHome() {
         </div>
       </div>
 
-      {/* Busca */}
       <div className="relative -mt-10 mx-4 z-20 max-w-4xl sm:mx-auto">
         <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
           <Search className="h-5 w-5 text-gray-400" />
@@ -246,7 +228,6 @@ export default function ClientHome() {
         />
       </div>
 
-      {/* --- LISTAGEM DE PRODUTOS --- */}
       {selectedCategory === 'todos' && !searchTerm && comboProducts.length > 0 && (
         <section className="px-2">
           <div className="flex items-center justify-between px-1 mb-4">
@@ -288,7 +269,6 @@ export default function ClientHome() {
         </section>
       )}
 
-      {/* Lista Principal */}
       <section id="menu-section" className="pt-4 px-2">
         <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar sticky top-0 bg-gray-50/95 backdrop-blur-sm z-10 py-2">
           {CATEGORIES.map(cat => {

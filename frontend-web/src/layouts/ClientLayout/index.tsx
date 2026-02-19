@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { 
-  ShoppingBag, Menu, User, LogOut, Briefcase, 
+  ShoppingBag, ChefHat, User, LogOut, Briefcase, 
   LayoutDashboard, Clock, ChevronDown, UserCog, Package 
 } from 'lucide-react';
-import toast from 'react-hot-toast'; // Importação do Toast
+import toast from 'react-hot-toast'; 
 import { useCart } from '../../contexts/CartContext';
 import { useAuth } from '../../contexts/AuthContext';
 import ClientFooter from '../../components/ClientFooter'; 
@@ -26,7 +26,6 @@ export default function ClientLayout() {
     setIsLogoutModalOpen(false);
     setIsMenuOpen(false);
     
-    // --- CORREÇÃO: Toast de aviso e Redirecionamento para a Home ---
     toast.success('Você saiu da conta. Volte sempre! 👋', {
       duration: 3000,
     });
@@ -48,9 +47,13 @@ export default function ClientLayout() {
         
         {/* LADO ESQUERDO: Logo e Status */}
         <div className="flex items-center gap-4">
-          <Link to="/" className="flex items-center gap-2 group">
-            <div className="bg-orange-600 text-white p-1.5 rounded-lg group-hover:bg-orange-700 transition-colors">
-              <Menu size={20} />
+          <Link 
+            to="/" 
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="flex items-center gap-2 group"
+          >
+            <div className="bg-orange-600 text-white p-1.5 rounded-lg group-hover:bg-orange-700 transition-colors shadow-sm">
+              <ChefHat size={20} />
             </div>
             <span className="font-bold text-gray-800 text-lg tracking-tight hidden min-[350px]:inline">
               Torres<span className="text-orange-600">Burgers</span>
@@ -70,9 +73,12 @@ export default function ClientLayout() {
 
         {/* LADO DIREITO: Carrinho e Menu de Usuário */}
         <div className="flex items-center gap-3">
-          <div className="md:hidden"><StoreStatusBadge /></div>
+          
+          <div className="md:hidden [&_span]:hidden flex items-center justify-center">
+            <StoreStatusBadge />
+          </div>
 
-          {/* Botão Painel (Só aparece para Staff) */}
+          {/* Botão Painel (Só aparece para Staff Logado) */}
           {isStaff && (
             <Link to="/dashboard" className="hidden sm:flex items-center gap-1 text-xs font-bold text-white bg-gray-800 px-3 py-1.5 rounded-full hover:bg-gray-900 transition-colors">
               <LayoutDashboard size={14} /> Painel
@@ -81,9 +87,9 @@ export default function ClientLayout() {
 
           {/* Carrinho (Sempre visível) */}
           <Link to="/cart" className="relative p-2 text-gray-600 hover:text-orange-600 bg-orange-50 rounded-full transition-colors">
-            <ShoppingBag size={20} />
+            <ShoppingBag size={22} />
             {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full animate-in zoom-in">
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full animate-in zoom-in shadow-sm">
                 {cartCount}
               </span>
             )}
@@ -97,7 +103,7 @@ export default function ClientLayout() {
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                 className="flex items-center gap-2 pl-2 pr-1 py-1 rounded-full hover:bg-gray-100 transition-all border border-transparent hover:border-gray-200"
               >
-                <div className="w-8 h-8 rounded-full overflow-hidden bg-orange-100 flex items-center justify-center border border-orange-200 shadow-sm">
+                <div className="w-9 h-9 rounded-full overflow-hidden bg-orange-100 flex items-center justify-center border border-orange-200 shadow-sm">
                   {user.avatar ? (
                     <img 
                       src={user.avatar.startsWith('http') ? user.avatar : `http://localhost:3000${user.avatar}`} 
@@ -108,7 +114,7 @@ export default function ClientLayout() {
                     <User size={18} className="text-orange-600" />
                   )}
                 </div>
-                <ChevronDown size={14} className={`text-gray-400 transition-transform duration-300 ${isMenuOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown size={14} className={`text-gray-400 transition-transform duration-300 ${isMenuOpen ? 'rotate-180' : ''} hidden sm:block`} />
               </button>
 
               {/* DROPDOWN MENU */}
@@ -154,13 +160,26 @@ export default function ClientLayout() {
               )}
             </div>
           ) : (
-            /* Botão Entrar (Visitante) */
-            <div className="flex items-center gap-2">
-              <Link to="/login" className="hidden md:flex items-center gap-1 text-xs font-bold text-gray-400 border border-gray-200 px-3 py-1.5 rounded-full hover:text-orange-600 transition-colors">
-                <Briefcase size={14} /> Equipe
+            /* Botões para Visitantes (Deslogados) */
+            <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-3 border-l border-gray-200">
+              
+              {/* CORREÇÃO: Botão "Sou Equipe" com alto destaque */}
+              <Link 
+                to="/login" 
+                title="Sou Equipe"
+                className="flex items-center justify-center w-10 h-10 sm:w-auto sm:px-4 sm:py-2 gap-2 text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200 rounded-xl hover:bg-orange-100 transition-colors shadow-sm"
+              >
+                <Briefcase size={18} /> 
+                <span className="hidden sm:inline">Sou Equipe</span>
               </Link>
-              <Link to="/signin" className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-gray-800 transition-all shadow-sm hover:shadow-md">
-                <User size={16} /> <span className="hidden sm:inline">Entrar</span>
+
+              {/* Botão Entrar Cliente */}
+              <Link 
+                to="/signin" 
+                className="flex items-center justify-center w-10 h-10 sm:w-auto sm:px-4 sm:py-2 gap-2 bg-gray-900 text-white rounded-xl font-bold text-sm hover:bg-gray-800 transition-all shadow-sm hover:shadow-md"
+              >
+                <User size={18} /> 
+                <span className="hidden sm:inline">Entrar</span>
               </Link>
             </div>
           )}
