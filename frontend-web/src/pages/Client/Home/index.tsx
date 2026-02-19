@@ -65,11 +65,10 @@ const DAILY_OFFERS: Record<number, any> = {
   }
 };
 
-// --- CORREÇÃO: Ordem das Categorias Ajustada ---
 const CATEGORIES = [
   { id: 'combos', label: 'Combos', icon: ShoppingBag },
   { id: 'hamburgueres', label: 'Burgers', icon: Utensils },
-  { id: 'acompanhamentos', label: 'Acomp.', icon: Utensils }, // Usando Utensils para diferenciar de Combos
+  { id: 'acompanhamentos', label: 'Acomp.', icon: Utensils },
   { id: 'bebidas', label: 'Bebidas', icon: Coffee },
   { id: 'sobremesas', label: 'Doces', icon: IceCream },
   { id: 'todos', label: 'Tudo', icon: Star },
@@ -94,7 +93,6 @@ export default function ClientHome() {
 
   async function loadBanner() {
     const todayIndex = TEST_DAY !== null ? TEST_DAY : new Date().getDay();
-    
     let currentBanner = DAILY_OFFERS[todayIndex] || DAILY_OFFERS[0];
     
     if ((todayIndex === 3 || todayIndex === 0) && !currentBanner.isClosed) {
@@ -123,7 +121,6 @@ export default function ClientHome() {
         }
       }
     }
-
     setBanner(currentBanner);
   }
 
@@ -172,30 +169,24 @@ export default function ClientHome() {
 
       {/* --- BANNER PRINCIPAL --- */}
       <div className="relative w-full h-64 sm:h-80 rounded-3xl overflow-hidden shadow-2xl group mx-auto max-w-[98%] mt-4">
-        
         <img 
           src={banner.image} 
           alt={banner.title}
           className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
         />
-        
         <div className={`absolute inset-0 ${banner.isClosed ? 'bg-black/80' : 'bg-gradient-to-r from-black/90 via-black/50 to-transparent'}`}></div>
-
         <div className="absolute inset-0 p-6 sm:p-12 flex flex-col justify-center">
           <div className="relative z-10 max-w-xl">
-            
             <span className={`${banner.isClosed ? 'bg-red-600' : 'bg-orange-600'} text-white text-xs font-bold px-3 py-1 rounded-full mb-4 inline-flex items-center gap-1 shadow-lg`}>
               {banner.isClosed ? <Lock size={12}/> : <Clock size={12}/>} 
               {banner.isClosed ? 'LOJA FECHADA' : 'Oferta de Hoje'}
             </span>
-            
             <h2 className="text-3xl sm:text-5xl font-extrabold text-white mb-3 leading-tight drop-shadow-lg">
               {banner.title}
             </h2>
             <p className="text-gray-200 text-sm sm:text-xl font-medium drop-shadow-md max-w-md mb-6">
               {banner.subtitle}
             </p>
-            
             <button 
               onClick={scrollToMenu}
               className={`px-8 py-3.5 rounded-2xl font-bold text-sm transition-all shadow-xl flex items-center gap-2 w-fit transform 
@@ -208,26 +199,27 @@ export default function ClientHome() {
               {!banner.isClosed && <ChevronRight size={16}/>}
             </button>
           </div>
-          
           <div className="absolute right-8 bottom-8 opacity-30 sm:opacity-60 hidden sm:block transform rotate-12">
             {banner.icon}
           </div>
         </div>
       </div>
 
-      <div className="relative -mt-10 mx-4 z-20 max-w-4xl sm:mx-auto">
+      {/* --- BARRA DE PESQUISA COM DESTAQUE --- */}
+      <div className="relative mt-8 mx-4 z-20 max-w-4xl sm:mx-auto">
         <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
-          <Search className="h-5 w-5 text-gray-400" />
+          <Search className="h-5 w-5 text-orange-500" />
         </div>
         <input
           type="text"
           placeholder="O que você quer comer hoje?"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="block w-full pl-12 pr-4 py-4 border-0 rounded-2xl bg-white shadow-xl shadow-gray-200/40 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all text-base"
+          className="block w-full pl-12 pr-4 py-5 border-0 rounded-2xl bg-white shadow-2xl shadow-orange-100/50 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 ring-1 ring-orange-100 transition-all text-base font-medium"
         />
       </div>
 
+      {/* --- LISTAGEM DE PRODUTOS --- */}
       {selectedCategory === 'todos' && !searchTerm && comboProducts.length > 0 && (
         <section className="px-2">
           <div className="flex items-center justify-between px-1 mb-4">
@@ -335,7 +327,6 @@ export default function ClientHome() {
 
 function ProductHorizontalCard({ product, onClick, isPromo, disabled }: { product: Product, onClick: () => void, isPromo?: boolean, disabled?: boolean }) {
   const API_URL = 'http://localhost:3000'; 
-
   return (
     <div 
       onClick={!disabled ? onClick : undefined}
@@ -344,16 +335,13 @@ function ProductHorizontalCard({ product, onClick, isPromo, disabled }: { produc
       `}
     >
       {isPromo && <span className="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-bl-2xl z-10 shadow-sm">OFERTA</span>}
-      
       <div className="h-36 bg-gray-50 rounded-2xl mb-4 overflow-hidden relative">
          {product.image ? (
             <img src={`${API_URL}/uploads/${product.image}`} className={`w-full h-full object-cover transition-transform duration-700 ${!disabled && 'group-hover:scale-110'}`} />
          ) : <div className="w-full h-full flex items-center justify-center text-gray-300"><Utensils/></div>}
       </div>
-      
       <h3 className="font-bold text-gray-800 line-clamp-1 text-lg mb-1">{product.name}</h3>
       <p className="text-xs text-gray-500 line-clamp-1 mb-4">{product.description}</p>
-      
       <div className="flex justify-between items-center">
         <span className="font-extrabold text-xl text-gray-900">
           {Number(product.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
