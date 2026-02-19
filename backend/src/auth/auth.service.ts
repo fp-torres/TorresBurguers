@@ -13,9 +13,7 @@ export class AuthService {
   async validateUser(email: string, pass: string): Promise<any> {
     const user = await this.usersService.findOneByEmail(email);
     
-    // CORREÇÃO: Compara 'pass' com 'user.password_hash'
     if (user && (await bcrypt.compare(pass, user.password_hash))) {
-      
       // Removemos o hash antes de retornar o objeto do usuário
       const { password_hash, ...result } = user;
       return result;
@@ -27,6 +25,7 @@ export class AuthService {
     const payload = { email: user.email, sub: user.id, role: user.role };
     return {
       access_token: this.jwtService.sign(payload),
+      user: user, // <--- CORREÇÃO: Faltava enviar o usuário de volta para o Front
     };
   }
 }

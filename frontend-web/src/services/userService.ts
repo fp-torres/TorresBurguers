@@ -6,13 +6,32 @@ export interface User {
   email: string;
   phone?: string; 
   avatar?: string;
-  role: 'ADMIN' | 'CLIENT' | 'KITCHEN' | 'COURIER';
+  role: 'ADMIN' | 'CLIENT' | 'KITCHEN' | 'COURIER' | 'EMPLOYEE';
+}
+
+// Interface necessária para a tela de Admin (Criação/Edição)
+export interface CreateUserDTO {
+  name: string;
+  email: string;
+  password?: string;
+  phone?: string;
+  role: string;
 }
 
 export const userService = {
-  // ... outros métodos (getAll, create, etc)
+  // Buscar todos os usuários
+  getAll: async () => {
+    const response = await api.get<User[]>('/users');
+    return response.data;
+  },
 
-  // ATUALIZAÇÃO: Suporte a FormData para Upload de Imagem
+  // Criar novo usuário (Admin)
+  create: async (data: CreateUserDTO) => {
+    const response = await api.post('/users', data);
+    return response.data;
+  },
+
+  // Atualizar usuário (Suporte a FormData para Upload de Imagem)
   update: async (id: number, data: any, file?: File) => {
     const formData = new FormData();
     
@@ -34,6 +53,12 @@ export const userService = {
     return response.data;
   },
 
+  // Exclusão pelo Admin (Lixeira)
+  delete: async (id: number) => {
+    await api.delete(`/users/${id}`);
+  },
+
+  // Auto-exclusão pelo Cliente
   deleteAccount: async (id: number) => {
     await api.delete(`/users/${id}`);
   }

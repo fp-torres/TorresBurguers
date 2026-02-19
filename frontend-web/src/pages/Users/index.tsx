@@ -1,12 +1,11 @@
 import { useEffect, useState, useMemo } from 'react';
-import type { ChangeEvent, FormEvent } from 'react'; // <--- CORREÇÃO: Tipos importados separadamente
+import type { ChangeEvent, FormEvent } from 'react'; 
 import { Plus, Trash2, Shield, Mail, X, Loader2, Edit, Phone, ChefHat, Truck, User as UserIcon, Search, Users as UsersGroup } from 'lucide-react';
 import { userService, type User, type CreateUserDTO } from '../../services/userService';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../../components/ConfirmModal';
 import { normalizePhone } from '../../utils/masks'; 
 
-// Categorias para as Abas
 const ROLES = [
   { id: 'ALL', label: 'Todos', icon: UsersGroup },
   { id: 'ADMIN', label: 'Administradores', icon: Shield },
@@ -59,7 +58,6 @@ export default function Users() {
     setIsModalOpen(true);
   }
 
-  // Novo Handler para telefone com tipo correto
   function handlePhoneChange(e: ChangeEvent<HTMLInputElement>) {
     setFormData({ ...formData, phone: normalizePhone(e.target.value) });
   }

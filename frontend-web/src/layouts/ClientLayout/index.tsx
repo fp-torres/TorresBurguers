@@ -4,6 +4,7 @@ import {
   ShoppingBag, Menu, User, LogOut, Briefcase, 
   LayoutDashboard, Clock, ChevronDown, UserCog, Package 
 } from 'lucide-react';
+import toast from 'react-hot-toast'; // Importação do Toast
 import { useCart } from '../../contexts/CartContext';
 import { useAuth } from '../../contexts/AuthContext';
 import ClientFooter from '../../components/ClientFooter'; 
@@ -24,7 +25,12 @@ export default function ClientLayout() {
     signOut();
     setIsLogoutModalOpen(false);
     setIsMenuOpen(false);
-    navigate('/login');
+    
+    // --- CORREÇÃO: Toast de aviso e Redirecionamento para a Home ---
+    toast.success('Você saiu da conta. Volte sempre! 👋', {
+      duration: 3000,
+    });
+    navigate('/'); 
   };
 
   return (
@@ -93,7 +99,11 @@ export default function ClientLayout() {
               >
                 <div className="w-8 h-8 rounded-full overflow-hidden bg-orange-100 flex items-center justify-center border border-orange-200 shadow-sm">
                   {user.avatar ? (
-                    <img src={user.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                    <img 
+                      src={user.avatar.startsWith('http') ? user.avatar : `http://localhost:3000${user.avatar}`} 
+                      alt="Avatar" 
+                      className="w-full h-full object-cover" 
+                    />
                   ) : (
                     <User size={18} className="text-orange-600" />
                   )}

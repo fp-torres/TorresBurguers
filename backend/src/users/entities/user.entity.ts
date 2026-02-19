@@ -1,6 +1,6 @@
 import { 
   Entity, PrimaryGeneratedColumn, Column, 
-  CreateDateColumn, UpdateDateColumn, DeleteDateColumn, // <--- Importado
+  CreateDateColumn, UpdateDateColumn, DeleteDateColumn,
   OneToMany 
 } from 'typeorm';
 import { Order } from '../../orders/entities/order.entity';
@@ -31,6 +31,10 @@ export class User {
   @Column({ length: 20, nullable: true }) 
   phone: string;
 
+  // --- CORREÇÃO: COLUNA AVATAR ADICIONADA ---
+  @Column({ nullable: true })
+  avatar: string;
+
   @Column({ type: 'enum', enum: UserRole, default: UserRole.CLIENT })
   role: UserRole;
 
@@ -46,7 +50,6 @@ export class User {
   @UpdateDateColumn()
   updated_at: Date;
 
-  // --- NOVA COLUNA PARA SOFT DELETE ---
   @DeleteDateColumn()
   deleted_at: Date;
 }

@@ -1,67 +1,36 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Lock, Mail, Loader2, ArrowLeft, HelpCircle } from 'lucide-react';
-import api from '../../../services/api';
+import { Lock, Mail, Loader2, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCart } from '../../../contexts/CartContext'; 
-import toast from 'react-hot-toast'; // NOVO
+import toast from 'react-hot-toast';
 
 export default function ClientLogin() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
   
+  const navigate = useNavigate();
   const { signIn } = useAuth();
   const { cartItems } = useCart(); 
-
-  function parseJwt(token: string) {
-    try {
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join(''));
-      return JSON.parse(jsonPayload);
-    } catch (e) { return null; }
-  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await api.post('/auth/login', { email, password });
+      // Chama o AuthContext, que faz o request e já salva no localStorage
+      const loggedUser = await signIn({ email, password });
       
-      const access_token = response.data.access_token || response.data.token;
-      let userData = response.data.user;
+      toast.success(`Bem-vindo, ${loggedUser.name.split(' ')[0]}!`); 
 
-      if (!userData && access_token) {
-        const decoded = parseJwt(access_token);
-        if (decoded) {
-          userData = {
-            id: decoded.sub || decoded.id,
-            name: decoded.name || decoded.username || email.split('@')[0],
-            email: decoded.email || email,
-            role: decoded.role || 'CLIENT'
-          };
-        }
-      }
-
-      if (access_token && userData) {
-        signIn(access_token, userData);
-        toast.success(`Bem-vindo, ${userData.name.split(' ')[0]}!`); // NOVO
-
-        if (cartItems.length > 0) {
-          navigate('/cart');
-        } else {
-          navigate('/');
-        }
+      if (cartItems.length > 0) {
+        navigate('/cart');
       } else {
-        toast.error("Erro ao recuperar dados do usuário."); // NOVO
+        navigate('/');
       }
 
     } catch (error) {
-      toast.error('Email ou senha inválidos.'); // NOVO
+      toast.error('Email ou senha inválidos.'); 
     } finally {
       setLoading(false);
     }

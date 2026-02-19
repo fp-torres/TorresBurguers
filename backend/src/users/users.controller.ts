@@ -1,10 +1,11 @@
 import { 
   Controller, Get, Post, Body, Patch, Param, Delete, 
-  UseGuards, ParseIntPipe, UseInterceptors, UploadedFile 
+  UseGuards, ParseIntPipe, UseInterceptors, UploadedFile, Request, UnauthorizedException
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
+import * as fs from 'fs'; 
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -48,18 +49,23 @@ export class UsersController {
     return this.usersService.findOne(id);
   }
 
-  // --- UPDATE COM UPLOAD DE AVATAR ---
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'))
   @UseInterceptors(FileInterceptor('file', {
     storage: diskStorage({
-      destination: './uploads',
+      destination: (req, file, cb) => {
+        const uploadPath = './uploads';
+        if (!fs.existsSync(uploadPath)) {
+          fs.mkdirSync(uploadPath, { recursive: true });
+        }
+        cb(null, uploadPath);
+      },
       filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
         cb(null, `${uniqueSuffix}${extname(file.originalname)}`);
       },
     }),
-    limits: { fileSize: 5 * 1024 * 1024 }, // LIMITE 5MB
+    limits: { fileSize: 5 * 1024 * 1024 }, 
     fileFilter: (req, file, cb) => {
       if (!file.mimetype.match(/\/(jpg|jpeg|png)$/)) {
         return cb(new Error('Somente imagens são permitidas!'), false);
@@ -78,11 +84,15 @@ export class UsersController {
     return this.usersService.update(id, updateUserDto);
   }
 
+  // --- CORREÇÃO: SOFT DELETE ---
   @Delete(':id')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.usersService.remove(id);
+  @UseGuards(AuthGuard('jwt')) // Removido RolesGuard e @Roles('ADMIN')
+  remove(@Param('id', ParseIntPipe) id: number, @Request() req) {
+    // Permite exclusão se for ADMIN ou se o próprio usuário estiver excluindo sua conta
+    if (req.user.role === 'ADMIN' || req.user.id === id) {
+       return this.usersService.remove(id);
+    }
+    throw new UnauthorizedException('Você não tem permissão para realizar esta ação.');
   }
 
   @Delete(':id/permanent')

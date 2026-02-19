@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { 
-  User as UserIcon, Mail, Phone, Lock, Save, Trash2, Camera, 
-  ShieldCheck, Eye, EyeOff, Check, X, Upload 
+  User as UserIcon, Phone, Lock, Save, Camera, 
+  Eye, EyeOff, Check, X, Mail, ArrowLeft 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -9,13 +10,22 @@ import { userService } from '../../../services/userService';
 import { maskPhone } from '../../../utils/masks';
 import ConfirmModal from '../../../components/ConfirmModal';
 
+const FUN_AVATARS = [
+  "https://cdn-icons-png.flaticon.com/512/3075/3075977.png", // Burger
+  "https://cdn-icons-png.flaticon.com/512/1046/1046784.png", // Fries
+  "https://cdn-icons-png.flaticon.com/512/2405/2405597.png", // Soda
+  "https://cdn-icons-png.flaticon.com/512/4264/4264632.png", // Pizza
+  "https://cdn-icons-png.flaticon.com/512/2819/2819194.png", // Hotdog
+];
+
 export default function ClientProfile() {
   const { user, updateUser, signOut } = useAuth();
+  const navigate = useNavigate();
   
   // Estados dos campos
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [avatar, setAvatar] = useState(''); // URL atual do banco
+  const [avatar, setAvatar] = useState(''); // Armazena a URL do ícone ou a imagem do banco
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   
@@ -39,7 +49,7 @@ export default function ClientProfile() {
     }
   }, [user]);
 
-  // Lógica de Senha Forte (Igual ao Cadastro)
+  // Lógica de Senha Forte
   useEffect(() => {
     if (newPassword) {
       const c = {
@@ -58,6 +68,7 @@ export default function ClientProfile() {
     }
   }, [newPassword]);
 
+  // Handle Foto do Dispositivo
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -67,14 +78,33 @@ export default function ClientProfile() {
       }
       setSelectedFile(file);
       setPreviewUrl(URL.createObjectURL(file));
+      setAvatar(''); // Limpa a URL do ícone se a pessoa fizer upload
     }
+  };
+
+  // Handle Ícone Divertido
+  const handleSelectIcon = (url: string) => {
+    setAvatar(url);
+    setSelectedFile(null); // Remove o arquivo se a pessoa preferir o ícone
+    setPreviewUrl('');
   };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
-    // Se tentar mudar a senha, deve ser FORTE
+    // --- CORREÇÃO: Verificação de "Nenhuma alteração" ---
+    if (
+      name === user.name && 
+      phone === (user.phone || '') && 
+      avatar === (user.avatar || '') && 
+      !selectedFile && 
+      !newPassword
+    ) {
+      toast("Nenhuma alteração para salvar!", { icon: "👍" });
+      return;
+    }
+
     if (newPassword && (strength < 3 || newPassword !== confirmPass)) {
       toast.error('Para alterar a senha, ela precisa ser FORTE e confirmada corretamente.');
       return;
@@ -86,16 +116,22 @@ export default function ClientProfile() {
       if (name !== user.name) data.name = name;
       if (phone !== user.phone) data.phone = phone;
       if (newPassword) data.password = newPassword;
+      if (avatar && avatar !== user.avatar) data.avatar = avatar;
 
       const updated = await userService.update(user.id, data, selectedFile || undefined);
       
       updateUser(updated);
       toast.success('Perfil atualizado com sucesso!');
       
-      // Limpa campos de senha e arquivos após sucesso
       setNewPassword('');
       setConfirmPass('');
       setSelectedFile(null);
+
+      // --- CORREÇÃO: Redirecionamento em 10 segundos ---
+      setTimeout(() => {
+        navigate('/');
+      }, 10000); 
+
     } catch (error) {
       toast.error('Erro ao atualizar perfil.');
     } finally {
@@ -103,8 +139,24 @@ export default function ClientProfile() {
     }
   };
 
+  // Monta a imagem correta para exibir (Sem usar variável de ambiente)
+  const getDisplayImage = () => {
+    if (previewUrl) return previewUrl; // Imagem que acabou de subir (Preview)
+    if (avatar) {
+      // Se for um link de ícone (http...), usa direto. Se for foto do backend (/uploads...), coloca localhost na frente.
+      return avatar.startsWith('http') ? avatar : `http://localhost:3000${avatar}`; 
+    }
+    return null;
+  };
+
   return (
     <div className="max-w-2xl mx-auto space-y-8 p-4 animate-in fade-in slide-in-from-bottom-4">
+      
+      {/* Botão Voltar */}
+      <Link to="/" className="text-gray-500 flex items-center gap-2 mb-2 hover:text-orange-600 transition-colors w-fit font-medium">
+        <ArrowLeft size={20}/> Voltar ao cardápio
+      </Link>
+
       <div className="text-center">
         <h1 className="text-3xl font-bold text-gray-800">Meus Dados 🍔</h1>
         <p className="text-gray-500">Mantenha seu perfil atualizado</p>
@@ -112,15 +164,11 @@ export default function ClientProfile() {
 
       <form onSubmit={handleUpdateProfile} className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border space-y-8">
         
-        {/* AVATAR COM UPLOAD REAL */}
+        {/* AVATAR: Foto ou Ícone */}
         <div className="flex flex-col items-center gap-4">
           <div className="relative w-28 h-28 rounded-full border-4 border-orange-100 overflow-hidden bg-gray-50 group shadow-inner">
-            {previewUrl || avatar ? (
-              <img 
-                src={previewUrl || (avatar.startsWith('http') ? avatar : `http://localhost:3000${avatar}`)} 
-                alt="Avatar" 
-                className="w-full h-full object-cover" 
-              />
+            {getDisplayImage() ? (
+              <img src={getDisplayImage()!} alt="Avatar" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-orange-300">
                 <UserIcon size={48} />
@@ -132,7 +180,21 @@ export default function ClientProfile() {
               <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
             </label>
           </div>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Toque na foto para alterar (Máx 5MB)</p>
+          
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center">Toque na foto para enviar (Máx 5MB) <br/> OU escolha um ícone abaixo</p>
+          
+          <div className="flex justify-center gap-3 flex-wrap">
+            {FUN_AVATARS.map((url, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSelectIcon(url)}
+                className={`w-10 h-10 rounded-full border-2 transition-all hover:scale-110 p-1 bg-gray-50 ${avatar === url && !previewUrl ? 'border-orange-500 scale-110' : 'border-transparent'}`}
+              >
+                <img src={url} className="w-full h-full object-contain" />
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* DADOS (OPCIONAIS NA EDIÇÃO) */}
@@ -151,6 +213,20 @@ export default function ClientProfile() {
               <input value={phone} onChange={e => setPhone(maskPhone(e.target.value))} className="w-full pl-10 p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 transition-all" />
             </div>
           </div>
+        </div>
+
+        {/* CAMPO DE EMAIL BLOQUEADO */}
+        <div className="pt-2">
+          <label className="text-xs font-bold text-gray-400 uppercase ml-1">Email (Não editável)</label>
+          <div className="relative opacity-70 mt-1">
+            <Mail size={18} className="absolute left-3 top-3 text-gray-400" />
+            <input 
+              disabled 
+              value={user?.email || ''} 
+              className="w-full pl-10 p-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 cursor-not-allowed" 
+            />
+          </div>
+          <span className="text-[10px] text-orange-600 mt-1 block ml-1">Para alterar seu email, entre em contato com o suporte.</span>
         </div>
 
         {/* SENHA FORTE (OPCIONAL) */}
@@ -217,6 +293,7 @@ export default function ClientProfile() {
         onConfirm={async () => {
           await userService.deleteAccount(user!.id);
           signOut();
+          navigate('/'); // Redireciona para o início após apagar a conta
         }}
         title="Excluir Conta?"
         message="Seus dados serão enviados para a lixeira do sistema. Esta ação pode ser revertida apenas pelo administrador."

@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-import { UsersModule } from '../users/users.module'; // Importa o módulo de usuários
+import { UsersModule } from '../users/users.module'; 
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { JwtStrategy } from './jwt.strategy'; // <--- Importa a estratégia que criamos
+import { JwtStrategy } from './jwt.strategy'; 
 
 @Module({
   imports: [
-    UsersModule, // <--- Permite usar o UsersService aqui dentro
+    UsersModule, 
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
@@ -19,6 +19,6 @@ import { JwtStrategy } from './jwt.strategy'; // <--- Importa a estratégia que 
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy], // <--- Adiciona JwtStrategy nos providers
+  providers: [AuthService, JwtStrategy], 
 })
 export class AuthModule {}
