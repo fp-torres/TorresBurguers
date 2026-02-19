@@ -52,8 +52,9 @@ export default function ClientLayout() {
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             className="flex items-center gap-2 group"
           >
-            <div className="bg-orange-600 text-white p-1.5 rounded-lg group-hover:bg-orange-700 transition-colors shadow-sm">
-              <ChefHat size={20} />
+            {/* CORREÇÃO VISUAL: Estilo Squircle para o Chapéu */}
+            <div className="bg-orange-600 text-white w-10 h-10 rounded-xl flex items-center justify-center group-hover:bg-orange-700 transition-colors shadow-sm">
+              <ChefHat size={22} />
             </div>
             <span className="font-bold text-gray-800 text-lg tracking-tight hidden min-[350px]:inline">
               Torres<span className="text-orange-600">Burgers</span>
@@ -72,7 +73,7 @@ export default function ClientLayout() {
         </div>
 
         {/* LADO DIREITO: Carrinho e Menu de Usuário */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           
           <div className="md:hidden [&_span]:hidden flex items-center justify-center">
             <StoreStatusBadge />
@@ -80,16 +81,19 @@ export default function ClientLayout() {
 
           {/* Botão Painel (Só aparece para Staff Logado) */}
           {isStaff && (
-            <Link to="/dashboard" className="hidden sm:flex items-center gap-1 text-xs font-bold text-white bg-gray-800 px-3 py-1.5 rounded-full hover:bg-gray-900 transition-colors">
+            <Link to="/dashboard" className="hidden sm:flex items-center gap-1 text-xs font-bold text-white bg-gray-800 px-3 py-1.5 rounded-xl hover:bg-gray-900 transition-colors">
               <LayoutDashboard size={14} /> Painel
             </Link>
           )}
 
-          {/* Carrinho (Sempre visível) */}
-          <Link to="/cart" className="relative p-2 text-gray-600 hover:text-orange-600 bg-orange-50 rounded-full transition-colors">
-            <ShoppingBag size={22} />
+          {/* CORREÇÃO VISUAL: Carrinho estilo Squircle */}
+          <Link 
+            to="/cart" 
+            className="relative w-10 h-10 flex items-center justify-center text-gray-700 hover:text-orange-600 border border-gray-200 bg-white hover:bg-gray-50 rounded-xl transition-colors shadow-sm"
+          >
+            <ShoppingBag size={20} />
             {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full animate-in zoom-in shadow-sm">
+              <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full animate-in zoom-in shadow-sm border-2 border-white">
                 {cartCount}
               </span>
             )}
@@ -101,9 +105,10 @@ export default function ClientLayout() {
               {/* Botão do Avatar (Gatilho do Menu) */}
               <button 
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="flex items-center gap-2 pl-2 pr-1 py-1 rounded-full hover:bg-gray-100 transition-all border border-transparent hover:border-gray-200"
+                className="flex items-center gap-1 border border-gray-200 hover:border-gray-300 p-0.5 rounded-xl transition-all shadow-sm bg-white"
               >
-                <div className="w-9 h-9 rounded-full overflow-hidden bg-orange-100 flex items-center justify-center border border-orange-200 shadow-sm">
+                {/* CORREÇÃO VISUAL: Avatar com bordas squircle */}
+                <div className="w-8 h-8 rounded-lg overflow-hidden bg-orange-50 flex items-center justify-center">
                   {user.avatar ? (
                     <img 
                       src={user.avatar.startsWith('http') ? user.avatar : `http://localhost:3000${user.avatar}`} 
@@ -114,7 +119,7 @@ export default function ClientLayout() {
                     <User size={18} className="text-orange-600" />
                   )}
                 </div>
-                <ChevronDown size={14} className={`text-gray-400 transition-transform duration-300 ${isMenuOpen ? 'rotate-180' : ''} hidden sm:block`} />
+                <ChevronDown size={14} className={`text-gray-400 mx-1 transition-transform duration-300 ${isMenuOpen ? 'rotate-180' : ''} hidden sm:block`} />
               </button>
 
               {/* DROPDOWN MENU */}
@@ -163,7 +168,6 @@ export default function ClientLayout() {
             /* Botões para Visitantes (Deslogados) */
             <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-3 border-l border-gray-200">
               
-              {/* CORREÇÃO: Botão "Sou Equipe" com alto destaque */}
               <Link 
                 to="/login" 
                 title="Sou Equipe"
@@ -173,7 +177,6 @@ export default function ClientLayout() {
                 <span className="hidden sm:inline">Sou Equipe</span>
               </Link>
 
-              {/* Botão Entrar Cliente */}
               <Link 
                 to="/signin" 
                 className="flex items-center justify-center w-10 h-10 sm:w-auto sm:px-4 sm:py-2 gap-2 bg-gray-900 text-white rounded-xl font-bold text-sm hover:bg-gray-800 transition-all shadow-sm hover:shadow-md"

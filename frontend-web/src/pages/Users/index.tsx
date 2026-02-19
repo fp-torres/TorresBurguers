@@ -106,6 +106,12 @@ export default function Users() {
     });
   }, [users, searchTerm, activeTab]);
 
+  // Função para montar a URL correta do Avatar
+  const getDisplayAvatar = (avatar?: string) => {
+    if (!avatar) return null;
+    return avatar.startsWith('http') ? avatar : `http://localhost:3000${avatar}`;
+  };
+
   return (
     <div className="space-y-6 pb-20 h-full flex flex-col">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 shrink-0">
@@ -163,9 +169,20 @@ export default function Users() {
                 <tr key={user.id} className="hover:bg-gray-50 transition-colors group">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-600 border-purple-200' : user.role === 'KITCHEN' ? 'bg-orange-100 text-orange-600 border-orange-200' : user.role === 'COURIER' ? 'bg-blue-100 text-blue-600 border-blue-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
-                        {user.name[0]?.toUpperCase()}
-                      </div>
+                      
+                      {/* CORREÇÃO: Renderiza Avatar Real ou Fallback */}
+                      {user.avatar ? (
+                        <img 
+                          src={getDisplayAvatar(user.avatar)!} 
+                          alt={user.name} 
+                          className="w-10 h-10 rounded-full object-cover border border-gray-200 shadow-sm bg-white" 
+                        />
+                      ) : (
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-600 border-purple-200' : user.role === 'KITCHEN' ? 'bg-orange-100 text-orange-600 border-orange-200' : user.role === 'COURIER' ? 'bg-blue-100 text-blue-600 border-blue-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+                          {user.name[0]?.toUpperCase()}
+                        </div>
+                      )}
+
                       <div>
                         <p className="font-bold text-gray-800">{user.name}</p>
                         <p className="text-xs text-gray-400 font-mono">ID: {user.id}</p>

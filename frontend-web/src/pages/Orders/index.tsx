@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { 
   Clock, CheckCircle, XCircle, 
-  MapPin, User, AlertCircle, ChefHat, Bike, Bell, ExternalLink, Navigation, Banknote 
+  MapPin, User, AlertCircle, ChefHat, Bike, Bell, ExternalLink, Navigation, Banknote, Package 
 } from 'lucide-react';
 import { orderService, type Order, type OrderItem } from '../../services/orderService';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -45,7 +45,7 @@ export default function Orders() {
       
       const msgMap: any = { 
         'PREPARING': 'Cozinha notificada! 🔥', 
-        'READY_FOR_PICKUP': 'Chamando Motoboy! 🔔',
+        'READY_FOR_PICKUP': 'Pedido Liberado! ✅',
         'DELIVERING': 'Boa entrega! 🏍️', 
         'DONE': 'Pedido finalizado! 🎉',
         'CANCELED': 'Cancelado.'
@@ -75,12 +75,10 @@ export default function Orders() {
   const OrderCard = ({ order }: { order: Order }) => {
     const isDelivery = order.type === 'DELIVERY';
     
-    // --- LÓGICA DE TROCO CORRIGIDA ---
     const totalOrder = Number(order.total_price);
     let changeForValue = 0;
     
     if (order.change_for) {
-       // Usa a função utilitária importada para garantir a conversão correta
        changeForValue = currencyToNumber(order.change_for);
     }
     
@@ -90,6 +88,7 @@ export default function Orders() {
       ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${order.address.street}, ${order.address.number} - ${order.address.neighborhood}, ${order.address.city}`)}`
       : '#';
 
+    // CORREÇÃO: Lógica de botões ajustada para separar Balcão de Delivery
     const renderActions = () => {
       if (order.status === 'PENDING' && (userRole === 'ADMIN' || userRole === 'KITCHEN')) {
         return (
@@ -98,6 +97,7 @@ export default function Orders() {
           </button>
         );
       }
+      
       if (order.status === 'PREPARING' && (userRole === 'ADMIN' || userRole === 'KITCHEN')) {
         return (
           <button onClick={() => updateStatus(order.id, 'READY_FOR_PICKUP')} className="w-full bg-orange-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-orange-700 shadow-sm transition-colors">
@@ -105,13 +105,25 @@ export default function Orders() {
           </button>
         );
       }
-      if (order.status === 'READY_FOR_PICKUP' && (userRole === 'ADMIN' || userRole === 'COURIER')) {
-        return (
-          <button onClick={() => updateStatus(order.id, 'DELIVERING')} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-indigo-700 shadow-sm transition-colors animate-pulse">
-            <Bike size={18}/> Pegar para Entrega
-          </button>
-        );
+      
+      if (order.status === 'READY_FOR_PICKUP') {
+        if (isDelivery && (userRole === 'ADMIN' || userRole === 'COURIER')) {
+          return (
+            <button onClick={() => updateStatus(order.id, 'DELIVERING')} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-indigo-700 shadow-sm transition-colors animate-pulse">
+              <Bike size={18}/> Pegar para Entrega
+            </button>
+          );
+        }
+        if (!isDelivery && (userRole === 'ADMIN' || userRole === 'KITCHEN')) {
+          // Balcão pula a entrega e vai direto para Concluído
+          return (
+            <button onClick={() => updateStatus(order.id, 'DONE')} className="w-full bg-teal-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-teal-700 shadow-sm transition-colors">
+              <CheckCircle size={18}/> Entregue ao Cliente
+            </button>
+          );
+        }
       }
+      
       if (order.status === 'DELIVERING' && (userRole === 'ADMIN' || userRole === 'COURIER')) {
         return (
           <button onClick={() => updateStatus(order.id, 'DONE')} className="w-full bg-green-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-green-700 shadow-sm transition-colors">
@@ -145,11 +157,11 @@ export default function Orders() {
             order.status === 'DELIVERING' ? 'bg-orange-50 text-orange-700 border-orange-100' :
             order.status === 'DONE' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'
           }`}>
-            {order.status === 'READY_FOR_PICKUP' ? 'Aguardando' : order.status}
+            {order.status === 'READY_FOR_PICKUP' ? (isDelivery ? 'Aguardando' : 'Balcão') : order.status}
           </span>
         </div>
 
-        {/* --- ÁREA DE PAGAMENTO E TROCO --- */}
+        {/* Pagamento e Troco */}
         <div className="flex justify-between items-center bg-gray-50 p-2 rounded-lg">
            <span className="text-xs font-bold text-gray-500 uppercase">
              {order.payment_method === 'CREDIT_CARD' ? 'Cartão' : order.payment_method === 'MONEY' ? 'Dinheiro' : order.payment_method}
@@ -159,7 +171,6 @@ export default function Orders() {
            </span>
         </div>
 
-        {/* ALERTA DE TROCO (Só para Admin e Motoboy) */}
         {order.payment_method === 'MONEY' && changeForValue > 0 && (userRole === 'ADMIN' || userRole === 'COURIER') && (
           <div className="bg-green-100 border border-green-200 p-3 rounded-xl animate-pulse">
             <div className="flex items-center gap-2 text-green-800 font-bold text-sm mb-1">
@@ -198,14 +209,13 @@ export default function Orders() {
              )}
            </div>
         ) : (
-           <div className="bg-blue-50 p-2 rounded-lg text-xs text-blue-700 font-bold text-center border border-blue-100">
-             Retirada no Balcão
+           <div className="bg-teal-50 p-2 rounded-lg text-xs text-teal-700 font-bold text-center border border-teal-100">
+             <Package size={14} className="inline mr-1"/> Retirada no Balcão
            </div>
         )}
 
         {/* Itens */}
         <div className="space-y-2 py-2">
-          {/* CORREÇÃO: Tipagem explicita para evitar 'any' */}
           {order.items.map((item: OrderItem) => (
             <div key={item.id} className="text-sm border-b border-gray-50 last:border-0 pb-2 last:pb-0">
               <div className="flex justify-between items-start">
@@ -249,22 +259,27 @@ export default function Orders() {
     );
   };
 
-  // Kanban logic
+  // --- CORREÇÃO: Kanban com colunas separadas para Delivery e Balcão ---
   const pendingOrders = orders.filter(o => o.status === 'PENDING');
   const preparingOrders = orders.filter(o => o.status === 'PREPARING');
-  const readyOrders = orders.filter(o => o.status === 'READY_FOR_PICKUP'); 
+  
+  // Separando os aguardando por TIPO de entrega
+  const readyDeliveryOrders = orders.filter(o => o.status === 'READY_FOR_PICKUP' && o.type === 'DELIVERY');
+  const readyTakeoutOrders = orders.filter(o => o.status === 'READY_FOR_PICKUP' && o.type === 'TAKEOUT'); 
+  
   const deliveringOrders = orders.filter(o => o.status === 'DELIVERING');
   const doneOrders = orders.filter(o => o.status === 'DONE').slice(0, 10);
   const canceledOrders = orders.filter(o => o.status === 'CANCELED').slice(0, 5);
 
+  // --- CORREÇÃO: Restrição visual baseada em Role ---
   const showNew = ['ADMIN', 'KITCHEN'].includes(userRole);
   const showKitchen = ['ADMIN', 'KITCHEN'].includes(userRole);
-  const showReady = ['ADMIN', 'COURIER', 'KITCHEN'].includes(userRole);
+  const showReadyDelivery = ['ADMIN', 'COURIER', 'KITCHEN'].includes(userRole); // Motoboy vê Delivery
+  const showReadyTakeout = ['ADMIN', 'KITCHEN'].includes(userRole); // Motoboy NÃO vê Balcão
   const showDelivery = ['ADMIN', 'COURIER'].includes(userRole);
   const showDone = ['ADMIN'].includes(userRole);
   const showCanceled = ['ADMIN'].includes(userRole);
 
-  // --- TRATAMENTO DE LOADING ---
   if (loading) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-gray-400">
@@ -317,15 +332,30 @@ export default function Orders() {
             </div>
           )}
 
-          {showReady && (
+          {/* COLUNA: Aguardando Motoboy (Delivery) */}
+          {showReadyDelivery && (
             <div className="w-[320px] flex flex-col gap-4">
               <div className="bg-purple-50 text-purple-800 p-3 rounded-xl font-bold flex justify-between items-center border border-purple-100 sticky top-0 z-10 shadow-sm">
-                 <span className="flex items-center gap-2"><Bell size={18}/> Aguardando Retirada</span>
-                 <span className="bg-white px-2 py-0.5 rounded-md text-xs shadow-sm">{readyOrders.length}</span>
+                 <span className="flex items-center gap-2"><Bell size={18}/> Chamar Motoboy</span>
+                 <span className="bg-white px-2 py-0.5 rounded-md text-xs shadow-sm">{readyDeliveryOrders.length}</span>
               </div>
               <div className="flex flex-col gap-4 overflow-y-auto pr-1 pb-2 custom-scrollbar h-full">
-                {readyOrders.map(o => <OrderCard key={o.id} order={o}/>)}
-                {readyOrders.length === 0 && <div className="text-center text-gray-400 py-10 italic text-sm">Nenhum pedido pronto</div>}
+                {readyDeliveryOrders.map(o => <OrderCard key={o.id} order={o}/>)}
+                {readyDeliveryOrders.length === 0 && <div className="text-center text-gray-400 py-10 italic text-sm">Nenhum delivery pronto</div>}
+              </div>
+            </div>
+          )}
+
+          {/* COLUNA: Retirada no Balcão (Takeout) */}
+          {showReadyTakeout && (
+            <div className="w-[320px] flex flex-col gap-4">
+              <div className="bg-teal-50 text-teal-800 p-3 rounded-xl font-bold flex justify-between items-center border border-teal-100 sticky top-0 z-10 shadow-sm">
+                 <span className="flex items-center gap-2"><Package size={18}/> Retirar no Balcão</span>
+                 <span className="bg-white px-2 py-0.5 rounded-md text-xs shadow-sm">{readyTakeoutOrders.length}</span>
+              </div>
+              <div className="flex flex-col gap-4 overflow-y-auto pr-1 pb-2 custom-scrollbar h-full">
+                {readyTakeoutOrders.map(o => <OrderCard key={o.id} order={o}/>)}
+                {readyTakeoutOrders.length === 0 && <div className="text-center text-gray-400 py-10 italic text-sm">Nenhum balcão pronto</div>}
               </div>
             </div>
           )}

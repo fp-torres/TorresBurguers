@@ -19,17 +19,17 @@ export function StoreStatusBadge() {
 
   if (isOpen) {
     return (
-      <div className="flex items-center gap-1 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold border border-green-200 shadow-sm animate-in fade-in">
-        <Store size={14} /> 
-        <span className="uppercase tracking-wide">Aberto</span>
+      <div className="flex items-center justify-center gap-1.5 bg-green-50 text-green-700 h-10 px-3 md:min-w-fit min-w-[40px] rounded-xl text-xs font-bold border border-green-200 shadow-sm animate-in fade-in transition-all">
+        <Store size={18} className="shrink-0" /> 
+        <span className="uppercase tracking-wide hidden md:inline">Aberto</span>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-1 bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold border border-red-200 shadow-sm animate-in fade-in">
-      <Lock size={14} /> 
-      <span className="uppercase tracking-wide">Fechado</span>
+    <div className="flex items-center justify-center gap-1.5 bg-red-50 text-red-700 h-10 px-3 md:min-w-fit min-w-[40px] rounded-xl text-xs font-bold border border-red-200 shadow-sm animate-in fade-in transition-all">
+      <Lock size={18} className="shrink-0" /> 
+      <span className="uppercase tracking-wide hidden md:inline">Fechado</span>
     </div>
   );
 }
