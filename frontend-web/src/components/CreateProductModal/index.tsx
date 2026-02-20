@@ -4,7 +4,7 @@ import { X, Upload, Loader2, CheckCircle, Plus, Trash2, Edit2, Check } from 'luc
 import { productService, type Addon, type Product } from '../../services/productService';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../ConfirmModal'; 
-import { normalizeCurrency, currencyToNumber } from '../../utils/masks'; // <--- IMPORT NOVO
+import { normalizeCurrency, currencyToNumber } from '../../utils/masks'; 
 
 interface CreateProductModalProps {
   isOpen: boolean;
@@ -28,7 +28,7 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [price, setPrice] = useState(''); // Agora armazena string formatada (R$)
+  const [price, setPrice] = useState(''); 
   const [category, setCategory] = useState('hamburgueres');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -55,7 +55,6 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
       if (productToEdit) {
         setName(productToEdit.name);
         setDescription(productToEdit.description);
-        // Formata o preço vindo do banco (number -> R$ string)
         setPrice(normalizeCurrency(productToEdit.price));
         setCategory(productToEdit.category);
         setIngredientsText(productToEdit.ingredients ? productToEdit.ingredients.join(', ') : '');
@@ -86,8 +85,6 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
     } catch (error) { console.log("Erro addons"); }
   }
 
-  // --- Handlers de Input com Máscara ---
-  
   const handlePriceChange = (e: ChangeEvent<HTMLInputElement>) => {
     setPrice(normalizeCurrency(e.target.value));
   };
@@ -100,8 +97,6 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
     setEditPrice(normalizeCurrency(e.target.value));
   };
 
-  // --- GERENCIAMENTO DE ADICIONAIS ---
-
   async function handleCreateAddon() {
     if (!newAddonName || !newAddonPrice) return;
     setCreatingAddon(true);
@@ -110,7 +105,7 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
       
       const created = await productService.createAddon({ 
         name: newAddonName, 
-        price: currencyToNumber(newAddonPrice), // Converte R$ -> number
+        price: currencyToNumber(newAddonPrice), 
         category: catToSave
       });
       
@@ -187,7 +182,6 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
       formData.append('name', name);
       formData.append('description', description);
       
-      // Converte o valor formatado para número float antes de enviar
       formData.append('price', String(currencyToNumber(price))); 
       
       formData.append('category', category.toLowerCase());
@@ -242,35 +236,40 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="bg-gray-50 px-6 py-4 border-b border-gray-100 flex justify-between items-center shrink-0">
-          <h2 className="text-lg font-bold text-gray-800">{productToEdit ? 'Editar Produto' : 'Novo Produto'}</h2>
-          <button onClick={onClose}><X size={24} className="text-gray-400 hover:text-gray-600" /></button>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-colors">
+        
+        {/* Header */}
+        <div className="bg-gray-50 dark:bg-slate-900/50 px-6 py-4 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center shrink-0">
+          <h2 className="text-lg font-bold text-gray-800 dark:text-white">{productToEdit ? 'Editar Produto' : 'Novo Produto'}</h2>
+          <button onClick={onClose}><X size={24} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" /></button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
           <div className="flex flex-col md:flex-row gap-6">
+            
+            {/* Upload Imagem */}
             <div className="w-full md:w-1/3">
-              <div onClick={() => fileInputRef.current?.click()} className="aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-orange-500 cursor-pointer flex flex-col items-center justify-center bg-gray-50 relative group transition-colors">
-                {preview ? <img src={preview} className="w-full h-full object-cover rounded-lg" /> : <Upload className="text-gray-400" />}
+              <div onClick={() => fileInputRef.current?.click()} className="aspect-square rounded-xl border-2 border-dashed border-gray-300 dark:border-slate-700 hover:border-orange-500 dark:hover:border-orange-500 cursor-pointer flex flex-col items-center justify-center bg-gray-50 dark:bg-slate-800 relative group transition-colors">
+                {preview ? <img src={preview} className="w-full h-full object-cover rounded-lg" /> : <Upload className="text-gray-400 dark:text-gray-500" />}
                 <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded-lg flex items-center justify-center text-transparent group-hover:text-white font-bold">Alterar Imagem</div>
               </div>
             </div>
 
+            {/* Inputs Principais */}
             <div className="flex-1 space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nome</label>
-                <input required value={name} onChange={e => setName(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Ex: X-Burguer" />
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">Nome</label>
+                <input required value={name} onChange={e => setName(e.target.value)} className="w-full px-4 py-2 border border-gray-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none bg-white dark:bg-slate-800 text-gray-900 dark:text-white transition-all" placeholder="Ex: X-Burguer" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Preço</label>
-                  <input required value={price} onChange={handlePriceChange} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" placeholder="R$ 0,00" />
+                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">Preço</label>
+                  <input required value={price} onChange={handlePriceChange} className="w-full px-4 py-2 border border-gray-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none bg-white dark:bg-slate-800 text-gray-900 dark:text-white transition-all" placeholder="R$ 0,00" />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Categoria</label>
-                  <select value={category} onChange={e => setCategory(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-orange-500 outline-none">
+                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">Categoria</label>
+                  <select value={category} onChange={e => setCategory(e.target.value)} className="w-full px-4 py-2 border border-gray-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none">
                     <option value="hamburgueres">Hambúrgueres</option>
                     <option value="bebidas">Bebidas</option>
                     <option value="sobremesas">Sobremesas</option>
@@ -281,22 +280,25 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Ingredientes</label>
-                <input value={ingredientsText} onChange={e => setIngredientsText(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Pão, carne, queijo..." />
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">Ingredientes</label>
+                <input value={ingredientsText} onChange={e => setIngredientsText(e.target.value)} className="w-full px-4 py-2 border border-gray-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none bg-white dark:bg-slate-800 text-gray-900 dark:text-white transition-all" placeholder="Pão, carne, queijo..." />
               </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Descrição</label>
-            <textarea required rows={2} value={description} onChange={e => setDescription(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Descrição do produto..." />
+            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">Descrição</label>
+            <textarea required rows={2} value={description} onChange={e => setDescription(e.target.value)} className="w-full px-4 py-2 border border-gray-200 dark:border-slate-700 rounded-lg resize-none focus:ring-2 focus:ring-orange-500 outline-none bg-white dark:bg-slate-800 text-gray-900 dark:text-white transition-all" placeholder="Descrição do produto..." />
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex flex-col gap-3">
+          {/* ÁREA DE ADICIONAIS */}
+          <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+            
+            {/* Header dos Adicionais */}
+            <div className="bg-gray-50 dark:bg-slate-900 px-4 py-3 border-b border-gray-200 dark:border-slate-700 flex flex-col gap-3">
               <div className="flex justify-between items-center">
-                 <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                   <Plus size={16} className="text-orange-600"/> Gerenciar Adicionais
+                 <h3 className="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                   <Plus size={16} className="text-orange-600 dark:text-orange-400"/> Gerenciar Adicionais
                  </h3>
                  <span className="text-xs text-gray-400">Selecione ou crie novos</span>
               </div>
@@ -308,7 +310,9 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
                     type="button"
                     onClick={() => setAddonTab(cat.id)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
-                      addonTab === cat.id ? 'bg-orange-100 text-orange-700' : 'text-gray-500 hover:bg-gray-100'
+                      addonTab === cat.id 
+                        ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400' 
+                        : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'
                     }`}
                   >
                     {cat.label}
@@ -321,13 +325,13 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
                   value={newAddonName} 
                   onChange={e => setNewAddonName(e.target.value)} 
                   placeholder={`Novo item em "${ADDON_CATEGORIES.find(c => c.id === addonTab)?.label}"`} 
-                  className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:border-orange-500" 
+                  className="flex-1 px-3 py-1.5 text-xs border border-gray-200 dark:border-slate-700 rounded-lg outline-none focus:border-orange-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-white" 
                 />
                 <input 
                   value={newAddonPrice} 
                   onChange={handleNewAddonPriceChange} 
                   placeholder="R$ 0,00" 
-                  className="w-24 px-3 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:border-orange-500" 
+                  className="w-24 px-3 py-1.5 text-xs border border-gray-200 dark:border-slate-700 rounded-lg outline-none focus:border-orange-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-white" 
                 />
                 <button 
                   type="button" 
@@ -340,47 +344,52 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
               </div>
             </div>
 
-            <div className="max-h-52 overflow-y-auto custom-scrollbar p-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {/* Lista de Adicionais */}
+            <div className="max-h-52 overflow-y-auto custom-scrollbar p-2 grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white dark:bg-slate-900/20">
               {filteredAddons.map(addon => (
                 <div 
                   key={addon.id} 
                   onClick={() => toggleAddonSelection(addon.id)}
                   className={`group flex items-center justify-between p-2 border rounded-lg cursor-pointer transition-all select-none ${
-                    selectedAddonIds.includes(addon.id) ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-100 hover:border-gray-300'
+                    selectedAddonIds.includes(addon.id) 
+                      ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-200 dark:border-orange-800' 
+                      : 'bg-white dark:bg-slate-800 border-gray-100 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
                   }`}
                 >
                   <div className="flex items-center gap-3 flex-1 overflow-hidden">
                     <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                      selectedAddonIds.includes(addon.id) ? 'bg-orange-500 border-orange-500' : 'border-gray-300 bg-white'
+                      selectedAddonIds.includes(addon.id) 
+                        ? 'bg-orange-500 border-orange-500' 
+                        : 'border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900'
                     }`}>
                       {selectedAddonIds.includes(addon.id) && <CheckCircle size={12} className="text-white" />}
                     </div>
 
                     {editingAddonId === addon.id ? (
                       <div className="flex gap-2 flex-1" onClick={e => e.stopPropagation()}>
-                        <input value={editName} onChange={e => setEditName(e.target.value)} className="w-full text-xs px-1 border rounded" autoFocus />
-                        <input value={editPrice} onChange={handleEditPriceChange} className="w-16 text-xs px-1 border rounded" />
+                        <input value={editName} onChange={e => setEditName(e.target.value)} className="w-full text-xs px-1 border rounded bg-white dark:bg-slate-900 dark:text-white dark:border-slate-600" autoFocus />
+                        <input value={editPrice} onChange={handleEditPriceChange} className="w-16 text-xs px-1 border rounded bg-white dark:bg-slate-900 dark:text-white dark:border-slate-600" />
                       </div>
                     ) : (
                       <div className="flex flex-col truncate">
-                         <span className={`text-xs font-bold truncate ${selectedAddonIds.includes(addon.id) ? 'text-orange-700' : 'text-gray-700'}`}>{addon.name}</span>
-                         <span className="text-[10px] text-gray-500 font-medium">R$ {Number(addon.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                         <span className={`text-xs font-bold truncate ${selectedAddonIds.includes(addon.id) ? 'text-orange-700 dark:text-orange-400' : 'text-gray-700 dark:text-gray-300'}`}>{addon.name}</span>
+                         <span className="text-[10px] text-gray-500 dark:text-gray-500 font-medium">R$ {Number(addon.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                       </div>
                     )}
                   </div>
 
                   <div className="flex items-center gap-1 pl-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     {editingAddonId === addon.id ? (
-                      <button type="button" onClick={(e) => saveEditAddon(addon.id, e)} className="p-1 text-green-600 hover:bg-green-100 rounded">
+                      <button type="button" onClick={(e) => saveEditAddon(addon.id, e)} className="p-1 text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 rounded">
                         <Check size={14} />
                       </button>
                     ) : (
-                      <button type="button" onClick={(e) => startEditingAddon(addon, e)} className="p-1 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded">
+                      <button type="button" onClick={(e) => startEditingAddon(addon, e)} className="p-1 text-blue-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded">
                         <Edit2 size={14} />
                       </button>
                     )}
                     
-                    <button type="button" onClick={(e) => requestDeleteAddon(addon.id, e)} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded">
+                    <button type="button" onClick={(e) => requestDeleteAddon(addon.id, e)} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded">
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -388,7 +397,7 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
               ))}
               
               {filteredAddons.length === 0 && (
-                <div className="col-span-full py-8 text-center text-xs text-gray-400 italic">
+                <div className="col-span-full py-8 text-center text-xs text-gray-400 dark:text-gray-500 italic">
                   Nenhum adicional nesta categoria.
                 </div>
               )}
@@ -396,9 +405,9 @@ export default function CreateProductModal({ isOpen, onClose, onSuccess, product
           </div>
         </form>
 
-        <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3 shrink-0">
-            <button type="button" onClick={onClose} className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
-            <button onClick={handleSubmit} disabled={loading} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-sm flex items-center gap-2 disabled:opacity-50 transition-colors shadow-lg shadow-green-200">
+        <div className="p-4 bg-gray-50 dark:bg-slate-900/50 border-t border-gray-100 dark:border-slate-800 flex justify-end gap-3 shrink-0">
+            <button type="button" onClick={onClose} className="px-6 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
+            <button onClick={handleSubmit} disabled={loading} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-sm flex items-center gap-2 disabled:opacity-50 transition-colors shadow-lg shadow-green-200 dark:shadow-none">
               {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />} 
               {productToEdit ? 'Salvar Alterações' : 'Criar Produto'}
             </button>

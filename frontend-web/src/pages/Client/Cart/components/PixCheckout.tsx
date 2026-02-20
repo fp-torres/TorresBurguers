@@ -40,11 +40,12 @@ export default function PixCheckout({ qrCode, copyPaste, onExpired }: PixCheckou
     <div className="flex flex-col items-center justify-center space-y-6 py-4 animate-in fade-in zoom-in duration-300">
       
       {/* Timer Display */}
-      <div className="bg-orange-50 text-orange-700 px-4 py-2 rounded-full font-bold flex items-center gap-2">
+      <div className="bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-4 py-2 rounded-full font-bold flex items-center gap-2">
         <Timer size={18} />
         Expira em: {timeString}
       </div>
 
+      {/* Container do QR Code - MANTIDO BRANCO PARA LEITURA */}
       <div className="bg-white p-4 rounded-xl shadow-lg border-2 border-green-500 relative">
         <QRCodeSVG 
           value={copyPaste} 
@@ -58,8 +59,8 @@ export default function PixCheckout({ qrCode, copyPaste, onExpired }: PixCheckou
       </div>
 
       <div className="text-center space-y-2">
-        <h3 className="font-bold text-gray-800 text-lg">Escaneie o QR Code</h3>
-        <p className="text-gray-500 text-sm max-w-xs mx-auto">
+        <h3 className="font-bold text-gray-800 dark:text-white text-lg">Escaneie o QR Code</h3>
+        <p className="text-gray-500 dark:text-gray-400 text-sm max-w-xs mx-auto">
           Abra o app do seu banco, escolha pagar com Pix e aponte a câmera.
         </p>
       </div>
@@ -69,16 +70,16 @@ export default function PixCheckout({ qrCode, copyPaste, onExpired }: PixCheckou
           <input 
             readOnly 
             value={copyPaste} 
-            className="w-full bg-gray-50 border border-gray-200 text-gray-500 text-xs p-3 rounded-lg pr-12 font-mono"
+            className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-500 dark:text-gray-300 text-xs p-3 rounded-lg pr-12 font-mono"
           />
           <button 
             onClick={handleCopy}
-            className="absolute right-1 top-1 bottom-1 bg-white hover:bg-gray-100 text-green-600 px-3 rounded-md border border-gray-100 transition-colors"
+            className="absolute right-1 top-1 bottom-1 bg-white dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 text-green-600 dark:text-green-400 px-3 rounded-md border border-gray-100 dark:border-slate-600 transition-colors"
           >
             <Copy size={16} />
           </button>
         </div>
-        <p className="text-center text-xs text-green-600 font-bold mt-2">
+        <p className="text-center text-xs text-green-600 dark:text-green-400 font-bold mt-2">
           Clique para copiar o código "Copia e Cola"
         </p>
       </div>
@@ -86,7 +87,7 @@ export default function PixCheckout({ qrCode, copyPaste, onExpired }: PixCheckou
       {/* Botão de Cancelar */}
       <button 
         onClick={onExpired}
-        className="text-red-500 text-sm font-bold flex items-center gap-1 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors"
+        className="text-red-500 dark:text-red-400 text-sm font-bold flex items-center gap-1 hover:bg-red-50 dark:hover:bg-red-900/20 px-3 py-2 rounded-lg transition-colors"
       >
         <XCircle size={16} /> Cancelar Pagamento
       </button>

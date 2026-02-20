@@ -58,17 +58,14 @@ export default function Products() {
     setIsModalOpen(true);
   }
 
-  // --- CORREÇÃO DO TOGGLE (ATUALIZAÇÃO OTIMISTA) ---
   async function toggleAvailability(product: Product) {
     try {
       const newStatus = !product.available;
 
-      // 1. Atualiza visualmente NA HORA (sem esperar o servidor)
       setProducts(prevProducts => 
         prevProducts.map(p => p.id === product.id ? { ...p, available: newStatus } : p)
       );
 
-      // 2. Envia para o servidor em segundo plano
       const formData = new FormData();
       formData.append('available', String(newStatus));
       await productService.update(product.id, formData);
@@ -76,7 +73,7 @@ export default function Products() {
       toast.success(newStatus ? 'Produto Ativado!' : 'Produto Pausado!');
     } catch { 
       toast.error('Erro ao atualizar.');
-      loadProducts(); // Reverte se der erro no servidor
+      loadProducts();
     }
   }
 
@@ -146,54 +143,61 @@ export default function Products() {
 
   return (
     <div className="space-y-6 pb-20 h-full flex flex-col">
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0">
+      {/* HEADER */}
+      <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0 transition-colors">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Cardápio</h1>
-          <p className="text-gray-500">Gerencie seus produtos e estoque.</p>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Cardápio</h1>
+          <p className="text-gray-500 dark:text-gray-400">Gerencie seus produtos e estoque.</p>
         </div>
         {activeTab !== 'lixeira' && (
-          <button onClick={handleOpenCreate} className="bg-orange-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-700 transition-all shadow-lg shadow-orange-200">
+          <button onClick={handleOpenCreate} className="bg-orange-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-700 transition-all shadow-lg shadow-orange-200 dark:shadow-none">
             <Plus size={20} /> Novo Produto
           </button>
         )}
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 shrink-0">
-        <div className="flex overflow-x-auto p-2 border-b border-gray-100 custom-scrollbar gap-2">
+      {/* SEARCH E FILTROS */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 shrink-0 transition-colors">
+        <div className="flex overflow-x-auto p-2 border-b border-gray-100 dark:border-slate-700 custom-scrollbar gap-2">
           {CATEGORIES.map(cat => (
             <button
               key={cat.id}
               onClick={() => setActiveTab(cat.id)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm whitespace-nowrap transition-all ${
                 activeTab === cat.id 
-                  ? 'bg-orange-50 text-orange-600 shadow-sm border border-orange-100' 
-                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                  ? 'bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 shadow-sm border border-orange-100 dark:border-orange-800' 
+                  : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700 hover:text-gray-700 dark:hover:text-white'
               }`}
             >
               <cat.icon size={18} />
               {cat.label}
-              <span className={`ml-1 text-xs px-2 py-0.5 rounded-full ${activeTab === cat.id ? 'bg-orange-200 text-orange-800' : 'bg-gray-100 text-gray-500'}`}>
+              <span className={`ml-1 text-xs px-2 py-0.5 rounded-full ${
+                activeTab === cat.id 
+                  ? 'bg-orange-200 dark:bg-orange-800 text-orange-800 dark:text-orange-200' 
+                  : 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-gray-300'
+              }`}>
                 {cat.id === 'todos' ? products.length : cat.id === 'lixeira' ? deletedProducts.length : products.filter(p => p.category === cat.id).length}
               </span>
             </button>
           ))}
         </div>
 
-        <div className="p-4 bg-gray-50 flex gap-3 items-center">
-          <Search className="text-gray-400" />
+        <div className="p-4 bg-gray-50 dark:bg-slate-900/50 flex gap-3 items-center">
+          <Search className="text-gray-400 dark:text-gray-500" />
           <input 
             placeholder={activeTab === 'lixeira' ? "Buscar na lixeira..." : "Buscar produto..."} 
-            className="bg-transparent outline-none flex-1 text-sm font-medium text-gray-700 placeholder-gray-400"
+            className="bg-transparent outline-none flex-1 text-sm font-medium text-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-600"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
           />
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex-1 flex flex-col">
+      {/* TABELA DE PRODUTOS */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden flex-1 flex flex-col transition-colors">
         <div className="overflow-auto custom-scrollbar flex-1">
           <table className="w-full text-left text-sm">
-            <thead className="bg-gray-50 text-gray-500 font-medium sticky top-0 z-10 shadow-sm">
+            <thead className="bg-gray-50 dark:bg-slate-900 text-gray-500 dark:text-gray-400 font-medium sticky top-0 z-10 shadow-sm">
               <tr>
                 <th className="p-4 w-[40%]">Produto</th>
                 {activeTab !== 'lixeira' && <th className="p-4">Categoria</th>}
@@ -202,51 +206,58 @@ export default function Products() {
                 <th className="p-4 text-right">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
               {filteredList.map(product => (
-                <tr key={product.id} className={`transition-colors group ${activeTab === 'lixeira' || !product.available ? 'bg-gray-50' : 'hover:bg-gray-50'}`}>
+                <tr key={product.id} className={`transition-colors group ${
+                  activeTab === 'lixeira' || !product.available 
+                    ? 'bg-gray-50 dark:bg-slate-800/50' 
+                    : 'hover:bg-gray-50 dark:hover:bg-slate-700'
+                }`}>
                   <td className="p-4">
                     <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden shrink-0 relative border border-gray-200">
-                        {/* CORREÇÃO DA IMAGEM: 
-                           A classe 'grayscale' só é aplicada se:
-                           1. O produto estiver NÃO disponível (!available)
-                           OU
-                           2. A aba atual for a lixeira
-                        */}
+                      <div className="w-12 h-12 bg-gray-100 dark:bg-slate-700 rounded-lg overflow-hidden shrink-0 relative border border-gray-200 dark:border-slate-600">
                         {product.image ? (
                           <img 
                             src={`http://localhost:3000/uploads/${product.image}`} 
                             className={`w-full h-full object-cover transition-all duration-300 ${(!product.available || activeTab === 'lixeira') ? 'grayscale opacity-75' : ''}`} 
                           />
                         ) : (
-                          <div className="flex items-center justify-center h-full text-gray-400"><PackageX size={20}/></div>
+                          <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500"><PackageX size={20}/></div>
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className={`font-bold truncate ${!product.available || activeTab === 'lixeira' ? 'text-gray-500' : 'text-gray-800'}`}>
+                        <p className={`font-bold truncate ${
+                          !product.available || activeTab === 'lixeira' 
+                            ? 'text-gray-500 dark:text-gray-500' 
+                            : 'text-gray-800 dark:text-white'
+                        }`}>
                           {product.name}
                         </p>
-                        <p className="text-xs text-gray-500 truncate max-w-[250px]">{product.description}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[250px]">{product.description}</p>
                       </div>
                     </div>
                   </td>
                   
                   {activeTab !== 'lixeira' && (
-                    <td className="p-4"><span className="bg-blue-50 text-blue-600 px-2 py-1 rounded-md text-xs font-bold uppercase">{product.category}</span></td>
+                    <td className="p-4">
+                      <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-md text-xs font-bold uppercase">
+                        {product.category}
+                      </span>
+                    </td>
                   )}
 
-                  <td className="p-4 font-bold text-gray-700">{Number(product.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                  <td className="p-4 font-bold text-gray-700 dark:text-gray-200">
+                    {Number(product.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </td>
                   
                   {activeTab !== 'lixeira' && (
                     <td className="p-4 text-center">
-                      {/* O estado 'available' aqui já estará atualizado pelo toggleAvailability */}
                       <button 
                         onClick={() => toggleAvailability(product)} 
                         className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center justify-center gap-1.5 mx-auto w-28 border transition-all active:scale-95 ${
                           product.available 
-                            ? 'bg-green-50 text-green-700 border-green-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200' 
-                            : 'bg-red-50 text-red-600 border-red-200 hover:bg-green-50 hover:text-green-700 hover:border-green-200'
+                            ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-800' 
+                            : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-green-50 dark:hover:bg-green-900/20 hover:text-green-700 dark:hover:text-green-400 hover:border-green-200 dark:hover:border-green-800'
                         }`}
                       >
                         {product.available ? <><CheckCircle2 size={14}/> Disponível</> : <><AlertTriangle size={14}/> Esgotado</>}
@@ -258,7 +269,7 @@ export default function Products() {
                     <div className="flex justify-end gap-2">
                       {activeTab === 'lixeira' ? (
                         <>
-                          <button onClick={() => requestRestore(product)} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors" title="Restaurar">
+                          <button onClick={() => requestRestore(product)} className="p-2 text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 rounded-lg transition-colors" title="Restaurar">
                             <RotateCcw size={18} />
                           </button>
                           <button onClick={() => requestPermanentDelete(product)} className="p-2 text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors" title="Excluir Definitivamente">
@@ -267,8 +278,12 @@ export default function Products() {
                         </>
                       ) : (
                         <>
-                          <button onClick={() => handleOpenEdit(product)} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg"><Edit2 size={18} /></button>
-                          <button onClick={() => requestDelete(product)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg"><Trash2 size={18} /></button>
+                          <button onClick={() => handleOpenEdit(product)} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg">
+                            <Edit2 size={18} />
+                          </button>
+                          <button onClick={() => requestDelete(product)} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg">
+                            <Trash2 size={18} />
+                          </button>
                         </>
                       )}
                     </div>

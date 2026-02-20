@@ -11,30 +11,27 @@ import { maskPhone } from '../../../utils/masks';
 import ConfirmModal from '../../../components/ConfirmModal';
 
 const FUN_AVATARS = [
-  "https://cdn-icons-png.flaticon.com/512/3075/3075977.png", // Burger
-  "https://cdn-icons-png.flaticon.com/512/1046/1046784.png", // Fries
-  "https://cdn-icons-png.flaticon.com/512/2405/2405597.png", // Soda
-  "https://cdn-icons-png.flaticon.com/512/4264/4264632.png", // Pizza
-  "https://cdn-icons-png.flaticon.com/512/2819/2819194.png", // Hotdog
+  "https://cdn-icons-png.flaticon.com/512/3075/3075977.png", 
+  "https://cdn-icons-png.flaticon.com/512/1046/1046784.png", 
+  "https://cdn-icons-png.flaticon.com/512/2405/2405597.png", 
+  "https://cdn-icons-png.flaticon.com/512/4264/4264632.png", 
+  "https://cdn-icons-png.flaticon.com/512/2819/2819194.png", 
 ];
 
 export default function ClientProfile() {
   const { user, updateUser, signOut } = useAuth();
   const navigate = useNavigate();
   
-  // Estados dos campos
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [avatar, setAvatar] = useState(''); // Armazena a URL do ícone ou a imagem do banco
+  const [avatar, setAvatar] = useState(''); 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   
-  // Estados de Senha
   const [newPassword, setNewPassword] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   const [showPass, setShowPass] = useState(false);
   
-  // Validação de Força
   const [strength, setStrength] = useState(0);
   const [checks, setChecks] = useState({ length: false, upper: false, special: false });
 
@@ -49,7 +46,6 @@ export default function ClientProfile() {
     }
   }, [user]);
 
-  // Lógica de Senha Forte
   useEffect(() => {
     if (newPassword) {
       const c = {
@@ -68,24 +64,19 @@ export default function ClientProfile() {
     }
   }, [newPassword]);
 
-  // Handle Foto do Dispositivo
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB
-        toast.error("Imagem muito grande! O limite é 5MB.");
-        return;
-      }
+      if (file.size > 5 * 1024 * 1024) { toast.error("Imagem muito grande! O limite é 5MB."); return; }
       setSelectedFile(file);
       setPreviewUrl(URL.createObjectURL(file));
-      setAvatar(''); // Limpa a URL do ícone se a pessoa fizer upload
+      setAvatar(''); 
     }
   };
 
-  // Handle Ícone Divertido
   const handleSelectIcon = (url: string) => {
     setAvatar(url);
-    setSelectedFile(null); // Remove o arquivo se a pessoa preferir o ícone
+    setSelectedFile(null); 
     setPreviewUrl('');
   };
 
@@ -93,7 +84,6 @@ export default function ClientProfile() {
     e.preventDefault();
     if (!user) return;
 
-    // --- CORREÇÃO: Verificação de "Nenhuma alteração" ---
     if (
       name === user.name && 
       phone === (user.phone || '') && 
@@ -127,10 +117,7 @@ export default function ClientProfile() {
       setConfirmPass('');
       setSelectedFile(null);
 
-      // --- CORREÇÃO: Redirecionamento em 10 segundos ---
-      setTimeout(() => {
-        navigate('/');
-      }, 10000); 
+      setTimeout(() => { navigate('/'); }, 10000); 
 
     } catch (error) {
       toast.error('Erro ao atualizar perfil.');
@@ -139,38 +126,33 @@ export default function ClientProfile() {
     }
   };
 
-  // Monta a imagem correta para exibir (Sem usar variável de ambiente)
   const getDisplayImage = () => {
-    if (previewUrl) return previewUrl; // Imagem que acabou de subir (Preview)
-    if (avatar) {
-      // Se for um link de ícone (http...), usa direto. Se for foto do backend (/uploads...), coloca localhost na frente.
-      return avatar.startsWith('http') ? avatar : `http://localhost:3000${avatar}`; 
-    }
+    if (previewUrl) return previewUrl;
+    if (avatar) return avatar.startsWith('http') ? avatar : `http://localhost:3000${avatar}`; 
     return null;
   };
 
   return (
     <div className="max-w-2xl mx-auto space-y-8 p-4 animate-in fade-in slide-in-from-bottom-4">
       
-      {/* Botão Voltar */}
-      <Link to="/" className="text-gray-500 flex items-center gap-2 mb-2 hover:text-orange-600 transition-colors w-fit font-medium">
+      <Link to="/" className="text-gray-500 dark:text-gray-400 flex items-center gap-2 mb-2 hover:text-orange-600 dark:hover:text-orange-400 transition-colors w-fit font-medium">
         <ArrowLeft size={20}/> Voltar ao cardápio
       </Link>
 
       <div className="text-center">
-        <h1 className="text-3xl font-bold text-gray-800">Meus Dados 🍔</h1>
-        <p className="text-gray-500">Mantenha seu perfil atualizado</p>
+        <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Meus Dados 🍔</h1>
+        <p className="text-gray-500 dark:text-gray-400">Mantenha seu perfil atualizado</p>
       </div>
 
-      <form onSubmit={handleUpdateProfile} className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border space-y-8">
+      <form onSubmit={handleUpdateProfile} className="bg-white dark:bg-slate-900 p-6 md:p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-slate-800 space-y-8 transition-colors">
         
-        {/* AVATAR: Foto ou Ícone */}
+        {/* AVATAR */}
         <div className="flex flex-col items-center gap-4">
-          <div className="relative w-28 h-28 rounded-full border-4 border-orange-100 overflow-hidden bg-gray-50 group shadow-inner">
+          <div className="relative w-28 h-28 rounded-full border-4 border-orange-100 dark:border-orange-900/50 overflow-hidden bg-gray-50 dark:bg-slate-800 group shadow-inner">
             {getDisplayImage() ? (
               <img src={getDisplayImage()!} alt="Avatar" className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-orange-300">
+              <div className="w-full h-full flex items-center justify-center text-orange-300 dark:text-orange-700">
                 <UserIcon size={48} />
               </div>
             )}
@@ -181,7 +163,7 @@ export default function ClientProfile() {
             </label>
           </div>
           
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center">Toque na foto para enviar (Máx 5MB) <br/> OU escolha um ícone abaixo</p>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center">Toque na foto para enviar (Máx 5MB) <br/> OU escolha um ícone</p>
           
           <div className="flex justify-center gap-3 flex-wrap">
             {FUN_AVATARS.map((url, idx) => (
@@ -189,7 +171,7 @@ export default function ClientProfile() {
                 key={idx}
                 type="button"
                 onClick={() => handleSelectIcon(url)}
-                className={`w-10 h-10 rounded-full border-2 transition-all hover:scale-110 p-1 bg-gray-50 ${avatar === url && !previewUrl ? 'border-orange-500 scale-110' : 'border-transparent'}`}
+                className={`w-10 h-10 rounded-full border-2 transition-all hover:scale-110 p-1 bg-gray-50 dark:bg-slate-800 ${avatar === url && !previewUrl ? 'border-orange-500 scale-110' : 'border-transparent'}`}
               >
                 <img src={url} className="w-full h-full object-contain" />
               </button>
@@ -197,25 +179,25 @@ export default function ClientProfile() {
           </div>
         </div>
 
-        {/* DADOS (OPCIONAIS NA EDIÇÃO) */}
+        {/* DADOS */}
         <div className="grid md:grid-cols-2 gap-4">
           <div className="space-y-1">
             <label className="text-xs font-bold text-gray-400 uppercase ml-1">Nome</label>
             <div className="relative">
               <UserIcon size={18} className="absolute left-3 top-3 text-gray-300" />
-              <input value={name} onChange={e => setName(e.target.value)} className="w-full pl-10 p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 transition-all" />
+              <input value={name} onChange={e => setName(e.target.value)} className="w-full pl-10 p-3 bg-gray-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 dark:text-white transition-all" />
             </div>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-bold text-gray-400 uppercase ml-1">Celular</label>
             <div className="relative">
               <Phone size={18} className="absolute left-3 top-3 text-gray-300" />
-              <input value={phone} onChange={e => setPhone(maskPhone(e.target.value))} className="w-full pl-10 p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 transition-all" />
+              <input value={phone} onChange={e => setPhone(maskPhone(e.target.value))} className="w-full pl-10 p-3 bg-gray-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 dark:text-white transition-all" />
             </div>
           </div>
         </div>
 
-        {/* CAMPO DE EMAIL BLOQUEADO */}
+        {/* EMAIL (READONLY) */}
         <div className="pt-2">
           <label className="text-xs font-bold text-gray-400 uppercase ml-1">Email (Não editável)</label>
           <div className="relative opacity-70 mt-1">
@@ -223,15 +205,14 @@ export default function ClientProfile() {
             <input 
               disabled 
               value={user?.email || ''} 
-              className="w-full pl-10 p-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 cursor-not-allowed" 
+              className="w-full pl-10 p-3 bg-gray-100 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-xl text-gray-500 dark:text-gray-300 cursor-not-allowed" 
             />
           </div>
-          <span className="text-[10px] text-orange-600 mt-1 block ml-1">Para alterar seu email, entre em contato com o suporte.</span>
         </div>
 
-        {/* SENHA FORTE (OPCIONAL) */}
-        <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100 space-y-4">
-          <h3 className="font-bold text-gray-700 text-sm flex items-center gap-2"><Lock size={18} className="text-orange-500"/> Alterar Senha</h3>
+        {/* SENHA */}
+        <div className="bg-gray-50 dark:bg-slate-800 p-5 rounded-2xl border border-gray-100 dark:border-slate-700 space-y-4">
+          <h3 className="font-bold text-gray-700 dark:text-gray-200 text-sm flex items-center gap-2"><Lock size={18} className="text-orange-500"/> Alterar Senha</h3>
           
           <div className="relative">
             <input 
@@ -239,7 +220,7 @@ export default function ClientProfile() {
               placeholder="Nova senha (deixe vazio para não alterar)"
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
-              className="w-full p-3 bg-white border border-gray-200 rounded-xl outline-none pr-10" 
+              className="w-full p-3 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-600 rounded-xl outline-none pr-10 dark:text-white" 
             />
             <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-3.5 text-gray-400">
               {showPass ? <EyeOff size={18}/> : <Eye size={18}/>}
@@ -248,7 +229,7 @@ export default function ClientProfile() {
 
           {newPassword && (
             <div className="space-y-3 animate-in slide-in-from-top-2">
-              <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-1.5 w-full bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
                 <div className={`h-full transition-all duration-500 ${strength === 3 ? 'bg-green-500 w-full' : strength === 2 ? 'bg-yellow-500 w-2/3' : 'bg-red-500 w-1/3'}`} />
               </div>
               <div className="flex flex-wrap gap-3 text-[10px]">
@@ -268,7 +249,7 @@ export default function ClientProfile() {
                 placeholder="Confirme a nova senha" 
                 value={confirmPass}
                 onChange={e => setConfirmPass(e.target.value)}
-                className={`w-full p-3 bg-white border rounded-xl outline-none ${confirmPass && confirmPass !== newPassword ? 'border-red-500' : 'border-gray-200'}`}
+                className={`w-full p-3 bg-white dark:bg-slate-900 border rounded-xl outline-none dark:text-white ${confirmPass && confirmPass !== newPassword ? 'border-red-500' : 'border-gray-200 dark:border-slate-600'}`}
               />
             </div>
           )}
@@ -293,7 +274,7 @@ export default function ClientProfile() {
         onConfirm={async () => {
           await userService.deleteAccount(user!.id);
           signOut();
-          navigate('/'); // Redireciona para o início após apagar a conta
+          navigate('/');
         }}
         title="Excluir Conta?"
         message="Seus dados serão enviados para a lixeira do sistema. Esta ação pode ser revertida apenas pelo administrador."

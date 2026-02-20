@@ -165,7 +165,7 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
       
       <form onSubmit={handleSubmit} className="space-y-4">
          <div>
-          <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">Número do Cartão</label>
+          <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">Número do Cartão</label>
           <div className="relative">
             <input
               type="text"
@@ -174,16 +174,16 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
               value={state.number}
               onChange={handleInputChange}
               onFocus={handleInputFocus}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 pl-10 focus:ring-2 focus:ring-orange-500 outline-none transition-all font-mono"
+              className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 pl-10 focus:ring-2 focus:ring-orange-500 outline-none transition-all font-mono dark:text-white"
               maxLength={19}
               required
             />
-            <CardIcon className="absolute left-3 top-3.5 text-gray-400" size={18} />
+            <CardIcon className="absolute left-3 top-3.5 text-gray-400 dark:text-gray-500" size={18} />
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">Nome no Cartão</label>
+          <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">Nome no Cartão</label>
           <input
             type="text"
             name="name"
@@ -191,14 +191,14 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
             value={state.name}
             onChange={(e) => setState({ ...state, name: e.target.value.toUpperCase() })}
             onFocus={handleInputFocus}
-            className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+            className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none transition-all dark:text-white"
             required
           />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">Validade</label>
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">Validade</label>
             <input
               type="text"
               name="expiry"
@@ -206,13 +206,13 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
               value={state.expiry}
               onChange={handleInputChange}
               onFocus={handleInputFocus}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none transition-all font-mono text-center"
+              className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none transition-all font-mono text-center dark:text-white"
               maxLength={5}
               required
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">CVV</label>
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">CVV</label>
             <div className="relative">
               <input
                 type="tel"
@@ -221,17 +221,17 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
                 value={state.cvc}
                 onChange={handleInputChange}
                 onFocus={handleInputFocus}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 pl-10 focus:ring-2 focus:ring-orange-500 outline-none transition-all font-mono"
+                className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 pl-10 focus:ring-2 focus:ring-orange-500 outline-none transition-all font-mono dark:text-white"
                 maxLength={cvcMaxLength}
                 required
               />
-              <Lock className="absolute left-3 top-3.5 text-gray-400" size={18} />
+              <Lock className="absolute left-3 top-3.5 text-gray-400 dark:text-gray-500" size={18} />
             </div>
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">CPF do Titular</label>
+          <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">CPF do Titular</label>
           <input
             type="tel"
             name="docNumber"
@@ -239,7 +239,7 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
             value={state.docNumber}
             onChange={handleInputChange}
             onFocus={handleInputFocus}
-            className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none transition-all font-mono"
+            className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none transition-all font-mono dark:text-white"
             maxLength={14}
             required
           />
@@ -247,7 +247,7 @@ export default function PaymentForm({ total, email, onSuccess, setLoading }: Pay
 
         <button 
           type="submit"
-          className="w-full bg-green-600 text-white font-bold py-4 rounded-xl hover:bg-green-700 transition-all shadow-lg shadow-green-200 flex items-center justify-center gap-2 mt-4"
+          className="w-full bg-green-600 text-white font-bold py-4 rounded-xl hover:bg-green-700 transition-all shadow-lg shadow-green-200 dark:shadow-none flex items-center justify-center gap-2 mt-4"
         >
           <Lock size={18} /> Pagar {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
         </button>
