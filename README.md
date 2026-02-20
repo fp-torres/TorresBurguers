@@ -1,148 +1,127 @@
-# 🍔 TorresBurgers
+# 🍔 TorresBurgers | Full Stack Delivery System
 
-![Project Status](https://img.shields.io/badge/STATUS-EM_DESENVOLVIMENTO-orange?style=for-the-badge&logo=fire)
-![License](https://img.shields.io/badge/LICENSE-MIT-green?style=for-the-badge)
-![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
-![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
-![NestJS](https://img.shields.io/badge/NestJS-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)
+<div align="center">
+  <img src="https://via.placeholder.com/1200x300.png?text=TorresBurgers+Banner" alt="TorresBurgers Banner" />
 
-> Um ecossistema de delivery completo (Web, API e Mobile) desenvolvido com arquitetura de software profissional, focado em escalabilidade, segurança e experiência do usuário.
+  <br />
+
+  [![Status](https://img.shields.io/badge/STATUS-EM_DESENVOLVIMENTO-orange?style=for-the-badge&logo=fire)](https://github.com/fp-torres)
+  [![License](https://img.shields.io/badge/LICENSE-MIT-green?style=for-the-badge)](LICENSE)
+  [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+  [![NestJS](https://img.shields.io/badge/NestJS-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)](https://nestjs.com/)
+  [![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactjs.org/)
+  [![TailwindCSS](https://img.shields.io/badge/Tailwind_v4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+</div>
+
+<p align="center">
+  <strong>Uma plataforma de delivery completa, simulando um ambiente de produção real com pagamentos, otimização de performance e marketing dinâmico.</strong>
+</p>
+
+<p align="center">
+  <a href="#-sobre-o-projeto">Sobre</a> •
+  <a href="#-funcionalidades">Funcionalidades</a> •
+  <a href="#-arquitetura-e-performance">Arquitetura</a> •
+  <a href="#-stack-tecnológica">Stack</a> •
+  <a href="#-instalação-e-execução">Instalação</a> •
+  <a href="#-variáveis-de-ambiente">Env Vars</a> •
+  <a href="#-roadmap">Roadmap</a>
+</p>
 
 ---
 
 ## 📋 Sobre o Projeto
 
-O **TorresBurgers** não é apenas um app de delivery, é uma solução Full Stack robusta que simula um ambiente real de produção. O sistema integra pagamentos reais (modo Sandbox), marketing dinâmico baseado em eventos externos e gestão completa de pedidos.
+O **TorresBurgers** nasceu com o objetivo de criar uma solução que vai além do CRUD básico. Ele resolve problemas reais de aplicações de delivery: **escalabilidade de imagens**, **gestão de estados complexos (pedidos)** e **integrações financeiras seguras**.
 
-### 🌟 Destaques & Diferenciais
-* **Pagamentos Inteligentes:** Integração direta com **Mercado Pago** (Checkout Transparente). Suporte a **PIX** (QR Code dinâmico) e **Cartão de Crédito** com detecção automática de bandeira e tratamento de erros de Sandbox.
-* **Marketing Dinâmico (Football API):** O sistema consome a **API-Football** para exibir banners promocionais automáticos ("Hoje tem jogo do Mengão!") baseados nos jogos do dia, utilizando **Cache (TTL)** para economizar requisições.
-* **Arquitetura Limpa:** Separação clara de responsabilidades no Backend (Modules, Services, Controllers, Entities).
-* **Segurança:** Autenticação via **JWT**, Hash de senhas com **Bcrypt** e validação rigorosa de dados (DTOs).
-* **UX/UI Moderna:** Interface responsiva construída com **TailwindCSS v4**, toasts de notificação e feedbacks visuais em tempo real.
+O sistema conta com um **Painel Administrativo** para gestão do restaurante, uma **Loja Web** para os clientes e um **App Mobile** para pedidos on-the-go.
 
 ---
 
-## 🚀 Tecnologias e Ferramentas
+## 📸 Screenshots
 
-### 🧠 Backend (API Restful)
-* **Core:** [NestJS](https://nestjs.com/) (Node.js framework)
-* **Linguagem:** TypeScript
-* **Banco de Dados:** PostgreSQL (via Docker ou Local)
-* **ORM:** TypeORM
-* **Pagamentos:** Mercado Pago SDK v2
-* **HTTP & Cache:** Axios + Cache Manager (Integração com APIs externas)
-* **Validação:** Class-Validator & Class-Transformer
+| **Área do Cliente (Dark Mode)** | **Painel Administrativo** |
+|:---:|:---:|
+| <img src="https://via.placeholder.com/400x250?text=Home+Dark+Mode" width="400" /> | <img src="https://via.placeholder.com/400x250?text=Dashboard+Admin" width="400" /> |
+| *Layout responsivo e imersivo* | *KPIs e Gestão de Pedidos* |
 
-### 💻 Frontend Web (Cliente & Admin)
-* **Core:** React (Vite)
-* **Estilização:** TailwindCSS v4 + Lucide React (Ícones)
-* **Gerenciamento de Estado:** Context API (Auth & Cart)
-* **Pagamentos:** Integração visual de Cartão de Crédito (`react-credit-cards-2`) e QR Code (`qrcode.react`)
-* **Feedback:** React Hot Toast
-
-### 📱 Mobile (App Cliente)
-* **Framework:** React Native (Expo)
-* **Linguagem:** TypeScript
+| **Checkout & Pagamento** | **Mobile App** |
+|:---:|:---:|
+| <img src="https://via.placeholder.com/400x250?text=Checkout+Pix" width="400" /> | <img src="https://via.placeholder.com/400x250?text=Mobile+App" width="400" /> |
+| *Integração real com Mercado Pago* | *Experiência nativa com Expo* |
 
 ---
 
-## 🔌 Integrações Externas (APIs)
+## ✨ Funcionalidades
 
-O projeto consome serviços externos para enriquecer a experiência:
+### 🛒 Experiência do Cliente (Web & Mobile)
+- **Catálogo Dinâmico:** Filtros por categoria (Combos, Smashs, Bebidas) e busca em tempo real.
+- **Carrinho Inteligente:** Persistência de dados e cálculo automático de adicionais.
+- **Dark Mode Automático:** Detecção de preferência do sistema ou troca manual.
+- **Marketing Contextual:** Banners de promoção ativados via **API de Futebol** (ex: dias de jogos importantes).
 
-| Serviço | Função no Projeto |
-| :--- | :--- |
-| **Mercado Pago** | Processamento de Pagamentos (Pix e Cartão). Inclui lógica de "Sandbox Magic" para aprovação automática em testes. |
-| **API-Football** | (RapidAPI) Consulta jogos do dia para ativar promoções temáticas (ex: Promoção em dias de jogo do Flamengo). |
-| **ViaCEP** | (Opcional/Planejado) Autocomplete de endereços no checkout. |
+### ⚙️ Painel Administrativo (Backoffice)
+- **Dashboard de Vendas:** Gráficos de receita e pedidos (Chart.js/Recharts).
+- **Gestão de Cardápio:** Criação de produtos com uploads otimizados e controle de estoque.
+- **Kanban de Pedidos:** Fluxo visual de status (Pendente ➝ Preparo ➝ Entrega ➝ Concluído).
+- **Gestão de Time:** Controle de permissões (Admin, Cozinha, Motoboy).
+
+### 🔧 Sistema & Backend
+- **Otimização de Mídia (Pipeline Sharp):**
+  - Uploads são interceptados em memória.
+  - Redimensionamento automático (Max-width: 800px).
+  - Conversão para **WebP** e compressão (80% quality).
+  - **Resultado:** Imagens de 5MB tornam-se arquivos de ~50KB.
+- **Pagamentos (Sandbox):**
+  - Checkout transparente (Cartão de Crédito).
+  - PIX com geração de QR Code e Copy&Paste.
+  - Webhooks para atualização de status (simulado).
 
 ---
 
-## 📂 Estrutura do Monorepo
+## 🏗 Arquitetura e Performance
 
+O projeto segue os princípios de **Clean Architecture** e **SOLID** no Backend NestJS.
+
+### Estrutura de Pastas (Monorepo-style)
 ```bash
-TorresBurguers/
-├── backend/            # API NestJS (Regras de Negócio, Integrações, DB)
-│   ├── src/
-│   │   ├── payment/    # Módulo de Pagamentos (MP SDK)
-│   │   ├── promotions/ # Módulo de Promoções (Football API + Cache)
-│   │   ├── orders/     # Gestão de Pedidos
-│   │   └── ...
-├── frontend-web/       # SPA React (Loja Virtual e Dashboard Admin)
-├── frontend-mobile/    # App Expo (Cliente)
-└── docs/               # Documentação (DER, Requisitos, UML)
-🛠️ Como Rodar o Projeto
-Pré-requisitos
-Node.js (v18+)
+TorresBurgers/
+├── backend/               # API (NestJS + TypeORM + Postgres)
+│   ├── src/common/        # Pipes, Guards e Interceptors globais
+│   ├── src/modules/       # Módulos de Domínio (Products, Orders, Users)
+│   └── uploads/           # Armazenamento estático otimizado
+├── frontend-web/          # React Vite (Single Page Application)
+│   ├── src/contexts/      # Gerenciamento de Estado Global
+│   └── src/components/    # UI Kit (Botões, Modais, Inputs)
+└── frontend-mobile/       # React Native (Expo)
+Fluxo de Otimização de ImagemCliente envia imagem (JPG/PNG).OptimizeImagePipe intercepta o buffer.Sharp processa e converte para WebP.Arquivo otimizado é salvo no disco.Caminho relativo é salvo no Banco de Dados.🚀 Stack TecnológicaBackendFramework: NestJSDatabase: PostgreSQL & TypeORMMedia Processing: SharpValidation: Class-ValidatorAuth: JWT & PassportPayments: Mercado Pago SDKFrontendFramework: React (Vite)Styling: TailwindCSS v4Icons: Lucide ReactHTTP: AxiosCharts: Recharts📦 Instalação e ExecuçãoPré-requisitosNode.js v18 ou superiorPostgreSQL rodando (local ou Docker)1. Backend (API)Bash# Clone o repositório
+git clone [https://github.com/seu-usuario/TorresBurgers.git](https://github.com/seu-usuario/TorresBurgers.git)
 
-PostgreSQL (Porta 5432)
+# Acesse a pasta
+cd TorresBurgers/backend
 
-Conta no Mercado Pago (Developers) e RapidAPI (Opcional)
-
-1️⃣ Configurando o Backend
-Bash
-cd backend
+# Instale as dependências
 npm install
-Crie um arquivo .env na raiz do /backend:
 
-Snippet de código
-# Banco de Dados
-DB_HOST=localhost
-DB_PORT=5432
-DB_USERNAME=postgres
-DB_PASSWORD=sua_senha
-DB_DATABASE=torresburgers
+# Configure o arquivo .env (veja seção abaixo)
 
-# JWT Secret
-JWT_SECRET=sua_chave_secreta_super_segura
+# Rode as migrations (se houver) ou deixe o synchronize: true (dev)
 
-# Mercado Pago (Credenciais de Teste)
-MP_ACCESS_TOKEN=TEST-seu-access-token-aqui
-
-# API Football (RapidAPI) - Opcional para o banner funcionar
-RAPIDAPI_KEY=sua-chave-rapidapi
-RAPIDAPI_HOST=api-football-v1.p.rapidapi.com
-Rodar o servidor:
-
-Bash
+# Inicie o servidor
 npm run start:dev
-# O servidor iniciará em http://localhost:3000
-2️⃣ Rodando o Frontend Web
-Bash
-cd frontend-web
+2. Frontend (Web)Bashcd ../frontend-web
+
+# Instale as dependências
 npm install
+
+# Inicie a aplicação
 npm run dev
-# Acesse em http://localhost:5173
-3️⃣ Rodando o Mobile
-Bash
-cd frontend-mobile
-npm install
-npx expo start
-# Leia o QR Code com o app Expo Go
-💳 Funcionalidades de Pagamento (Sandbox)
-Para testar o fluxo de pagamento sem gastar dinheiro real:
-
-PIX: O sistema gera um QR Code real de teste. O status atualiza via polling (verificação automática).
-
-Cartão de Crédito:
-
-Use o cartão de teste fornecido na interface ou documentação do MP (inicia com 5031...).
-
-O sistema preenche automaticamente o titular como "APRO" nos bastidores para garantir a aprovação imediata (Tela Verde ✅).
-
-📚 Documentação Adicional
-A documentação completa de engenharia encontra-se na pasta /docs, incluindo:
-
-Levantamento de Requisitos e Regras de Negócio.
-
-Diagrama Entidade-Relacionamento (DER).
-
-Fluxograma de Pagamento.
+3. Migração de Imagens (Opcional)Caso já existam imagens pesadas no banco, execute a rota de manutenção para otimizar tudo:BashPOST http://localhost:3000/maintenance/optimize-images
+Auth: Bearer {TOKEN_ADMIN}
+🔐 Variáveis de AmbienteCrie um arquivo .env na raiz do /backend com as seguintes chaves:VariávelDescriçãoExemploDB_HOSTHost do Banco de DadoslocalhostDB_PORTPorta do Banco5432DB_USERNAMEUsuário do BancopostgresDB_PASSWORDSenha do BancoadminDB_DATABASENome do BancotorresburgersJWT_SECRETChave para assinar Tokensminha_chave_secretaMP_ACCESS_TOKENToken de Teste do Mercado PagoTEST-0000...FOOTBALL_API_KEY(Opcional) API de Futebolapi_key_rapidapi🛣 Roadmap[x] CRUD Produtos e Usuários[x] Autenticação JWT e RBAC (Roles)[x] Checkout Mercado Pago (Sandbox)[x] Dark Mode Completo[x] Otimização de Imagens (Backend)[ ] Websockets para status do pedido em tempo real[ ] Testes Unitários (Jest)[ ] Integração com ViaCEP para endereço[ ] Dashboard Financeiro Avançado🤝 ContribuiçãoContribuições são bem-vindas! Se você tiver uma ideia para melhorar o app:Faça um Fork do projetoCrie uma Branch para sua Feature (git checkout -b feature/Incrível)Faça o Commit (git commit -m 'Add some Incrível')Push para a Branch (git push origin feature/Incrível)Abra um Pull Request
 
 👤 Autor
 Felipe Torres (fp-torres)
 
-Desenvolvedor Full Stack Sênior em formação 🚀
+Desenvolvedor Full Stack 🚀
 
-Foco: Clean Code, Arquitetura Escalável e UX.
+Foco: Clean Code, Performance Web, Arquitetura Escalável e UX.
