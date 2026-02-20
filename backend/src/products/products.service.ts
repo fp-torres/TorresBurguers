@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, IsNull, Not } from 'typeorm'; // <--- Importado IsNull e Not
+import { Repository, In, IsNull, Not } from 'typeorm';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Product } from './entities/product.entity';
@@ -60,17 +60,17 @@ export class ProductsService {
     return this.productRepository.save(product);
   }
 
-  // Soft Delete (Envia para lixeira)
+  // Soft Delete
   async remove(id: number) {
     return await this.productRepository.softDelete(id);
   }
 
-  // Restaurar da Lixeira
+  // Restaurar
   async restore(id: number) {
     return await this.productRepository.restore(id);
   }
 
-  // Exclusão Permanente (Do banco mesmo)
+  // Exclusão Permanente
   async removePermanent(id: number) {
     return await this.productRepository.delete(id);
   }
@@ -91,6 +91,6 @@ export class ProductsService {
   }
 
   async deleteAddon(id: number) {
-    return this.addonRepository.softDelete(id); // Agora usa Soft Delete
+    return this.addonRepository.softDelete(id);
   }
 }

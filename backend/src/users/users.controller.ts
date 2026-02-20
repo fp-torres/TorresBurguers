@@ -3,39 +3,13 @@ import {
   UseGuards, ParseIntPipe, UseInterceptors, UploadedFile, Request, UnauthorizedException
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import * as fs from 'fs'; 
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
-
-// Configuração reutilizável do Multer para evitar repetição de código
-const multerConfig = {
-  storage: diskStorage({
-    destination: (req, file, cb) => {
-      const uploadPath = './uploads';
-      if (!fs.existsSync(uploadPath)) {
-        fs.mkdirSync(uploadPath, { recursive: true });
-      }
-      cb(null, uploadPath);
-    },
-    filename: (req, file, cb) => {
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-      cb(null, `${uniqueSuffix}${extname(file.originalname)}`);
-    },
-  }),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    if (!file.mimetype.match(/\/(jpg|jpeg|png)$/)) {
-      return cb(new Error('Somente imagens são permitidas!'), false);
-    }
-    cb(null, true);
-  },
-};
+import { OptimizeImagePipe } from '../common/pipes/optimize-image.pipe'; // <--- IMPORT NOVO
 
 @Controller('users')
 export class UsersController {
@@ -55,15 +29,14 @@ export class UsersController {
     return this.usersService.restore(id);
   }
 
-  // --- CORREÇÃO: Upload de imagem na criação ---
   @Post()
-  @UseInterceptors(FileInterceptor('file', multerConfig))
+  @UseInterceptors(FileInterceptor('file')) // <--- Removemos diskStorage e config manual
   create(
     @Body() createUserDto: CreateUserDto,
-    @UploadedFile() file?: Express.Multer.File
+    @UploadedFile(OptimizeImagePipe) file?: Express.Multer.File // <--- Pipe aqui
   ) {
     if (file) {
-      // Usamos (as any) aqui para corrigir o erro de tipo se o DTO não tiver o campo 'avatar'
+      // O Pipe converte para WebP e define o filename correto
       (createUserDto as any).avatar = `/uploads/${file.filename}`;
     }
     return this.usersService.create(createUserDto);
@@ -84,14 +57,13 @@ export class UsersController {
 
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'))
-  @UseInterceptors(FileInterceptor('file', multerConfig))
+  @UseInterceptors(FileInterceptor('file')) // <--- Removemos diskStorage
   update(
     @Param('id', ParseIntPipe) id: number, 
     @Body() updateUserDto: UpdateUserDto,
-    @UploadedFile() file?: Express.Multer.File
+    @UploadedFile(OptimizeImagePipe) file?: Express.Multer.File // <--- Pipe aqui
   ) {
     if (file) {
-      // Mesma correção aplicada aqui por segurança
       (updateUserDto as any).avatar = `/uploads/${file.filename}`;
     }
     return this.usersService.update(id, updateUserDto);

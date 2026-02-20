@@ -3,14 +3,11 @@ import {
   UseGuards, UseInterceptors, UploadedFile, ParseIntPipe 
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
 import { ProductsService } from './products.service';
-import { CreateProductDto } from './dto/create-product.dto';
-import { UpdateProductDto } from './dto/update-product.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { OptimizeImagePipe } from '../common/pipes/optimize-image.pipe'; // <--- IMPORT NOVO
 
 @Controller('products')
 export class ProductsController {
@@ -33,25 +30,16 @@ export class ProductsController {
   @Post()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
-  @UseInterceptors(FileInterceptor('file', {
-    storage: diskStorage({
-      destination: './uploads',
-      filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        const ext = extname(file.originalname);
-        cb(null, `product-${uniqueSuffix}${ext}`);
-      },
-    }),
-  }))
+  @UseInterceptors(FileInterceptor('file')) // <--- Removemos diskStorage (vai para memória)
   create(
     @Body() createProductDto: any, 
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFile(OptimizeImagePipe) file?: Express.Multer.File, // <--- O Pipe processa aqui
   ) {
-    if (file) createProductDto.image = file.filename;
+    if (file) createProductDto.image = file.filename; // O filename agora é o .webp gerado pelo Pipe
     
     // Conversões manuais de segurança para FormData
     if (createProductDto.price) createProductDto.price = parseFloat(createProductDto.price);
-    if (createProductDto.available) createProductDto.available = createProductDto.available === 'true'; // <--- GARANTIA
+    if (createProductDto.available) createProductDto.available = createProductDto.available === 'true';
 
     return this.productsService.create(createProductDto);
   }
@@ -69,27 +57,17 @@ export class ProductsController {
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
-  @UseInterceptors(FileInterceptor('file', {
-    storage: diskStorage({
-      destination: './uploads',
-      filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        const ext = extname(file.originalname);
-        cb(null, `product-${uniqueSuffix}${ext}`);
-      },
-    }),
-  }))
+  @UseInterceptors(FileInterceptor('file')) // <--- Removemos diskStorage
   update(
     @Param('id', ParseIntPipe) id: number, 
     @Body() updateProductDto: any,
-    @UploadedFile() file?: Express.Multer.File
+    @UploadedFile(OptimizeImagePipe) file?: Express.Multer.File // <--- O Pipe processa aqui
   ) {
     if (file) updateProductDto.image = file.filename;
     
-    // Conversões manuais de segurança para FormData
+    // Conversões manuais
     if (updateProductDto.price) updateProductDto.price = parseFloat(updateProductDto.price);
     
-    // Correção Crítica: Conversão de 'true'/'false' string para boolean
     if (updateProductDto.available !== undefined) {
       updateProductDto.available = String(updateProductDto.available) === 'true';
     }

@@ -13,6 +13,7 @@ import { AddressesModule } from './addresses/addresses.module';
 import { StoreModule } from './store/store.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { PaymentModule } from './payment/payment.module';
+import { CommonModule } from './common/common.module'; // <--- IMPORTADO AQUI
 
 // Entities
 import { User } from './users/entities/user.entity';
@@ -23,18 +24,16 @@ import { Address } from './addresses/entities/address.entity';
 import { Addon } from './products/entities/addon.entity';
 import { StoreConfig } from './store/entities/store-config.entity';
 
-// Controllers Globais (se houver)
+// Controllers Globais
 import { UploadController } from './common/upload.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     
-    // --- CORREÇÃO IMPORTANTE AQUI ---
-    // ServeStaticModule: Libera o acesso à pasta /uploads para o navegador
     ServeStaticModule.forRoot({
-      rootPath: join(process.cwd(), 'uploads'), // Usa process.cwd() para garantir que pega a pasta na raiz do projeto
-      serveRoot: '/uploads', // A URL será http://localhost:3000/uploads/arquivo.jpg
+      rootPath: join(process.cwd(), 'uploads'), 
+      serveRoot: '/uploads', 
     }),
 
     TypeOrmModule.forRoot({
@@ -56,9 +55,10 @@ import { UploadController } from './common/upload.controller';
     AddressesModule,
     StoreModule,
     PromotionsModule,
-    PaymentModule, 
+    PaymentModule,
+    CommonModule, // <--- ADICIONADO AQUI PARA ATIVAR A MANUTENÇÃO
   ],
-  controllers: [UploadController], // Verifique se este controller realmente existe no seu projeto, senão remova.
+  controllers: [UploadController], 
   providers: [],
 })
 export class AppModule {}

@@ -6,9 +6,8 @@ import {
   BadRequestException 
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { OptimizeImagePipe } from './pipes/optimize-image.pipe'; // <--- Import
 
 @ApiTags('Uploads')
 @Controller('uploads')
@@ -26,28 +25,14 @@ export class UploadController {
       },
     },
   })
-  @UseInterceptors(FileInterceptor('file', {
-    storage: diskStorage({
-      destination: './uploads', // Salva na raiz do projeto/uploads
-      filename: (req, file, cb) => {
-        // Gera nome único: 123123123-x-bacon.jpg
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        const ext = extname(file.originalname);
-        cb(null, `${uniqueSuffix}${ext}`);
-      },
-    }),
-    fileFilter: (req, file, cb) => {
-      if (!file.mimetype.match(/\/(jpg|jpeg|png|gif)$/)) {
-        return cb(new BadRequestException('Apenas imagens são permitidas!'), false);
-      }
-      cb(null, true);
-    },
-  }))
-  uploadFile(@UploadedFile() file: Express.Multer.File) {
+  @UseInterceptors(FileInterceptor('file')) // <--- Sem diskStorage
+  uploadFile(
+    @UploadedFile(OptimizeImagePipe) file: Express.Multer.File // <--- Pipe aplicado
+  ) {
     if (!file) {
       throw new BadRequestException('Arquivo não enviado.');
     }
-    // Retorna a URL relativa para salvar no banco (ex: "123-image.jpg")
+    // Retorna o nome do arquivo já otimizado (ex: compressed-123.webp)
     return { filename: file.filename };
   }
 }
