@@ -79,7 +79,8 @@ export default function ClientHome() {
   const [loading, setLoading] = useState(true);
   
   const [banner, setBanner] = useState<any>(DAILY_OFFERS[0]);
-  const [selectedCategory, setSelectedCategory] = useState('todos');
+  // Mantendo o padrão em 'combos' como solicitado anteriormente
+  const [selectedCategory, setSelectedCategory] = useState('combos');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -219,7 +220,8 @@ export default function ClientHome() {
         />
       </div>
 
-      {/* --- SEÇÃO: COMBOS MATADORES --- */}
+      {/* --- SEÇÃO: COMBOS MATADORES (Aparece se estiver em 'todos' OU 'combos') --- */}
+      {/* Optei por deixar em 'todos' pois se estiver em 'combos' já aparece na lista principal. */}
       {selectedCategory === 'todos' && !searchTerm && comboProducts.length > 0 && (
         <section className="px-2">
           <div className="flex items-center justify-between px-1 mb-4">
@@ -240,8 +242,9 @@ export default function ClientHome() {
         </section>
       )}
 
-      {/* --- SEÇÃO: IMPERDÍVEIS --- */}
-      {selectedCategory === 'todos' && !searchTerm && promoProducts.length > 0 && (
+      {/* --- SEÇÃO: IMPERDÍVEIS (AGORA INDEPENDENTE) --- */}
+      {/* CORREÇÃO: Removido 'selectedCategory === todos'. Agora aparece sempre, exceto se houver busca */}
+      {!searchTerm && promoProducts.length > 0 && (
         <section className="px-2">
           <div className="flex items-center justify-between px-1 mb-4">
             <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
