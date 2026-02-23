@@ -9,7 +9,7 @@ const API_URL = 'http://localhost:3000';
 // =================================================================
 // 🎛️ PAINEL DE SIMULAÇÃO (CONTROLE TOTAL AQUI)
 // =================================================================
-const TEST_DAY: number | null = null; 
+const TEST_DAY: number | null =3; // 0 (Dom) a 6 (Sáb). Coloque null para dia atual. Ex: 3 = Quarta-feira
 const FORCE_GAME_DAY = false; 
 // =================================================================
 

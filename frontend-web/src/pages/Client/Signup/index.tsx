@@ -119,6 +119,7 @@ export default function ClientSignup() {
                 onChange={e => setName(e.target.value)} 
                 className="pl-10 block w-full border-gray-300 dark:border-slate-700 rounded-xl border p-3 focus:ring-orange-500 focus:border-orange-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500" 
                 placeholder="Seu Nome" 
+                maxLength={50} // <--- CORREÇÃO AQUI
               />
             </div>
           </div>

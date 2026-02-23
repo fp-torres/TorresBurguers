@@ -1,4 +1,4 @@
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength, Matches } from 'class-validator';
+import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength, Matches, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '../entities/user.entity';
 
@@ -6,6 +6,7 @@ export class CreateUserDto {
   @ApiProperty({ example: 'Felipe Torres' })
   @IsString()
   @IsNotEmpty({ message: 'O nome é obrigatório' })
+  @MaxLength(50, { message: 'O nome pode ter no máximo 50 caracteres' }) // <--- CORREÇÃO AQUI
   name: string;
 
   @ApiProperty({ example: 'felipe@email.com' })
@@ -18,7 +19,6 @@ export class CreateUserDto {
   @MinLength(10, { message: 'O telefone deve ter pelo menos 10 dígitos (DDD + Número)' })
   phone?: string;
 
-  // --- CORREÇÃO: Adicionado campo avatar ---
   @ApiProperty({ example: '/uploads/avatar.jpg', required: false })
   @IsString()
   @IsOptional()
