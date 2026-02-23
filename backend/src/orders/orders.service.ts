@@ -1,12 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, MoreThanOrEqual } from 'typeorm';
+import { Repository, In, MoreThanOrEqual, IsNull } from 'typeorm'; // <--- Adicionado IsNull
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto'; 
 import { Order, OrderStatus, OrderType, PaymentStatus } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity'; 
 import { Address } from '../addresses/entities/address.entity';
 import { Addon } from '../products/entities/addon.entity';
 import { StoreService } from '../store/store.service'; 
@@ -22,6 +22,8 @@ export class OrdersService {
     private addressRepository: Repository<Address>,
     @InjectRepository(Addon)
     private addonRepository: Repository<Addon>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
     private readonly storeService: StoreService,
   ) {}
 
@@ -39,15 +41,12 @@ export class OrdersService {
     if (!isOpen) throw new BadRequestException('A loja está fechada.');
 
     const order = new Order();
-    // Força a tipagem do user para evitar erro de compatibilidade
     order.user = { id: userId } as any; 
     order.status = OrderStatus.PENDING;
     
-    // --- LÓGICA DE PAGAMENTO AUTOMÁTICO ---
-    // Se o pedido já vem com ID de pagamento (aprovado no front), marcamos como PAGO
     if (createOrderDto.paymentId) {
       order.payment_status = PaymentStatus.PAID;
-      // @ts-ignore: Ignora erro se a tipagem da entity ainda não atualizou no hot-reload
+      // @ts-ignore
       order.payment_id = createOrderDto.paymentId; 
     } else {
       order.payment_status = PaymentStatus.PENDING;
@@ -58,9 +57,6 @@ export class OrdersService {
     order.payment_method = createOrderDto.paymentMethod;
     order.type = createOrderDto.type;
     
-    // --- CORREÇÃO DE TIPAGEM (TROCO) ---
-    // Garante que se for undefined, passa null (compatível com banco de dados)
-    // O 'as any' é uma segurança caso a entity esteja estrita como string
     order.change_for = (createOrderDto.changeFor || null) as any;
 
     if (order.type === OrderType.DELIVERY) {
@@ -109,14 +105,14 @@ export class OrdersService {
 
   async findAll() {
     return this.orderRepository.find({
-      relations: ['items', 'items.product', 'items.addons', 'user', 'address'], 
+      relations: ['items', 'items.product', 'items.addons', 'user', 'address', 'driver'],
       order: { created_at: 'DESC' } as any,
     });
   }
 
   async findMyOrders(userId: number) {
     return this.orderRepository.find({
-      relations: ['items', 'items.product', 'items.addons', 'user', 'address'], 
+      relations: ['items', 'items.product', 'items.addons', 'user', 'address', 'driver'], 
       where: { user: { id: userId } }, 
       order: { created_at: 'DESC' } as any,
     });
@@ -125,7 +121,7 @@ export class OrdersService {
   findOne(id: number) {
     return this.orderRepository.findOne({
       where: { id },
-      relations: ['items', 'items.product', 'items.addons', 'user', 'address'],
+      relations: ['items', 'items.product', 'items.addons', 'user', 'address', 'driver'],
     });
   }
 
@@ -150,6 +146,46 @@ export class OrdersService {
     if (!order) throw new NotFoundException(`Pedido ${id} não encontrado`);
     this.orderRepository.merge(order, updateOrderDto);
     return this.orderRepository.save(order);
+  }
+
+  // --- MÉTODOS DE DRIVER / LOGÍSTICA ---
+
+  // Atribuir Motoboy
+  async assignDriver(orderId: number, driverId: number) {
+    const order = await this.findOne(orderId);
+    if (!order) throw new NotFoundException('Pedido não encontrado');
+
+    const driver = await this.userRepository.findOne({ where: { id: driverId, role: UserRole.COURIER } });
+    if (!driver) throw new NotFoundException('Motoboy não encontrado ou usuário não é motoboy');
+
+    order.driver = driver;
+    return this.orderRepository.save(order);
+  }
+
+  // Listar Motoboys Disponíveis
+  async getAvailableDrivers() {
+    return this.userRepository.find({
+      where: { role: UserRole.COURIER },
+      select: ['id', 'name', 'phone', 'avatar']
+    });
+  }
+
+  // Sugestão de Pedidos Próximos (Lógica Simples por Bairro)
+  async getNearbyOrders(orderId: number) {
+    const targetOrder = await this.findOne(orderId);
+    if (!targetOrder || !targetOrder.address) return [];
+
+    const neighborhood = targetOrder.address.neighborhood;
+    
+    return this.orderRepository.find({
+      where: {
+        status: OrderStatus.READY_FOR_PICKUP,
+        type: OrderType.DELIVERY,
+        address: { neighborhood: neighborhood }, 
+        driver: IsNull(), // <--- CORREÇÃO AQUI: Usando IsNull() em vez de null
+      },
+      relations: ['address', 'user'],
+    }).then(orders => orders.filter(o => o.id !== orderId));
   }
 
   async getDashboardSummary() {

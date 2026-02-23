@@ -39,8 +39,14 @@ export default function Dashboard() {
         api.get('/store/status').catch(() => ({ data: { is_open: false } }))
       ]);
 
-      const finishedOrders = allOrders.filter(o => o.status === 'DONE' || o.status === 'FINISHED');
-      const activeOrdersList = allOrders.filter(o => ['PENDING', 'PREPARING', 'READY_FOR_PICKUP', 'DELIVERING'].includes(o.status));
+      // --- CORREÇÃO AQUI: (o.status as string) ---
+      // Isso evita o erro de tipagem caso 'FINISHED' não esteja na interface Order,
+      // mas garante que contamos se existir no banco de dados.
+      const finishedOrders = allOrders.filter(o => o.status === 'DONE' || (o.status as string) === 'FINISHED');
+      
+      const activeOrdersList = allOrders.filter(o => 
+        ['PENDING', 'PREPARING', 'READY_FOR_PICKUP', 'DELIVERING'].includes(o.status)
+      );
 
       // 2. Cálculos de Business Intelligence (BI)
       const totalRevenue = finishedOrders.reduce((acc, curr) => acc + Number(curr.total_price), 0);
@@ -105,7 +111,6 @@ export default function Dashboard() {
   );
 
   return (
-    // CORREÇÃO: max-w-[1600px] -> max-w-400 (no Tailwind v4 isso equivale a 1600px)
     <div className="space-y-6 pb-20 animate-in fade-in duration-500 max-w-400 mx-auto">
       
       {/* HEADER E CONTROLE DE LOJA */}
@@ -117,7 +122,6 @@ export default function Dashboard() {
           <p className="text-gray-500 dark:text-gray-400 font-medium">Visão geral estratégica do seu negócio.</p>
         </div>
         
-        {/* CORREÇÃO: bg-gradient -> bg-linear */}
         <button 
           onClick={toggleStore}
           className={`relative overflow-hidden flex items-center gap-4 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all hover:scale-105 active:scale-95 group ${
@@ -186,7 +190,6 @@ export default function Dashboard() {
                 <option>Últimos 7 dias</option>
               </select>
             </div>
-            {/* CORREÇÃO: h-[320px] -> h-80 */}
             <div className="h-80 w-full">
               {loading ? (
                 <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-gray-300"/></div>
@@ -219,7 +222,6 @@ export default function Dashboard() {
             <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2 mb-6">
               <ShoppingBag size={20} className="text-blue-600 dark:text-blue-400"/> Produtos Campeões
             </h3>
-            {/* CORREÇÃO: h-[250px] -> h-62.5 */}
             <div className="h-62.5 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={productsData} layout="vertical" margin={{ left: 40, right: 20 }}>
@@ -242,12 +244,10 @@ export default function Dashboard() {
         <div className="space-y-6">
           
           {/* MEIOS DE PAGAMENTO (PIZZA) */}
-          {/* CORREÇÃO: min-h-[300px] -> min-h-75 */}
           <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-slate-700 min-h-75 transition-colors">
             <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2 mb-2">
               <PieIcon size={20} className="text-violet-600 dark:text-violet-400"/> Pagamentos
             </h3>
-            {/* CORREÇÃO: h-[250px] -> h-62.5 */}
             <div className="h-62.5">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>

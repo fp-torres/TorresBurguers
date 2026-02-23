@@ -10,6 +10,7 @@ export class CreateAddressDto {
   @ApiProperty({ example: '22000-000' })
   @IsString()
   @IsNotEmpty()
+  // Aceita com ou sem traço
   @Matches(/^\d{5}-\d{3}$|^\d{8}$/, { message: 'CEP inválido (Use 12345-678 ou 12345678)' })
   zipCode: string;
 

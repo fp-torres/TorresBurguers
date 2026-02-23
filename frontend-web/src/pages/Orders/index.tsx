@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { orderService, type Order, type OrderItem } from '../../services/orderService';
 import ConfirmModal from '../../components/ConfirmModal';
+import DriverModal from '../../components/Driver/DriverModal'; // <--- IMPORTADO
 import toast from 'react-hot-toast';
 import { currencyToNumber } from '../../utils/masks'; 
 
@@ -12,8 +13,13 @@ export default function Orders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   
+  // Modais de Cancelamento
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<number | null>(null);
+
+  // --- NOVO: Estado do Modal de Motoboy ---
+  const [driverModalOpen, setDriverModalOpen] = useState(false);
+  const [selectedOrderForDriver, setSelectedOrderForDriver] = useState<Order | null>(null);
 
   // Recupera o usuário e o cargo do localStorage
   const userStored = localStorage.getItem('torresburgers.user');
@@ -21,7 +27,6 @@ export default function Orders() {
   try {
     if (userStored) {
       const parsed = JSON.parse(userStored);
-      // Garante que o role esteja em maiúsculo para bater com a verificação
       userRole = parsed.role ? parsed.role.toUpperCase() : 'ADMIN';
     }
   } catch {}
@@ -77,6 +82,12 @@ export default function Orders() {
     }
   }
 
+  // --- NOVO: Função para abrir o modal de motoboy ---
+  function openDriverModal(order: Order) {
+    setSelectedOrderForDriver(order);
+    setDriverModalOpen(true);
+  }
+
   // --- SUB-COMPONENTE: CARD DO PEDIDO ---
   const OrderCard = ({ order }: { order: Order }) => {
     const isDelivery = order.type === 'DELIVERY';
@@ -115,15 +126,27 @@ export default function Orders() {
       
       // 3. PRONTO -> ENTREGA / FINALIZADO
       if (order.status === 'READY_FOR_PICKUP') {
-        // Se for Delivery: Motoboy ou Admin pega pra entregar
-        if (isDelivery && (userRole === 'ADMIN' || userRole === 'COURIER')) {
-          return (
-            <button onClick={() => updateStatus(order.id, 'DELIVERING')} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-indigo-700 shadow-sm transition-colors animate-pulse">
-              <Bike size={18}/> Pegar para Entrega
-            </button>
-          );
+        // --- ALTERAÇÃO AQUI: Admin abre o modal, Motoboy pega direto ---
+        if (isDelivery) {
+           // ADMIN: Abre Modal de Logística para agrupar
+           if (userRole === 'ADMIN') {
+             return (
+               <button onClick={() => openDriverModal(order)} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-indigo-700 shadow-sm transition-colors animate-pulse">
+                 <Bike size={18}/> Despachar (Logística)
+               </button>
+             );
+           }
+           // MOTOBOY: Pega direto
+           if (userRole === 'COURIER') {
+             return (
+               <button onClick={() => updateStatus(order.id, 'DELIVERING')} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-indigo-700 shadow-sm transition-colors">
+                 <Bike size={18}/> Pegar para Entrega
+               </button>
+             );
+           }
         }
-        // Se for Balcão: Apenas Admin finaliza (conforme solicitado, cozinha não vê mais isso)
+        
+        // Se for Balcão: Apenas Admin finaliza
         if (!isDelivery && userRole === 'ADMIN') {
           return (
             <button onClick={() => updateStatus(order.id, 'DONE')} className="w-full bg-teal-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-teal-700 shadow-sm transition-colors">
@@ -158,6 +181,13 @@ export default function Orders() {
             <div className="flex items-center gap-1 text-sm font-bold text-gray-600 dark:text-gray-300 mt-1">
               <User size={14} /> {order.user?.name || 'Cliente'}
             </div>
+            
+            {/* NOVO: Mostrar Motoboy se já estiver atribuído */}
+            {order.driver && (
+              <div className="flex items-center gap-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 mt-1 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-0.5 rounded w-fit">
+                <Bike size={12} /> Motoboy: {order.driver.name}
+              </div>
+            )}
           </div>
           <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide border ${
             order.status === 'PENDING' ? 'bg-yellow-50 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border-yellow-100 dark:border-yellow-800' :
@@ -423,6 +453,16 @@ export default function Orders() {
         message="Deseja realmente cancelar este pedido? O cliente será notificado."
         confirmLabel="Sim, Cancelar Pedido"
         isDestructive
+      />
+
+      <DriverModal 
+        isOpen={driverModalOpen}
+        onClose={() => setDriverModalOpen(false)}
+        targetOrder={selectedOrderForDriver}
+        onSuccess={() => {
+          loadOrders(); // Recarrega a tela após despachar
+          setDriverModalOpen(false);
+        }}
       />
     </div>
   );

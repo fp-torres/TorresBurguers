@@ -10,34 +10,45 @@ export interface OrderItem {
   id: number;
   quantity: number;
   product: {
+    id: number;
     name: string;
+    price: string;
     image: string | null;
   };
   observation?: string;
-  addons: Addon[]; // Tipagem correta dos adicionais
-  
-  // --- CAMPOS DETALHADOS (snake_case do Backend) ---
-  meat_point?: string;
-  removed_ingredients?: string[]; 
+  addons: Addon[]; 
+  meat_point?: string | null;
+  removed_ingredients?: string[] | null; 
+}
+
+// Interface do Motoboy
+export interface Driver {
+  id: number;
+  name: string;
+  phone: string;
+  avatar?: string;
 }
 
 export interface Order {
   id: number;
-  status: 'PENDING' | 'PREPARING' | 'READY_FOR_PICKUP' | 'DELIVERING' | 'DONE' | 'FINISHED' | 'CANCELED';
+  status: 'PENDING' | 'PREPARING' | 'READY_FOR_PICKUP' | 'DELIVERING' | 'DONE' | 'CANCELED';
   total_price: string | number; 
   delivery_fee?: string | number;
   payment_method: string;
-  
-  // --- NOVO CAMPO: TROCO ---
   change_for?: string | null; 
-
   created_at: string;
   estimated_delivery_time?: string;
   type: 'DELIVERY' | 'TAKEOUT';
+  
   user: {
+    id: number;
     name: string;
     phone?: string;
   };
+
+  // --- NOVO CAMPO: MOTOBOY ---
+  driver?: Driver;
+
   address?: {
     street: string;
     number: string;
@@ -50,6 +61,7 @@ export interface Order {
 }
 
 export const orderService = {
+  // Listagem Geral
   getAll: async () => {
     const response = await api.get<Order[]>('/orders');
     return response.data;
@@ -61,9 +73,16 @@ export const orderService = {
   },
 
   updateStatus: async (id: number, status: string) => {
+    // Envia como objeto parcial para ser compatível com UpdateOrderDto
     await api.patch(`/orders/${id}`, { status });
   },
 
+  // Cancelamento
+  cancel: async (id: number) => {
+    await api.patch(`/orders/${id}/cancel`);
+  },
+
+  // Dashboard
   getDashboard: async () => {
     const response = await api.get('/orders/summary');
     return response.data;
@@ -71,6 +90,26 @@ export const orderService = {
 
   getCharts: async () => {
     const response = await api.get('/orders/charts');
+    return response.data;
+  },
+
+  // --- NOVAS FUNÇÕES DE LOGÍSTICA ---
+
+  // 1. Buscar lista de motoboys (couriers)
+  getDrivers: async () => {
+    const response = await api.get<Driver[]>('/orders/drivers/list');
+    return response.data;
+  },
+
+  // 2. Atribuir um motoboy a um pedido
+  assignDriver: async (orderId: number, driverId: number) => {
+    const response = await api.patch(`/orders/${orderId}/assign`, { driverId });
+    return response.data;
+  },
+
+  // 3. Buscar pedidos próximos (sugestão de rota)
+  getNearbyOrders: async (orderId: number) => {
+    const response = await api.get<Order[]>(`/orders/${orderId}/nearby`);
     return response.data;
   }
 };

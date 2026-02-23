@@ -28,6 +28,35 @@ export class OrdersController {
     return this.ordersService.findMyOrders(req.user.id);
   }
 
+  // --- LOGÍSTICA & ENTREGAS (NOVAS ROTAS) ---
+
+  // 1. Listar Motoboys Disponíveis
+  @Get('drivers/list')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  getDrivers() {
+    return this.ordersService.getAvailableDrivers();
+  }
+
+  // 2. Sugestão de Pedidos Próximos (Para agrupar entregas)
+  @Get(':id/nearby')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  getNearbyOrders(@Param('id', ParseIntPipe) id: number) {
+    return this.ordersService.getNearbyOrders(id);
+  }
+
+  // 3. Atribuir Motoboy ao Pedido
+  @Patch(':id/assign')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  assignDriver(
+    @Param('id', ParseIntPipe) id: number, 
+    @Body('driverId', ParseIntPipe) driverId: number
+  ) {
+    return this.ordersService.assignDriver(id, driverId);
+  }
+
   // --- DASHBOARD (Financeiro) ---
   @Get('charts')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -44,7 +73,6 @@ export class OrdersController {
   }
 
   // --- LISTAR PEDIDOS GERAIS ---
-  // Acessível para Admin, Cozinha e Motoboy
   @Get()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN', 'KITCHEN', 'COURIER') 
@@ -65,8 +93,7 @@ export class OrdersController {
     return this.ordersService.cancelOrder(id, req.user);
   }
 
-  // --- ATUALIZAR STATUS ---
-  // Acessível para Admin, Cozinha e Motoboy
+  // --- ATUALIZAR STATUS (Genérico) ---
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN', 'KITCHEN', 'COURIER')

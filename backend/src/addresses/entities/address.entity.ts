@@ -7,7 +7,7 @@ export class Address {
   id: number;
 
   @Column()
-  zipCode: string; // CEP
+  zipCode: string; 
 
   @Column()
   street: string; 
@@ -19,7 +19,7 @@ export class Address {
   complement: string;
 
   @Column()
-  neighborhood: string; // ESSENCIAL PARA O CÁLCULO DA TAXA
+  neighborhood: string; 
 
   @Column()
   city: string;

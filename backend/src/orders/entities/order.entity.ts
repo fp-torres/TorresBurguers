@@ -64,7 +64,6 @@ export class Order {
   @Column({ nullable: true })
   change_for: string;
 
-  // --- CORREÇÃO 2: Coluna para o ID do Pagamento ---
   @Column({ type: 'bigint', nullable: true })
   payment_id: number;
 
@@ -80,6 +79,11 @@ export class Order {
   @ManyToOne(() => User, (user) => user.orders)
   @JoinColumn({ name: 'user_id' })
   user: User;
+
+  // --- NOVO: Motoboy Responsável ---
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'driver_id' })
+  driver: User | null;
 
   @ManyToOne(() => Address, { nullable: true })
   @JoinColumn({ name: 'address_id' })
