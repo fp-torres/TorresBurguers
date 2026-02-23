@@ -15,10 +15,15 @@ export default function Orders() {
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<number | null>(null);
 
+  // Recupera o usuário e o cargo do localStorage
   const userStored = localStorage.getItem('torresburgers.user');
-  let userRole = 'ADMIN';
+  let userRole = 'ADMIN'; 
   try {
-    if (userStored) userRole = JSON.parse(userStored).role;
+    if (userStored) {
+      const parsed = JSON.parse(userStored);
+      // Garante que o role esteja em maiúsculo para bater com a verificação
+      userRole = parsed.role ? parsed.role.toUpperCase() : 'ADMIN';
+    }
   } catch {}
 
   useEffect(() => {
@@ -40,6 +45,7 @@ export default function Orders() {
 
   async function updateStatus(id: number, newStatus: string) {
     try {
+      // Otimista: atualiza na hora visualmente
       setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus as any } : o));
       await orderService.updateStatus(id, newStatus);
       
@@ -51,7 +57,7 @@ export default function Orders() {
         'CANCELED': 'Cancelado.'
       };
       toast.success(msgMap[newStatus] || 'Status atualizado');
-      loadOrders();
+      loadOrders(); // Recarrega para garantir sincronia
     } catch (error) {
       toast.error('Erro ao atualizar status.');
       loadOrders();
@@ -71,7 +77,7 @@ export default function Orders() {
     }
   }
 
-  // --- SUB-COMPONENTE: CARD DO PEDIDO (DARK MODE) ---
+  // --- SUB-COMPONENTE: CARD DO PEDIDO ---
   const OrderCard = ({ order }: { order: Order }) => {
     const isDelivery = order.type === 'DELIVERY';
     
@@ -89,6 +95,7 @@ export default function Orders() {
       : '#';
 
     const renderActions = () => {
+      // 1. PENDENTE -> PREPARANDO
       if (order.status === 'PENDING' && (userRole === 'ADMIN' || userRole === 'KITCHEN')) {
         return (
           <button onClick={() => updateStatus(order.id, 'PREPARING')} className="w-full bg-blue-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-blue-700 shadow-sm transition-colors">
@@ -96,6 +103,8 @@ export default function Orders() {
           </button>
         );
       }
+      
+      // 2. PREPARANDO -> PRONTO
       if (order.status === 'PREPARING' && (userRole === 'ADMIN' || userRole === 'KITCHEN')) {
         return (
           <button onClick={() => updateStatus(order.id, 'READY_FOR_PICKUP')} className="w-full bg-orange-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-orange-700 shadow-sm transition-colors">
@@ -103,7 +112,10 @@ export default function Orders() {
           </button>
         );
       }
+      
+      // 3. PRONTO -> ENTREGA / FINALIZADO
       if (order.status === 'READY_FOR_PICKUP') {
+        // Se for Delivery: Motoboy ou Admin pega pra entregar
         if (isDelivery && (userRole === 'ADMIN' || userRole === 'COURIER')) {
           return (
             <button onClick={() => updateStatus(order.id, 'DELIVERING')} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-indigo-700 shadow-sm transition-colors animate-pulse">
@@ -111,7 +123,8 @@ export default function Orders() {
             </button>
           );
         }
-        if (!isDelivery && (userRole === 'ADMIN' || userRole === 'KITCHEN')) {
+        // Se for Balcão: Apenas Admin finaliza (conforme solicitado, cozinha não vê mais isso)
+        if (!isDelivery && userRole === 'ADMIN') {
           return (
             <button onClick={() => updateStatus(order.id, 'DONE')} className="w-full bg-teal-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-teal-700 shadow-sm transition-colors">
               <CheckCircle size={18}/> Entregue ao Cliente
@@ -119,6 +132,8 @@ export default function Orders() {
           );
         }
       }
+      
+      // 4. EM ENTREGA -> FINALIZADO
       if (order.status === 'DELIVERING' && (userRole === 'ADMIN' || userRole === 'COURIER')) {
         return (
           <button onClick={() => updateStatus(order.id, 'DONE')} className="w-full bg-green-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-green-700 shadow-sm transition-colors">
@@ -131,7 +146,6 @@ export default function Orders() {
 
     return (
       <div className="bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col gap-3 min-w-[300px]">
-        
         {/* Header */}
         <div className="flex justify-between items-start border-b border-gray-50 dark:border-slate-700 pb-3">
           <div>
@@ -262,11 +276,24 @@ export default function Orders() {
   const doneOrders = orders.filter(o => o.status === 'DONE').slice(0, 10);
   const canceledOrders = orders.filter(o => o.status === 'CANCELED').slice(0, 5);
 
+  // --- REGRAS DE VISIBILIDADE ESTRITAS (CORRIGIDAS) ---
+  
+  // 1. Novos: Admin e Cozinha veem
   const showNew = ['ADMIN', 'KITCHEN'].includes(userRole);
+  
+  // 2. Preparando: Admin e Cozinha veem
   const showKitchen = ['ADMIN', 'KITCHEN'].includes(userRole);
-  const showReadyDelivery = ['ADMIN', 'COURIER', 'KITCHEN'].includes(userRole);
-  const showReadyTakeout = ['ADMIN', 'KITCHEN'].includes(userRole); 
+  
+  // 3. Aguardando Motoboy: Admin e Motoboy (COZINHA NÃO VÊ MAIS)
+  const showReadyDelivery = ['ADMIN', 'COURIER'].includes(userRole);
+  
+  // 4. Retirar no Balcão: Admin (COZINHA NÃO VÊ MAIS, pois é função do atendente/admin entregar)
+  const showReadyTakeout = ['ADMIN'].includes(userRole); 
+  
+  // 5. Em Entrega: Admin e Motoboy
   const showDelivery = ['ADMIN', 'COURIER'].includes(userRole);
+  
+  // 6. Concluídos e Cancelados: Apenas Admin
   const showDone = ['ADMIN'].includes(userRole);
   const showCanceled = ['ADMIN'].includes(userRole);
 
@@ -288,7 +315,7 @@ export default function Orders() {
              userRole === 'COURIER' ? 'Painel de Entregas 🏍️' : 
              'Gestão de Pedidos'}
           </h1>
-          <p className="text-xs text-gray-400 dark:text-gray-500 hidden sm:block">Logado como: {userRole}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 hidden sm:block">Logado como: <span className="font-bold text-orange-600">{userRole}</span></p>
         </div>
         <button onClick={loadOrders} className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-full transition-colors text-gray-600 dark:text-gray-300" title="Atualizar"><Clock size={20}/></button>
       </div>
@@ -325,7 +352,7 @@ export default function Orders() {
           {showReadyDelivery && (
             <div className="w-[320px] flex flex-col gap-4">
               <div className="bg-purple-50 dark:bg-purple-900/30 text-purple-800 dark:text-purple-400 p-3 rounded-xl font-bold flex justify-between items-center border border-purple-100 dark:border-purple-800 sticky top-0 z-10 shadow-sm transition-colors">
-                 <span className="flex items-center gap-2"><Bell size={18}/> Chamar Motoboy</span>
+                 <span className="flex items-center gap-2"><Bell size={18}/> Aguardando Motoboy</span>
                  <span className="bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md text-xs shadow-sm">{readyDeliveryOrders.length}</span>
               </div>
               <div className="flex flex-col gap-4 overflow-y-auto pr-1 pb-2 custom-scrollbar h-full">
