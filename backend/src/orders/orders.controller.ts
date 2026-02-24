@@ -16,6 +16,7 @@ export class OrdersController {
   @Post()
   @UseGuards(AuthGuard('jwt')) 
   create(@Body() createOrderDto: CreateOrderDto, @Request() req) {
+    // Bloqueia Admin/Funcionario de fazer pedido como se fosse cliente na loja (regra de negócio)
     if (req.user.role !== 'CLIENT') {
       throw new ForbiddenException('Administradores e Funcionários não podem realizar pedidos pelo sistema.');
     }

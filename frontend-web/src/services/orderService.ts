@@ -21,7 +21,7 @@ export interface OrderItem {
   removed_ingredients?: string[] | null; 
 }
 
-// Interface do Motoboy
+// Interface do Motoboy (Alinhada com o User entity do backend)
 export interface Driver {
   id: number;
   name: string;
@@ -46,8 +46,7 @@ export interface Order {
     phone?: string;
   };
 
-  // --- NOVO CAMPO: MOTOBOY ---
-  driver?: Driver;
+  driver?: Driver; // Motoboy atribuído
 
   address?: {
     street: string;
@@ -73,16 +72,13 @@ export const orderService = {
   },
 
   updateStatus: async (id: number, status: string) => {
-    // Envia como objeto parcial para ser compatível com UpdateOrderDto
     await api.patch(`/orders/${id}`, { status });
   },
 
-  // Cancelamento
   cancel: async (id: number) => {
     await api.patch(`/orders/${id}/cancel`);
   },
 
-  // Dashboard
   getDashboard: async () => {
     const response = await api.get('/orders/summary');
     return response.data;
@@ -93,9 +89,9 @@ export const orderService = {
     return response.data;
   },
 
-  // --- NOVAS FUNÇÕES DE LOGÍSTICA ---
+  // --- FUNÇÕES DE LOGÍSTICA ---
 
-  // 1. Buscar lista de motoboys (couriers)
+  // 1. Buscar lista de motoboys
   getDrivers: async () => {
     const response = await api.get<Driver[]>('/orders/drivers/list');
     return response.data;

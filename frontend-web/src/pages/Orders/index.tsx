@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { orderService, type Order, type OrderItem } from '../../services/orderService';
 import ConfirmModal from '../../components/ConfirmModal';
-import DriverModal from '../../components/Driver/DriverModal'; // <--- IMPORTADO
+import DriverModal from '../../components/Driver/DriverModal'; // <--- IMPORTADO O NOVO MODAL
 import toast from 'react-hot-toast';
 import { currencyToNumber } from '../../utils/masks'; 
 
@@ -17,7 +17,7 @@ export default function Orders() {
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<number | null>(null);
 
-  // --- NOVO: Estado do Modal de Motoboy ---
+  // --- NOVO: Estado do Modal de Motoboy (Logística) ---
   const [driverModalOpen, setDriverModalOpen] = useState(false);
   const [selectedOrderForDriver, setSelectedOrderForDriver] = useState<Order | null>(null);
 
@@ -33,6 +33,7 @@ export default function Orders() {
 
   useEffect(() => {
     loadOrders();
+    // Atualiza a cada 5 segundos para pegar novos pedidos em tempo real
     const interval = setInterval(loadOrders, 5000); 
     return () => clearInterval(interval);
   }, []);
@@ -40,9 +41,10 @@ export default function Orders() {
   async function loadOrders() {
     try {
       const data = await orderService.getAll();
+      // Ordena: mais novos primeiro
       setOrders(data.sort((a, b) => b.id - a.id));
     } catch (error) {
-      console.error("Erro", error);
+      console.error("Erro ao carregar pedidos", error);
     } finally {
       setLoading(false);
     }
@@ -50,19 +52,19 @@ export default function Orders() {
 
   async function updateStatus(id: number, newStatus: string) {
     try {
-      // Otimista: atualiza na hora visualmente
+      // Atualização Otimista (feedback visual imediato)
       setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus as any } : o));
       await orderService.updateStatus(id, newStatus);
       
       const msgMap: any = { 
-        'PREPARING': 'Cozinha notificada! 🔥', 
+        'PREPARING': 'Enviado para a cozinha! 🔥', 
         'READY_FOR_PICKUP': 'Pedido Liberado! ✅',
-        'DELIVERING': 'Boa entrega! 🏍️', 
+        'DELIVERING': 'Saiu para entrega! 🏍️', 
         'DONE': 'Pedido finalizado! 🎉',
-        'CANCELED': 'Cancelado.'
+        'CANCELED': 'Pedido cancelado.'
       };
       toast.success(msgMap[newStatus] || 'Status atualizado');
-      loadOrders(); // Recarrega para garantir sincronia
+      loadOrders(); // Recarrega para garantir sincronia com o backend
     } catch (error) {
       toast.error('Erro ao atualizar status.');
       loadOrders();
@@ -82,8 +84,12 @@ export default function Orders() {
     }
   }
 
-  // --- NOVO: Função para abrir o modal de motoboy ---
+  // --- LÓGICA DO BOTÃO DESPACHAR ---
   function openDriverModal(order: Order) {
+    if (!order.address) {
+      toast.error("Erro: Pedido sem endereço.");
+      return;
+    }
     setSelectedOrderForDriver(order);
     setDriverModalOpen(true);
   }
@@ -91,25 +97,24 @@ export default function Orders() {
   // --- SUB-COMPONENTE: CARD DO PEDIDO ---
   const OrderCard = ({ order }: { order: Order }) => {
     const isDelivery = order.type === 'DELIVERY';
-    
     const totalOrder = Number(order.total_price);
-    let changeForValue = 0;
     
+    let changeForValue = 0;
     if (order.change_for) {
        changeForValue = currencyToNumber(order.change_for);
     }
-    
     const changeToReturn = changeForValue > 0 ? (changeForValue - totalOrder) : 0;
 
     const mapsLink = order.address 
       ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${order.address.street}, ${order.address.number} - ${order.address.neighborhood}, ${order.address.city}`)}`
       : '#';
 
+    // RENDERIZAÇÃO DOS BOTÕES DE AÇÃO
     const renderActions = () => {
       // 1. PENDENTE -> PREPARANDO
       if (order.status === 'PENDING' && (userRole === 'ADMIN' || userRole === 'KITCHEN')) {
         return (
-          <button onClick={() => updateStatus(order.id, 'PREPARING')} className="w-full bg-blue-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-blue-700 shadow-sm transition-colors">
+          <button onClick={() => updateStatus(order.id, 'PREPARING')} className="w-full bg-blue-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-blue-700 shadow-sm transition-colors shadow-blue-200 dark:shadow-none">
             <ChefHat size={18}/> Aceitar e Preparar
           </button>
         );
@@ -118,7 +123,7 @@ export default function Orders() {
       // 2. PREPARANDO -> PRONTO
       if (order.status === 'PREPARING' && (userRole === 'ADMIN' || userRole === 'KITCHEN')) {
         return (
-          <button onClick={() => updateStatus(order.id, 'READY_FOR_PICKUP')} className="w-full bg-orange-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-orange-700 shadow-sm transition-colors">
+          <button onClick={() => updateStatus(order.id, 'READY_FOR_PICKUP')} className="w-full bg-orange-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-orange-700 shadow-sm transition-colors shadow-orange-200 dark:shadow-none">
             {isDelivery ? <><Bell size={18}/> Chamar Motoboy</> : <><CheckCircle size={18}/> Pronto (Balcão)</>}
           </button>
         );
@@ -126,17 +131,16 @@ export default function Orders() {
       
       // 3. PRONTO -> ENTREGA / FINALIZADO
       if (order.status === 'READY_FOR_PICKUP') {
-        // --- ALTERAÇÃO AQUI: Admin abre o modal, Motoboy pega direto ---
         if (isDelivery) {
-           // ADMIN: Abre Modal de Logística para agrupar
+           // ADMIN: ABRE O MODAL DE LOGÍSTICA
            if (userRole === 'ADMIN') {
              return (
-               <button onClick={() => openDriverModal(order)} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-indigo-700 shadow-sm transition-colors animate-pulse">
+               <button onClick={() => openDriverModal(order)} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-indigo-700 shadow-sm transition-colors animate-pulse shadow-indigo-200 dark:shadow-none">
                  <Bike size={18}/> Despachar (Logística)
                </button>
              );
            }
-           // MOTOBOY: Pega direto
+           // MOTOBOY: PEGA DIRETO (ATALHO)
            if (userRole === 'COURIER') {
              return (
                <button onClick={() => updateStatus(order.id, 'DELIVERING')} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-indigo-700 shadow-sm transition-colors">
@@ -144,12 +148,10 @@ export default function Orders() {
                </button>
              );
            }
-        }
-        
-        // Se for Balcão: Apenas Admin finaliza
-        if (!isDelivery && userRole === 'ADMIN') {
+        } else if (userRole === 'ADMIN') {
+          // Balcão
           return (
-            <button onClick={() => updateStatus(order.id, 'DONE')} className="w-full bg-teal-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-teal-700 shadow-sm transition-colors">
+            <button onClick={() => updateStatus(order.id, 'DONE')} className="w-full bg-teal-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-teal-700 shadow-sm transition-colors shadow-teal-200 dark:shadow-none">
               <CheckCircle size={18}/> Entregue ao Cliente
             </button>
           );
@@ -159,7 +161,7 @@ export default function Orders() {
       // 4. EM ENTREGA -> FINALIZADO
       if (order.status === 'DELIVERING' && (userRole === 'ADMIN' || userRole === 'COURIER')) {
         return (
-          <button onClick={() => updateStatus(order.id, 'DONE')} className="w-full bg-green-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-green-700 shadow-sm transition-colors">
+          <button onClick={() => updateStatus(order.id, 'DONE')} className="w-full bg-green-600 text-white py-2.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-green-700 shadow-sm transition-colors shadow-green-200 dark:shadow-none">
             <CheckCircle size={18}/> Confirmar Entrega
           </button>
         );
@@ -169,7 +171,7 @@ export default function Orders() {
 
     return (
       <div className="bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col gap-3 min-w-[300px]">
-        {/* Header */}
+        {/* Header do Card */}
         <div className="flex justify-between items-start border-b border-gray-50 dark:border-slate-700 pb-3">
           <div>
             <h3 className="font-bold text-gray-800 dark:text-white text-lg flex items-center gap-2">
@@ -182,7 +184,7 @@ export default function Orders() {
               <User size={14} /> {order.user?.name || 'Cliente'}
             </div>
             
-            {/* NOVO: Mostrar Motoboy se já estiver atribuído */}
+            {/* EXIBE MOTOBOY SE JÁ TIVER UM ATRIBUÍDO */}
             {order.driver && (
               <div className="flex items-center gap-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 mt-1 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-0.5 rounded w-fit">
                 <Bike size={12} /> Motoboy: {order.driver.name}
@@ -200,7 +202,7 @@ export default function Orders() {
           </span>
         </div>
 
-        {/* Pagamento e Troco */}
+        {/* Info Financeira */}
         <div className="flex justify-between items-center bg-gray-50 dark:bg-slate-700 p-2 rounded-lg">
            <span className="text-xs font-bold text-gray-500 dark:text-gray-300 uppercase">
              {order.payment_method === 'CREDIT_CARD' ? 'Cartão' : order.payment_method === 'MONEY' ? 'Dinheiro' : order.payment_method}
@@ -210,21 +212,22 @@ export default function Orders() {
            </span>
         </div>
 
+        {/* Alerta de Troco */}
         {order.payment_method === 'MONEY' && changeForValue > 0 && (userRole === 'ADMIN' || userRole === 'COURIER') && (
           <div className="bg-green-100 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 rounded-xl animate-pulse">
             <div className="flex items-center gap-2 text-green-800 dark:text-green-300 font-bold text-sm mb-1">
-              <Banknote size={18}/> ATENÇÃO: TROCO
+              <Banknote size={18}/> TROCO NECESSÁRIO
             </div>
             <div className="text-xs text-green-700 dark:text-green-400 space-y-1">
-              <p>Cliente paga com: <b>{changeForValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</b></p>
+              <p>Paga com: <b>{changeForValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</b></p>
               <p className="text-sm border-t border-green-200 dark:border-green-800 pt-1 mt-1">
-                Devolver: <b className="text-lg">{changeToReturn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</b>
+                Levar: <b className="text-lg">{changeToReturn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</b>
               </p>
             </div>
           </div>
         )}
 
-        {/* Endereço */}
+        {/* Endereço com Link do Maps */}
         {isDelivery && order.address ? (
            <div className="bg-gray-50 dark:bg-slate-700 p-3 rounded-xl border border-dashed border-gray-200 dark:border-slate-600">
              <div className="flex items-start gap-2">
@@ -243,7 +246,7 @@ export default function Orders() {
                  rel="noopener noreferrer"
                  className="mt-2 flex items-center justify-center gap-2 w-full bg-white dark:bg-slate-600 border border-gray-200 dark:border-slate-500 py-2 rounded-lg text-xs font-bold text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-slate-500 transition-colors"
                >
-                 <Navigation size={14}/> Abrir no Maps <ExternalLink size={10}/>
+                 <Navigation size={14}/> Abrir no Google Maps <ExternalLink size={10}/>
                </a>
              )}
            </div>
@@ -253,7 +256,7 @@ export default function Orders() {
            </div>
         )}
 
-        {/* Itens */}
+        {/* Lista de Itens */}
         <div className="space-y-2 py-2">
           {order.items.map((item: OrderItem) => (
             <div key={item.id} className="text-sm border-b border-gray-50 dark:border-slate-700 last:border-0 pb-2 last:pb-0">
@@ -285,7 +288,7 @@ export default function Orders() {
           ))}
         </div>
 
-        {/* Footer Actions */}
+        {/* Footer: Botões de Ação */}
         <div className="pt-2 mt-auto">
           {renderActions()}
           {order.status !== 'DONE' && order.status !== 'CANCELED' && userRole === 'ADMIN' && (
@@ -298,32 +301,23 @@ export default function Orders() {
     );
   };
 
+  // Filtros de Colunas
   const pendingOrders = orders.filter(o => o.status === 'PENDING');
   const preparingOrders = orders.filter(o => o.status === 'PREPARING');
+  // Filtro de Delivery pronto
   const readyDeliveryOrders = orders.filter(o => o.status === 'READY_FOR_PICKUP' && o.type === 'DELIVERY');
+  // Filtro de Balcão pronto
   const readyTakeoutOrders = orders.filter(o => o.status === 'READY_FOR_PICKUP' && o.type === 'TAKEOUT'); 
   const deliveringOrders = orders.filter(o => o.status === 'DELIVERING');
   const doneOrders = orders.filter(o => o.status === 'DONE').slice(0, 10);
   const canceledOrders = orders.filter(o => o.status === 'CANCELED').slice(0, 5);
 
-  // --- REGRAS DE VISIBILIDADE ESTRITAS (CORRIGIDAS) ---
-  
-  // 1. Novos: Admin e Cozinha veem
+  // Regras de Visibilidade das Colunas
   const showNew = ['ADMIN', 'KITCHEN'].includes(userRole);
-  
-  // 2. Preparando: Admin e Cozinha veem
   const showKitchen = ['ADMIN', 'KITCHEN'].includes(userRole);
-  
-  // 3. Aguardando Motoboy: Admin e Motoboy (COZINHA NÃO VÊ MAIS)
-  const showReadyDelivery = ['ADMIN', 'COURIER'].includes(userRole);
-  
-  // 4. Retirar no Balcão: Admin (COZINHA NÃO VÊ MAIS, pois é função do atendente/admin entregar)
+  const showReadyDelivery = ['ADMIN', 'COURIER'].includes(userRole); // Motoboy vê isso
   const showReadyTakeout = ['ADMIN'].includes(userRole); 
-  
-  // 5. Em Entrega: Admin e Motoboy
-  const showDelivery = ['ADMIN', 'COURIER'].includes(userRole);
-  
-  // 6. Concluídos e Cancelados: Apenas Admin
+  const showDelivery = ['ADMIN', 'COURIER'].includes(userRole); // Motoboy vê isso
   const showDone = ['ADMIN'].includes(userRole);
   const showCanceled = ['ADMIN'].includes(userRole);
 
@@ -331,7 +325,7 @@ export default function Orders() {
     return (
       <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500">
         <Clock className="animate-spin mb-2" size={32} />
-        <p>Carregando pedidos...</p>
+        <p>Carregando painel de pedidos...</p>
       </div>
     );
   }
@@ -400,7 +394,7 @@ export default function Orders() {
               </div>
               <div className="flex flex-col gap-4 overflow-y-auto pr-1 pb-2 custom-scrollbar h-full">
                 {readyTakeoutOrders.map(o => <OrderCard key={o.id} order={o}/>)}
-                {readyTakeoutOrders.length === 0 && <div className="text-center text-gray-400 dark:text-gray-600 py-10 italic text-sm">Nenhum balcão pronto</div>}
+                {readyTakeoutOrders.length === 0 && <div className="text-center text-gray-400 dark:text-gray-600 py-10 italic text-sm">Nenhum pedido no balcão</div>}
               </div>
             </div>
           )}
@@ -460,7 +454,7 @@ export default function Orders() {
         onClose={() => setDriverModalOpen(false)}
         targetOrder={selectedOrderForDriver}
         onSuccess={() => {
-          loadOrders(); // Recarrega a tela após despachar
+          loadOrders(); // Recarrega tudo após o despacho
           setDriverModalOpen(false);
         }}
       />

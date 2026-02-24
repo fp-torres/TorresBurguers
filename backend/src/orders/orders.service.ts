@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, MoreThanOrEqual, IsNull } from 'typeorm'; // <--- Adicionado IsNull
+import { Repository, In, MoreThanOrEqual, IsNull, Not } from 'typeorm'; 
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto'; 
 import { Order, OrderStatus, OrderType, PaymentStatus } from './entities/order.entity';
@@ -27,6 +27,7 @@ export class OrdersService {
     private readonly storeService: StoreService,
   ) {}
 
+  // Lógica simples de frete baseada no nome do bairro
   private calculateDeliveryFee(neighborhood: string): { fee: number, time: string } {
     const bairro = neighborhood ? neighborhood.toLowerCase() : '';
     if (bairro.includes('centro') || bairro.includes('lapa')) return { fee: 5.00, time: '30-40 min' };
@@ -38,15 +39,16 @@ export class OrdersService {
 
   async create(createOrderDto: CreateOrderDto, userId: number) {
     const isOpen = await this.storeService.isOpen();
-    if (!isOpen) throw new BadRequestException('A loja está fechada.');
+    if (!isOpen) throw new BadRequestException('A loja está fechada no momento.');
 
     const order = new Order();
     order.user = { id: userId } as any; 
     order.status = OrderStatus.PENDING;
     
+    // Tratamento de Pagamento
     if (createOrderDto.paymentId) {
       order.payment_status = PaymentStatus.PAID;
-      // @ts-ignore
+      // @ts-ignore: Propriedade dinâmica se não estiver na entidade tipada
       order.payment_id = createOrderDto.paymentId; 
     } else {
       order.payment_status = PaymentStatus.PENDING;
@@ -56,24 +58,27 @@ export class OrdersService {
     order.total_price = 0;
     order.payment_method = createOrderDto.paymentMethod;
     order.type = createOrderDto.type;
-    
     order.change_for = (createOrderDto.changeFor || null) as any;
 
+    // Tratamento de Endereço e Frete
     if (order.type === OrderType.DELIVERY) {
-      if (!createOrderDto.addressId) throw new BadRequestException('Endereço obrigatório');
+      if (!createOrderDto.addressId) throw new BadRequestException('Endereço obrigatório para delivery.');
+      
       const address = await this.addressRepository.findOne({ where: { id: createOrderDto.addressId } });
-      if (!address) throw new NotFoundException('Endereço não encontrado');
+      if (!address) throw new NotFoundException('Endereço não encontrado.');
       
       order.address = address;
       const logistics = this.calculateDeliveryFee(address.neighborhood || '');
       order.delivery_fee = logistics.fee;
       order.estimated_delivery_time = logistics.time;
     } else {
+      // Retirada no balcão
       order.address = null;
       order.delivery_fee = 0;
       order.estimated_delivery_time = '15-20 min';
     }
 
+    // Processamento dos Itens
     const productIds = createOrderDto.items.map(i => i.productId);
     const products = await this.productRepository.findBy({ id: In(productIds) });
 
@@ -89,18 +94,36 @@ export class OrdersService {
       orderItem.meat_point = itemDto.meatPoint || null;
       orderItem.removed_ingredients = itemDto.removedIngredients || []; 
       
-      let price = Number(product.price);
+      let itemPrice = Number(product.price);
+      
+      // Adicionais
       if (itemDto.addonIds?.length) {
         const addons = await this.addonRepository.findBy({ id: In(itemDto.addonIds) });
         orderItem.addons = addons;
-        price += addons.reduce((sum, a) => sum + Number(a.price), 0);
+        itemPrice += addons.reduce((sum, a) => sum + Number(a.price), 0);
       }
+      
+      // Associa item ao pedido
+      orderItem.order = order; 
       order.items.push(orderItem);
-      order.total_price += price * itemDto.quantity;
+      order.total_price += itemPrice * itemDto.quantity;
     }
 
+    // Adiciona frete ao total
     order.total_price += order.delivery_fee;
-    return this.orderRepository.save(order);
+    
+    // Salva o pedido (cascade vai salvar os itens)
+    const savedOrder = await this.orderRepository.save(order);
+
+    // --- CORREÇÃO DO ERRO CIRCULAR ---
+    // Removemos a referência 'order' de dentro dos itens antes de retornar o JSON
+    if (savedOrder.items) {
+      savedOrder.items.forEach(item => {
+        delete (item as any).order; 
+      });
+    }
+
+    return savedOrder;
   }
 
   async findAll() {
@@ -129,10 +152,12 @@ export class OrdersService {
     const order = await this.findOne(orderId);
     if (!order) throw new NotFoundException('Pedido não encontrado');
 
+    // Validação de permissão
     if (user.role !== 'ADMIN' && order.user.id !== user.id) {
       throw new ForbiddenException('Você não tem permissão para cancelar este pedido.');
     }
 
+    // Regra de negócio: Cliente só cancela se ainda estiver PENDING
     if (user.role !== 'ADMIN' && order.status !== OrderStatus.PENDING) {
       throw new BadRequestException('O pedido já está em preparo e não pode mais ser cancelado pelo cliente.');
     }
@@ -150,57 +175,80 @@ export class OrdersService {
 
   // --- MÉTODOS DE DRIVER / LOGÍSTICA ---
 
-  // Atribuir Motoboy
+  // 1. Atribuir Motoboy e Mudar Status
   async assignDriver(orderId: number, driverId: number) {
     const order = await this.findOne(orderId);
     if (!order) throw new NotFoundException('Pedido não encontrado');
 
+    // Verifica se o usuário é realmente um motoboy
     const driver = await this.userRepository.findOne({ where: { id: driverId, role: UserRole.COURIER } });
-    if (!driver) throw new NotFoundException('Motoboy não encontrado ou usuário não é motoboy');
+    if (!driver) throw new NotFoundException('Motoboy não encontrado ou usuário não possui cargo de entregador.');
 
     order.driver = driver;
+    // Ao atribuir, já muda para 'DELIVERING' para agilizar
+    order.status = OrderStatus.DELIVERING; 
+    
     return this.orderRepository.save(order);
   }
 
-  // Listar Motoboys Disponíveis
+  // 2. Listar Motoboys Disponíveis
   async getAvailableDrivers() {
     return this.userRepository.find({
       where: { role: UserRole.COURIER },
-      select: ['id', 'name', 'phone', 'avatar']
+      select: ['id', 'name', 'phone', 'avatar'] // Retorna apenas dados seguros
     });
   }
 
-  // Sugestão de Pedidos Próximos (Lógica Simples por Bairro)
+  // 3. Sugestão de Pedidos Próximos (Lógica por Bairro COM LOGS)
   async getNearbyOrders(orderId: number) {
+    console.log(`--- DEBUG LOGÍSTICA: Buscando vizinhos para o Pedido #${orderId} ---`);
+
     const targetOrder = await this.findOne(orderId);
-    if (!targetOrder || !targetOrder.address) return [];
+    
+    // Se não for delivery ou não tiver endereço, não tem vizinhos
+    if (!targetOrder || targetOrder.type !== OrderType.DELIVERY || !targetOrder.address) {
+      console.log('-> Pedido alvo não é delivery ou não tem endereço.');
+      return [];
+    }
 
     const neighborhood = targetOrder.address.neighborhood;
+    console.log(`-> Bairro Alvo: "${neighborhood}"`);
     
-    return this.orderRepository.find({
+    // Busca pedidos que:
+    // 1. Estão prontos para entrega (READY_FOR_PICKUP)
+    // 2. São do tipo Delivery
+    // 3. São do MESMO bairro
+    // 4. Ainda NÃO têm motoboy (driver is null)
+    // 5. NÃO são o próprio pedido alvo
+    const nearbyOrders = await this.orderRepository.find({
       where: {
         status: OrderStatus.READY_FOR_PICKUP,
         type: OrderType.DELIVERY,
         address: { neighborhood: neighborhood }, 
-        driver: IsNull(), // <--- CORREÇÃO AQUI: Usando IsNull() em vez de null
+        driver: IsNull(), 
+        id: Not(orderId) 
       },
       relations: ['address', 'user'],
-    }).then(orders => orders.filter(o => o.id !== orderId));
+    });
+
+    console.log(`-> Encontrados: ${nearbyOrders.length} vizinhos disponíveis.`);
+    if (nearbyOrders.length > 0) {
+       // CORREÇÃO: Usando ?. para evitar erro caso address seja null
+       nearbyOrders.forEach(o => console.log(`   * Pedido #${o.id} - ${o.address?.neighborhood}`));
+    }
+
+    return nearbyOrders;
   }
 
+  // --- DASHBOARD (BI) ---
   async getDashboardSummary() {
     const totalOrders = await this.orderRepository.count({
       where: { 
-        status: In([
-          OrderStatus.PENDING, 
-          OrderStatus.PREPARING, 
-          OrderStatus.READY_FOR_PICKUP, 
-          OrderStatus.DELIVERING,       
-          OrderStatus.DONE              
-        ]) 
+        status: Not(OrderStatus.CANCELED)
       }
     });
 
+    // Soma total de pedidos não cancelados
     const revenueQuery = await this.orderRepository
       .createQueryBuilder('order')
       .select('SUM(order.total_price)', 'total')
@@ -212,16 +260,11 @@ export class OrdersService {
     const pendingOrders = await this.orderRepository.count({ where: { status: OrderStatus.PENDING } });
     const preparingOrders = await this.orderRepository.count({ where: { status: OrderStatus.PREPARING } });
     
+    // Pedidos ativos com pagamento pendente
     const pendingPayments = await this.orderRepository.count({ 
       where: { 
         payment_status: PaymentStatus.PENDING,
-        status: In([
-          OrderStatus.PENDING, 
-          OrderStatus.PREPARING, 
-          OrderStatus.READY_FOR_PICKUP, 
-          OrderStatus.DELIVERING, 
-          OrderStatus.DONE
-        ])
+        status: Not(OrderStatus.CANCELED)
       } 
     });
 
@@ -234,18 +277,24 @@ export class OrdersService {
     };
   }
 
+  // Gráficos para o Admin
   async getChartData() {
+    // Últimos 7 dias
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
     const orders = await this.orderRepository.find({
-      where: { created_at: MoreThanOrEqual(sevenDaysAgo) },
+      where: { 
+        created_at: MoreThanOrEqual(sevenDaysAgo),
+        status: Not(OrderStatus.CANCELED) 
+      },
       relations: ['items', 'items.product'],
       order: { created_at: 'ASC' }
     });
 
+    // Inicializa datas com 0
     const salesByDate: Record<string, number> = {};
-    for (let i = 0; i < 7; i++) {
+    for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const key = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
@@ -255,27 +304,28 @@ export class OrdersService {
     const topProducts: Record<string, number> = {};
 
     orders.forEach(order => {
-      if (order.status === OrderStatus.CANCELED) return;
-      
       const dateKey = new Date(order.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+      
+      // Soma Receita
       if (salesByDate[dateKey] !== undefined) {
         salesByDate[dateKey] += Number(order.total_price);
       }
 
+      // Soma Produtos
       order.items.forEach(item => {
         const prodName = item.product?.name || 'Item Removido';
         topProducts[prodName] = (topProducts[prodName] || 0) + item.quantity;
       });
     });
 
+    // Formata para o Front (Recharts, ApexCharts, etc)
     const revenueChart = Object.entries(salesByDate)
-      .map(([date, total]) => ({ date, total }))
-      .reverse();
+      .map(([date, total]) => ({ date, total }));
       
     const productsChart = Object.entries(topProducts)
       .map(([name, quantity]) => ({ name, quantity }))
       .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 5);
+      .slice(0, 5); // Top 5
       
     return { revenueChart, productsChart };
   }

@@ -30,6 +30,15 @@ export class Address {
   @Column({ nullable: true })
   nickname: string;
 
+  // --- NOVOS CAMPOS PARA MAPA E ROTA ---
+  // Necessários para o cálculo de distância e visualização no mapa
+  @Column({ type: 'float', nullable: true })
+  latitude: number;
+
+  @Column({ type: 'float', nullable: true })
+  longitude: number;
+  // -------------------------------------
+
   @ManyToOne(() => User, (user) => user.addresses, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;
