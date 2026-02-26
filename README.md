@@ -14,7 +14,7 @@
 </div>
 
 <p align="center">
-  <strong>Uma plataforma de delivery completa, simulando um ambiente de produção real com pagamentos, otimização de performance e marketing dinâmico.</strong>
+  <strong>Uma plataforma de delivery completa, simulando um ambiente de produção real com pagamentos, otimização de performance e logística avançada.</strong>
 </p>
 
 <p align="center">
@@ -31,9 +31,9 @@
 
 ## 📋 Sobre o Projeto
 
-O **TorresBurgers** nasceu com o objetivo de criar uma solução que vai além do CRUD básico. Ele resolve problemas reais de aplicações de delivery: **escalabilidade de imagens**, **gestão de estados complexos (pedidos)** e **integrações financeiras seguras**.
+O **TorresBurgers** nasceu com o objetivo de criar uma solução que vai além do CRUD básico. Ele resolve problemas reais de aplicações de delivery: **escalabilidade de imagens**, **gestão de estados complexos (pedidos)**, **integrações financeiras seguras** e **logística de entregas**.
 
-O sistema conta com um **Painel Administrativo** para gestão do restaurante, uma **Loja Web** para os clientes e um **App Mobile** para pedidos on-the-go.
+O sistema conta com um **Painel Administrativo** para gestão do restaurante e despacho de pedidos, uma **Loja Web** para os clientes e um **App Mobile** para pedidos on-the-go.
 
 ---
 
@@ -44,10 +44,10 @@ O sistema conta com um **Painel Administrativo** para gestão do restaurante, um
 | <img src="https://via.placeholder.com/400x250?text=Home+Dark+Mode" width="400" /> | <img src="https://via.placeholder.com/400x250?text=Dashboard+Admin" width="400" /> |
 | *Layout responsivo e imersivo* | *KPIs e Gestão de Pedidos* |
 
-| **Checkout & Pagamento** | **Mobile App** |
+| **Logística de Entrega** | **Mobile App** |
 |:---:|:---:|
-| <img src="https://via.placeholder.com/400x250?text=Checkout+Pix" width="400" /> | <img src="https://via.placeholder.com/400x250?text=Mobile+App" width="400" /> |
-| *Integração real com Mercado Pago* | *Experiência nativa com Expo* |
+| <img src="https://via.placeholder.com/400x250?text=Logistica+Entrega" width="400" /> | <img src="https://via.placeholder.com/400x250?text=Mobile+App" width="400" /> |
+| *Despacho inteligente e rotas* | *Experiência nativa com Expo* |
 
 ---
 
@@ -64,6 +64,10 @@ O sistema conta com um **Painel Administrativo** para gestão do restaurante, um
 - **Gestão de Cardápio:** Criação de produtos com uploads otimizados e controle de estoque.
 - **Kanban de Pedidos:** Fluxo visual de status (Pendente ➝ Preparo ➝ Entrega ➝ Concluído).
 - **Gestão de Time:** Controle de permissões (Admin, Cozinha, Motoboy).
+- **Logística de Entregas:**
+    - Atribuição inteligente de motoboys.
+    - Sugestão de rotas baseada em vizinhança.
+    - Visualização clara do pedido principal e entregas agrupadas.
 
 ### 🔧 Sistema & Backend
 - **Otimização de Mídia (Pipeline Sharp):**
@@ -75,6 +79,9 @@ O sistema conta com um **Painel Administrativo** para gestão do restaurante, um
   - Checkout transparente (Cartão de Crédito).
   - PIX com geração de QR Code e Copy&Paste.
   - Webhooks para atualização de status (simulado).
+- **Logística:**
+  - Backend calcula pedidos vizinhos para otimizar rotas.
+  - Atribuição de entregadores via API.
 
 ---
 
@@ -117,11 +124,4 @@ npm install
 npm run dev
 3. Migração de Imagens (Opcional)Caso já existam imagens pesadas no banco, execute a rota de manutenção para otimizar tudo:BashPOST http://localhost:3000/maintenance/optimize-images
 Auth: Bearer {TOKEN_ADMIN}
-🔐 Variáveis de AmbienteCrie um arquivo .env na raiz do /backend com as seguintes chaves:VariávelDescriçãoExemploDB_HOSTHost do Banco de DadoslocalhostDB_PORTPorta do Banco5432DB_USERNAMEUsuário do BancopostgresDB_PASSWORDSenha do BancoadminDB_DATABASENome do BancotorresburgersJWT_SECRETChave para assinar Tokensminha_chave_secretaMP_ACCESS_TOKENToken de Teste do Mercado PagoTEST-0000...FOOTBALL_API_KEY(Opcional) API de Futebolapi_key_rapidapi🛣 Roadmap[x] CRUD Produtos e Usuários[x] Autenticação JWT e RBAC (Roles)[x] Checkout Mercado Pago (Sandbox)[x] Dark Mode Completo[x] Otimização de Imagens (Backend)[ ] Websockets para status do pedido em tempo real[ ] Testes Unitários (Jest)[ ] Integração com ViaCEP para endereço[ ] Dashboard Financeiro Avançado🤝 ContribuiçãoContribuições são bem-vindas! Se você tiver uma ideia para melhorar o app:Faça um Fork do projetoCrie uma Branch para sua Feature (git checkout -b feature/Incrível)Faça o Commit (git commit -m 'Add some Incrível')Push para a Branch (git push origin feature/Incrível)Abra um Pull Request
-
-👤 Autor
-Felipe Torres (fp-torres)
-
-Desenvolvedor Full Stack 🚀
-
-Foco: Clean Code, Performance Web, Arquitetura Escalável e UX.
+🔐 Variáveis de AmbienteCrie um arquivo .env na raiz do /backend com as seguintes chaves:VariávelDescriçãoExemploDB_HOSTHost do Banco de DadoslocalhostDB_PORTPorta do Banco5432DB_USERNAMEUsuário do BancopostgresDB_PASSWORDSenha do BancoadminDB_DATABASENome do BancotorresburgersJWT_SECRETChave para assinar Tokensminha_chave_secretaMP_ACCESS_TOKENToken de Teste do Mercado PagoTEST-0000...FOOTBALL_API_KEY(Opcional) API de Futebolapi_key_rapidapi🛣 Roadmap[x] CRUD Produtos e Usuários[x] Autenticação JWT e RBAC (Roles)[x] Checkout Mercado Pago (Sandbox)[x] Dark Mode Completo[x] Otimização de Imagens (Backend)[x] Logística de Entregas e Despacho[ ] Websockets para status do pedido em tempo real[ ] Testes Unitários (Jest)[ ] Integração com ViaCEP para endereço[ ] Dashboard Financeiro Avançado🤝 ContribuiçãoContribuições são bem-vindas! Se você tiver uma ideia para melhorar o app:Faça um Fork do projetoCrie uma Branch para sua Feature (git checkout -b feature/Incrível)Faça o Commit (git commit -m 'Add some Incrível')Push para a Branch (git push origin feature/Incrível)Abra um Pull Request👤 AutorFelipe Torres (fp-torres)Desenvolvedor Full Stack 🚀Foco: Clean Code, Performance Web, Arquitetura Escalável e UX.
