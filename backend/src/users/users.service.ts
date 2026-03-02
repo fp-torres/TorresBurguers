@@ -13,30 +13,61 @@ export class UsersService {
     private usersRepository: Repository<User>,
   ) {}
 
-  async findOneByEmail(email: string) {
-    return this.usersRepository.findOneBy({ email });
-  }
-
   async create(createUserDto: CreateUserDto) {
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(createUserDto.password, saltRounds);
 
-    // --- CORREÇÃO AQUI ---
-    // Usamos o spread operator (...createUserDto) para garantir que
-    // campos opcionais como 'avatar' e 'phone' sejam copiados automaticamente.
     const newUser = this.usersRepository.create({
-      ...createUserDto, 
-      password_hash: passwordHash, // Mapeia a senha crua para o hash
+      ...createUserDto,
+      password_hash: passwordHash,
     });
 
-    // Removemos a senha crua do objeto antes de salvar (boas práticas)
+    // Removemos o campo password cru do objeto antes de salvar (segurança)
     delete (newUser as any).password;
 
     return this.usersRepository.save(newUser);
   }
 
   findAll() {
-    return this.usersRepository.find({ order: { created_at: 'DESC' } });
+    return this.usersRepository.find({ 
+      order: { created_at: 'DESC' } 
+    });
+  }
+
+  findOne(id: number) {
+    return this.usersRepository.findOneBy({ id });
+  }
+
+  // ⚠️ IMPORTANTE: Essa é a função usada pelo Login
+  async findOneByEmail(email: string) {
+    return this.usersRepository.findOne({ 
+      where: { email }
+      // DICA: Se na sua Entity o password_hash estiver como { select: false },
+      // você precisaria adicionar: select: ['id', 'email', 'password_hash', 'role', 'name']
+    });
+  }
+
+  async update(id: number, updateUserDto: UpdateUserDto) {
+    const user = await this.findOne(id);
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    const updateData: any = { ...updateUserDto };
+
+    // Se o usuário mandou uma nova senha, criptografa ela
+    if (updateUserDto.password) {
+      const saltRounds = 10;
+      updateData.password_hash = await bcrypt.hash(updateUserDto.password, saltRounds);
+      delete updateData.password; 
+    }
+
+    // Se não mandou avatar (undefined), deletamos a chave para não apagar a foto atual
+    if (updateData.avatar === undefined) {
+      delete updateData.avatar;
+    }
+
+    await this.usersRepository.update(id, updateData);
+    
+    return this.findOne(id);
   }
 
   // Buscar Usuários na Lixeira
@@ -48,37 +79,6 @@ export class UsersService {
     });
   }
 
-  findOne(id: number) {
-    return this.usersRepository.findOneBy({ id });
-  }
-
-  async update(id: number, updateUserDto: UpdateUserDto) {
-    const user = await this.findOne(id);
-    if (!user) throw new NotFoundException('Usuário não encontrado');
-
-    const updateData: any = { ...updateUserDto };
-
-    // Se houver senha nova, criptografa antes de salvar
-    if (updateUserDto.password) {
-      const saltRounds = 10;
-      updateData.password_hash = await bcrypt.hash(updateUserDto.password, saltRounds);
-      delete updateData.password; // Remove o campo password cru
-    }
-
-    // Lógica para Avatar:
-    // Se updateData.avatar vier undefined (não enviou foto), removemos a chave
-    // para não apagar a foto que já existe no banco.
-    if (updateData.avatar === undefined) {
-      delete updateData.avatar;
-    }
-
-    await this.usersRepository.update(id, updateData);
-    
-    // Retorna o usuário atualizado
-    return this.findOne(id);
-  }
-
-  // Enviar para Lixeira (Soft Delete)
   remove(id: number) {
     return this.usersRepository.softDelete(id);
   }
