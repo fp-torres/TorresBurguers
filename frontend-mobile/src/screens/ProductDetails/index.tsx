@@ -4,6 +4,7 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from '@expo/vector-icons/Feather';
 import { AuthContext } from '../../contexts/AuthContext';
+// Importamos a lista de rotas para o app saber pra onde pode ir
 import { AppStackParamList } from '../../routes/app.routes'; 
 
 type SignInRouteProp = {
@@ -15,6 +16,8 @@ type SignInRouteProp = {
 export default function SignIn() {
   const { signIn } = useContext(AuthContext);
   const route = useRoute<SignInRouteProp>();
+  
+  // Navegação fortemente tipada
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   
   const loginType = route.params?.type || 'cliente';
@@ -23,12 +26,13 @@ export default function SignIn() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // --- AQUI ESTÁ A BLINDAGEM DO BOTÃO VOLTAR ---
+  // --- BLINDAGEM DO BOTÃO VOLTAR ---
   function handleGoBack() {
     if (navigation.canGoBack()) {
       navigation.goBack();
     } else {
-      navigation.navigate('Welcome'); // Se não tiver histórico, força a ida pra Welcome
+      // Se não tiver histórico (por causa do cache), força a ida pra Welcome
+      navigation.navigate('Welcome'); 
     }
   }
 
@@ -41,10 +45,13 @@ export default function SignIn() {
     setLoading(true);
     try {
       await signIn(email, password);
+      
+      // Logou com sucesso? Volta para a vitrine limpando o histórico!
       navigation.reset({
         index: 0,
         routes: [{ name: 'Home' }],
       });
+      
     } catch (error) {
       setLoading(false); 
     }
@@ -57,7 +64,7 @@ export default function SignIn() {
     >
       <View className="flex-1 px-6 justify-center">
         
-        {/* Usando a nossa nova função segura aqui */}
+        {/* Botão de Voltar com a função segura aplicada */}
         <TouchableOpacity 
           className="absolute top-16 left-6 w-10 h-10 bg-slate-800 rounded-full justify-center items-center z-10"
           onPress={handleGoBack}

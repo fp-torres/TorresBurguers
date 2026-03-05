@@ -1,41 +1,13 @@
-import React, { useContext, useState } from 'react';
-import { View, StatusBar, ActivityIndicator } from 'react-native';
+import React, { useState } from 'react';
+import { StatusBar } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { AuthProvider, AuthContext } from './src/contexts/AuthContext';
+import { AuthProvider } from './src/contexts/AuthContext';
 
-// Importando as nossas telas separadas!
-import SignIn from './src/screens/SignIn';
-import Home from './src/screens/home';
+// AQUI ESTÁ A CORREÇÃO: Importamos o nosso Maestro de rotas!
+import Routes from './src/routes'; 
 
-const Stack = createNativeStackNavigator();
-
-// --- GERENCIADOR DE ROTAS INTELIGENTE ---
-function Routes() {
-  const { signed, loading } = useContext(AuthContext);
-
-  if (loading) {
-    return (
-      <View className="flex-1 justify-center items-center bg-slate-900">
-        <ActivityIndicator size="large" color="#ea580c" />
-      </View>
-    );
-  }
-
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {signed ? (
-        <Stack.Screen name="Home" component={Home} />
-      ) : (
-        <Stack.Screen name="SignIn" component={SignIn} />
-      )}
-    </Stack.Navigator>
-  );
-}
-
-// --- APP PRINCIPAL ---
 export default function App() {
   const [isDark] = useState(true); 
 

@@ -1,6 +1,6 @@
 import { 
   Entity, PrimaryGeneratedColumn, Column, 
-  CreateDateColumn, UpdateDateColumn, DeleteDateColumn, // <--- Importado
+  CreateDateColumn, UpdateDateColumn, DeleteDateColumn, 
   OneToMany, ManyToMany, JoinTable 
 } from 'typeorm';
 import { OrderItem } from '../../orders/entities/order-item.entity';
