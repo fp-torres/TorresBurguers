@@ -4,8 +4,7 @@ import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider } from './src/contexts/AuthContext';
-
-// AQUI ESTÁ A CORREÇÃO: Importamos o nosso Maestro de rotas!
+import { CartProvider } from './src/contexts/CartContext'; 
 import Routes from './src/routes'; 
 
 export default function App() {
@@ -16,7 +15,9 @@ export default function App() {
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
       <NavigationContainer theme={isDark ? DarkTheme : DefaultTheme}>
         <AuthProvider>
-          <Routes />
+          <CartProvider>
+            <Routes />
+          </CartProvider>
         </AuthProvider>
       </NavigationContainer>
     </SafeAreaProvider>
