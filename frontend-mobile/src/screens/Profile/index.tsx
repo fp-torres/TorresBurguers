@@ -163,7 +163,7 @@ export default function Profile() {
           <View>
             <TouchableOpacity 
               className="w-full bg-orange-50 border border-orange-200 dark:bg-orange-600/10 dark:border-orange-600/30 rounded-xl py-4 px-4 flex-row justify-between items-center active:scale-95 mb-4"
-              onPress={() => Alert.alert('Em breve!', 'Tela de pedidos em construção...')} 
+              onPress={() => navigation.navigate('MyOrders')} 
             >
               <View className="flex-row items-center">
                 <Feather name="shopping-bag" size={20} color="#f97316" />

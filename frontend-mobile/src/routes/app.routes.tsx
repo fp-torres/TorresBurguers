@@ -10,7 +10,8 @@ import Checkout from '../screens/Checkout';
 import AddAddress from '../screens/AddAddress';
 import Profile from '../screens/Profile'; 
 import SignUp from '../screens/SignUp'; 
-import ForgotPassword from '../screens/ForgotPassword';
+import ForgotPassword from '../screens/ForgotPassword'; 
+import MyOrders from '../screens/MyOrders'; 
 
 export type AppStackParamList = {
   Home: undefined;
@@ -23,6 +24,7 @@ export type AppStackParamList = {
   Profile: undefined; 
   SignUp: undefined; 
   ForgotPassword: undefined; 
+  MyOrders: undefined; 
 };
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -43,6 +45,7 @@ export default function AppRoutes() {
       <Stack.Screen name="Profile" component={Profile} />
       <Stack.Screen name="SignUp" component={SignUp} />
       <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
+      <Stack.Screen name="MyOrders" component={MyOrders} />
     </Stack.Navigator>
   );
 }
