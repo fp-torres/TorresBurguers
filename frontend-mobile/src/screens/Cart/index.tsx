@@ -34,24 +34,35 @@ export default function Cart() {
     navigation.navigate('Checkout');
   }
 
+  // --- FUNÇÃO INTELIGENTE DE IMAGEM ---
+  const getImageUrl = (imagePath: string | null) => {
+    if (!imagePath) return 'https://via.placeholder.com/100?text=Sem+Foto';
+    
+    let cleanPath = imagePath.replace(/^\//, ''); 
+    if (!cleanPath.startsWith('uploads/')) {
+      cleanPath = `uploads/${cleanPath}`;
+    }
+    
+    const base = api.defaults.baseURL?.replace(/\/$/, '') || '';
+    return `${base}/${cleanPath}`;
+  };
+
   const renderCartItem = ({ item }: { item: CartItem }) => (
-    <View className="bg-slate-800 p-4 rounded-2xl mb-4 flex-row items-center shadow-md">
+    <View className="bg-white dark:bg-slate-800 p-4 rounded-2xl mb-4 flex-row items-center shadow-sm dark:shadow-md border border-gray-100 dark:border-transparent">
+      
+      {/* Imagem usando a função corrigida */}
       <Image 
-        source={{ 
-          uri: item.product.image 
-            ? `${api.defaults.baseURL}/${item.product.image.replace(/^\//, '')}` 
-            : 'https://via.placeholder.com/100?text=Sem+Foto' 
-        }} 
-        className="w-20 h-20 rounded-xl bg-slate-700"
+        source={{ uri: getImageUrl(item.product.image) }} 
+        className="w-20 h-20 rounded-xl bg-gray-200 dark:bg-slate-700"
         resizeMode="cover"
       />
       
       <View className="flex-1 ml-4 justify-center">
         <View className="flex-row justify-between items-start">
-          <Text className="text-white font-bold text-lg flex-1 mr-2" numberOfLines={2}>
+          <Text className="text-slate-900 dark:text-white font-bold text-lg flex-1 mr-2" numberOfLines={2}>
             {item.quantity}x {item.product.name}
           </Text>
-          <TouchableOpacity onPress={() => removeItemFromCart(item.id)} className="p-2 bg-slate-900 rounded-lg">
+          <TouchableOpacity onPress={() => removeItemFromCart(item.id)} className="p-2 bg-red-50 dark:bg-slate-900 rounded-lg">
             <Feather name="trash-2" size={20} color="#ef4444" />
           </TouchableOpacity>
         </View>
@@ -59,7 +70,7 @@ export default function Cart() {
         {item.addons.length > 0 && (
           <View className="mt-1 mb-2">
             {item.addons.map((addonItem, index) => (
-              <Text key={index} className="text-slate-400 text-xs">
+              <Text key={index} className="text-slate-500 dark:text-slate-400 text-xs">
                 + {addonItem.quantity}x {addonItem.addon.name}
               </Text>
             ))}
@@ -74,15 +85,15 @@ export default function Cart() {
   );
 
   return (
-    <View className="flex-1 bg-slate-900 pt-16">
+    <View className="flex-1 bg-gray-50 dark:bg-slate-900 pt-16">
       <View className="flex-row items-center px-6 mb-6">
         <TouchableOpacity 
           onPress={() => navigation.goBack()}
-          className="w-10 h-10 bg-slate-800 rounded-full justify-center items-center"
+          className="w-10 h-10 bg-white dark:bg-slate-800 rounded-full justify-center items-center shadow-sm dark:shadow-none border border-gray-200 dark:border-transparent"
         >
           <Feather name="arrow-left" size={24} color="#f97316" />
         </TouchableOpacity>
-        <Text className="text-2xl font-bold text-white ml-4">Seu Pedido</Text>
+        <Text className="text-2xl font-bold text-slate-900 dark:text-white ml-4">Seu Pedido</Text>
       </View>
 
       <FlatList
@@ -93,8 +104,9 @@ export default function Cart() {
         contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 120 }}
         ListEmptyComponent={
           <View className="items-center justify-center mt-20">
-            <Feather name="shopping-bag" size={64} color="#475569" className="mb-4" />
-            <Text className="text-slate-400 text-lg text-center">
+            {/* Ícone vazio muda de cor no Dark Mode via classe */}
+            <Feather name="shopping-bag" size={64} className="text-gray-400 dark:text-slate-600 mb-4" />
+            <Text className="text-slate-500 dark:text-slate-400 text-lg text-center">
               Seu carrinho está vazio.{"\n"}Que tal adicionar um lanche? 🍔
             </Text>
           </View>
@@ -102,10 +114,10 @@ export default function Cart() {
       />
 
       {cart.length > 0 && (
-        <View className="absolute bottom-0 w-full bg-slate-800 border-t border-slate-700 p-6 pb-8">
+        <View className="absolute bottom-0 w-full bg-white dark:bg-slate-800 border-t border-gray-200 dark:border-slate-700 p-6 pb-8 shadow-lg">
           <View className="flex-row justify-between mb-4">
-            <Text className="text-slate-300 text-lg">Total do pedido:</Text>
-            <Text className="text-white font-bold text-2xl">{formatPrice(totalCartValue)}</Text>
+            <Text className="text-slate-600 dark:text-slate-300 text-lg">Total do pedido:</Text>
+            <Text className="text-slate-900 dark:text-white font-bold text-2xl">{formatPrice(totalCartValue)}</Text>
           </View>
 
           <TouchableOpacity 

@@ -6,6 +6,8 @@ import Feather from '@expo/vector-icons/Feather';
 
 import { AuthContext } from '../../contexts/AuthContext';
 import { CartContext } from '../../contexts/CartContext'; 
+// AQUI: Importamos o nosso contexto de Tema
+import { ThemeContext } from '../../contexts/ThemeContext'; 
 import api from '../../services/api';
 import { AppStackParamList } from '../../routes/app.routes'; 
 
@@ -20,7 +22,6 @@ interface Product {
   available: boolean;
 }
 
-// Mapeamento das categorias baseado no seu backend
 const CATEGORIES = [
   { id: 'todos', label: 'Todos', icon: '🍔' },
   { id: 'combos', label: 'Combos', icon: '🍟' },
@@ -35,6 +36,8 @@ const CATEGORIES = [
 export default function Home() {
   const { signOut, user } = useContext(AuthContext);
   const { cart, totalCartValue } = useContext(CartContext); 
+  // Consumindo o Tema atual e a função de trocar
+  const { theme, toggleTheme } = useContext(ThemeContext);
   
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
@@ -47,7 +50,6 @@ export default function Home() {
     fetchProducts();
   }, []);
 
-  // Quando os produtos ou a categoria ativa mudam, a gente filtra a lista
   useEffect(() => {
     if (activeCategory === 'todos') {
       setFilteredProducts(products);
@@ -59,7 +61,6 @@ export default function Home() {
   async function fetchProducts() {
     try {
       const response = await api.get('/products');
-      // Garante que só mostre produtos marcados como 'available' (disponíveis) no banco
       const availableProducts = response.data.filter((p: Product) => p.available);
       setProducts(availableProducts);
       setFilteredProducts(availableProducts);
@@ -75,37 +76,35 @@ export default function Home() {
     return Number(price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
-  // --- FUNÇÃO INTELIGENTE DE IMAGEM ---
-  // Garante que a rota /uploads exista e que não haja barras duplas //
   const getImageUrl = (imagePath: string | null) => {
     if (!imagePath) return 'https://via.placeholder.com/100?text=Sem+Foto';
     
-    let cleanPath = imagePath.replace(/^\//, ''); // Remove barra inicial se tiver
+    let cleanPath = imagePath.replace(/^\//, ''); 
     if (!cleanPath.startsWith('uploads/')) {
       cleanPath = `uploads/${cleanPath}`;
     }
     
-    // Se a base URL terminar com /, removemos para juntar perfeitamente
     const base = api.defaults.baseURL?.replace(/\/$/, '') || '';
     return `${base}/${cleanPath}`;
   };
 
   const renderProduct = ({ item }: { item: Product }) => (
     <TouchableOpacity 
-      className="bg-slate-800 p-4 rounded-2xl mb-4 flex-row items-center shadow-md active:scale-95"
+      // Repare como usamos bg-white para Light Mode e dark:bg-slate-800 para Dark Mode
+      className="bg-white dark:bg-slate-800 p-4 rounded-2xl mb-4 flex-row items-center shadow-sm dark:shadow-md border border-gray-100 dark:border-transparent active:scale-95"
       onPress={() => navigation.navigate('ProductDetails', { product_id: item.id })}
     >
       <Image 
         source={{ uri: getImageUrl(item.image) }} 
-        className="w-24 h-24 rounded-xl bg-slate-700"
+        className="w-24 h-24 rounded-xl bg-gray-200 dark:bg-slate-700"
         resizeMode="cover"
       />
       
       <View className="flex-1 ml-4 justify-center">
-        <Text className="text-white font-bold text-lg" numberOfLines={1}>
+        <Text className="text-slate-900 dark:text-white font-bold text-lg" numberOfLines={1}>
           {item.name}
         </Text>
-        <Text className="text-slate-400 text-sm mt-1 mb-2" numberOfLines={2}>
+        <Text className="text-slate-500 dark:text-slate-400 text-sm mt-1 mb-2" numberOfLines={2}>
           {item.description}
         </Text>
         
@@ -115,7 +114,7 @@ export default function Home() {
               <Text className="text-orange-500 font-bold text-lg mr-2">
                 {formatPrice(item.promotion_price)}
               </Text>
-              <Text className="text-slate-500 text-sm line-through">
+              <Text className="text-slate-400 dark:text-slate-500 text-sm line-through">
                 {formatPrice(item.price)}
               </Text>
             </>
@@ -130,41 +129,57 @@ export default function Home() {
   );
 
   return (
-    <View className="flex-1 bg-slate-900 pt-16">
+    // Fundo principal: cinza bem clarinho no Light, slate-900 no Dark
+    <View className="flex-1 bg-gray-50 dark:bg-slate-900 pt-16">
       
       {/* HEADER */}
-      <View className="flex-row justify-between items-center px-6 mb-6">
+      <View className="flex-row justify-between items-start px-6 mb-6">
         <View>
-          <Text className="text-2xl font-bold text-white">
+          <Text className="text-2xl font-bold text-slate-900 dark:text-white">
             Torres<Text className="text-orange-500">Burgers</Text>
           </Text>
           
           {user ? (
-            <Text className="text-lg text-slate-300 mt-1">
+            <Text className="text-lg text-slate-600 dark:text-slate-300 mt-1">
               E aí, <Text className="text-orange-500 font-bold">{user.name.split(' ')[0]}</Text>! 👋
             </Text>
           ) : (
-            <Text className="text-lg text-slate-300 mt-1">
+            <Text className="text-lg text-slate-600 dark:text-slate-300 mt-1">
               Bem-vindo(a) visitante! 🍔
             </Text>
           )}
         </View>
 
-        {user ? (
+        {/* Lado Direito do Header: Botão de Tema + Botão de Login */}
+        <View className="flex-row items-center">
+          {/* BOTÃO DE TROCAR TEMA */}
           <TouchableOpacity 
-            onPress={signOut}
-            className="bg-slate-800 px-4 py-2 rounded-lg border border-slate-700 active:scale-95"
+            onPress={toggleTheme}
+            className="mr-3 p-2 bg-gray-200 dark:bg-slate-800 rounded-full border border-gray-300 dark:border-slate-700 active:scale-95"
           >
-            <Text className="text-red-400 font-bold text-sm">Sair</Text>
+            <Feather 
+              name={theme === 'dark' ? 'sun' : 'moon'} 
+              size={20} 
+              color={theme === 'dark' ? '#fbbf24' : '#475569'} 
+            />
           </TouchableOpacity>
-        ) : (
-          <TouchableOpacity 
-            onPress={() => navigation.navigate('Welcome')}
-            className="bg-orange-600 px-5 py-2 rounded-lg active:scale-95 shadow-md"
-          >
-            <Text className="text-white font-bold text-sm">Entrar</Text>
-          </TouchableOpacity>
-        )}
+
+          {user ? (
+            <TouchableOpacity 
+              onPress={signOut}
+              className="bg-white dark:bg-slate-800 px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-700 active:scale-95"
+            >
+              <Text className="text-red-500 dark:text-red-400 font-bold text-sm">Sair</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity 
+              onPress={() => navigation.navigate('Welcome')}
+              className="bg-orange-600 px-5 py-2 rounded-lg active:scale-95 shadow-md"
+            >
+              <Text className="text-white font-bold text-sm">Entrar</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* FILTROS HORIZONTAIS */}
@@ -181,11 +196,15 @@ export default function Home() {
               className={`flex-row items-center px-4 py-2 rounded-full mr-3 border ${
                 activeCategory === cat.id 
                   ? 'bg-orange-600 border-orange-600' 
-                  : 'bg-slate-800 border-slate-700'
+                  : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700'
               }`}
             >
               <Text className="text-base mr-2">{cat.icon}</Text>
-              <Text className={`font-bold ${activeCategory === cat.id ? 'text-white' : 'text-slate-300'}`}>
+              <Text className={`font-bold ${
+                activeCategory === cat.id 
+                  ? 'text-white' 
+                  : 'text-slate-600 dark:text-slate-300'
+              }`}>
                 {cat.label}
               </Text>
             </TouchableOpacity>
@@ -193,7 +212,7 @@ export default function Home() {
         </ScrollView>
       </View>
 
-      <Text className="text-xl font-bold text-white px-6 mb-4">
+      <Text className="text-xl font-bold text-slate-900 dark:text-white px-6 mb-4">
         {activeCategory === 'todos' ? 'Nosso Cardápio' : CATEGORIES.find(c => c.id === activeCategory)?.label}
       </Text>
 
@@ -212,7 +231,7 @@ export default function Home() {
           ListEmptyComponent={
             <View className="items-center mt-10">
               <Text className="text-4xl mb-2">🍽️</Text>
-              <Text className="text-slate-400 text-center">
+              <Text className="text-slate-500 dark:text-slate-400 text-center">
                 Nenhum produto encontrado nesta categoria.
               </Text>
             </View>
@@ -223,7 +242,7 @@ export default function Home() {
       {/* BOTÃO FLUTUANTE DO CARRINHO */}
       {cart.length > 0 && (
         <TouchableOpacity 
-          className="absolute bottom-6 left-6 right-6 bg-orange-600 p-4 rounded-2xl flex-row justify-between items-center shadow-lg active:scale-95"
+          className="absolute bottom-6 left-6 right-6 bg-orange-600 p-4 rounded-2xl flex-row justify-between items-center shadow-lg shadow-orange-600/30 active:scale-95"
           onPress={() => navigation.navigate('Cart')}
         >
           <View className="flex-row items-center">
