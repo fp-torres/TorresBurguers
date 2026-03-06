@@ -6,7 +6,6 @@ import Feather from '@expo/vector-icons/Feather';
 import api from '../../services/api';
 import { AppStackParamList } from '../../routes/app.routes'; 
 
-// AQUI: Importamos o nosso CartContext para usar a função de adicionar
 import { CartContext } from '../../contexts/CartContext';
 
 interface Addon {
@@ -41,7 +40,6 @@ export default function ProductDetails() {
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const { product_id } = route.params;
 
-  // Consumindo a função de adicionar do nosso Contexto Global
   const { addItemToCart } = useContext(CartContext);
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -115,11 +113,9 @@ export default function ProductDetails() {
     return (basePrice + addonsTotal) * quantity;
   };
 
-  // --- NOVA FUNÇÃO: ADICIONAR AO CARRINHO ---
   function handleAddToCart() {
     if (!product) return;
 
-    // Montamos o "pacote" com as informações exatas que o CartContext espera
     const newItem = {
       product: {
         id: product.id,
@@ -133,10 +129,8 @@ export default function ProductDetails() {
       total: calculateTotal()
     };
 
-    // Dispara a ação de salvar na memória global
     addItemToCart(newItem);
 
-    // Avisa o usuário e volta para a vitrine
     Alert.alert('Sucesso!', 'Seu lanche foi adicionado ao carrinho! 🍔', [
       {
         text: 'Continuar Comprando',
@@ -144,6 +138,19 @@ export default function ProductDetails() {
       }
     ]);
   }
+
+  // --- FUNÇÃO INTELIGENTE DE IMAGEM ---
+  const getImageUrl = (imagePath: string | null) => {
+    if (!imagePath) return 'https://via.placeholder.com/400?text=Sem+Foto';
+    
+    let cleanPath = imagePath.replace(/^\//, ''); 
+    if (!cleanPath.startsWith('uploads/')) {
+      cleanPath = `uploads/${cleanPath}`;
+    }
+    
+    const base = api.defaults.baseURL?.replace(/\/$/, '') || '';
+    return `${base}/${cleanPath}`;
+  };
 
   if (loading || !product) {
     return (
@@ -157,11 +164,14 @@ export default function ProductDetails() {
     <View className="flex-1 bg-slate-900">
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         <View className="relative w-full h-72 bg-slate-800">
+          
+          {/* Imagem usando a função corrigida */}
           <Image 
-            source={{ uri: product.image ? `${api.defaults.baseURL}/${product.image}` : 'https://via.placeholder.com/400?text=Sem+Foto' }}
+            source={{ uri: getImageUrl(product.image) }}
             className="w-full h-full"
             resizeMode="cover"
           />
+          
           <TouchableOpacity 
             className="absolute top-12 left-4 w-10 h-10 bg-slate-900/80 rounded-full justify-center items-center"
             onPress={handleGoBack}
@@ -215,7 +225,6 @@ export default function ProductDetails() {
           </TouchableOpacity>
         </View>
 
-    
         <TouchableOpacity 
           className="flex-1 bg-orange-600 rounded-xl py-4 flex-row justify-center items-center active:scale-95"
           onPress={handleAddToCart}

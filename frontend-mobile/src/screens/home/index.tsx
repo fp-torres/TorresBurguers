@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Image, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, Image, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from '@expo/vector-icons/Feather';
@@ -20,11 +20,25 @@ interface Product {
   available: boolean;
 }
 
+// Mapeamento das categorias baseado no seu backend
+const CATEGORIES = [
+  { id: 'todos', label: 'Todos', icon: '🍔' },
+  { id: 'combos', label: 'Combos', icon: '🍟' },
+  { id: 'hamburgueres', label: 'Lanches', icon: '🍔' },
+  { id: 'entradas', label: 'Entradas', icon: '🧅' },
+  { id: 'acompanhamentos', label: 'Porções', icon: '🥓' },
+  { id: 'bebidas', label: 'Bebidas', icon: '🥤' },
+  { id: 'sobremesas', label: 'Sobremesas', icon: '🍦' },
+  { id: 'molhos', label: 'Molhos', icon: '🥣' },
+];
+
 export default function Home() {
   const { signOut, user } = useContext(AuthContext);
   const { cart, totalCartValue } = useContext(CartContext); 
   
   const [products, setProducts] = useState<Product[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+  const [activeCategory, setActiveCategory] = useState('todos');
   const [loading, setLoading] = useState(true);
   
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
@@ -33,10 +47,22 @@ export default function Home() {
     fetchProducts();
   }, []);
 
+  // Quando os produtos ou a categoria ativa mudam, a gente filtra a lista
+  useEffect(() => {
+    if (activeCategory === 'todos') {
+      setFilteredProducts(products);
+    } else {
+      setFilteredProducts(products.filter(item => item.category === activeCategory));
+    }
+  }, [activeCategory, products]);
+
   async function fetchProducts() {
     try {
       const response = await api.get('/products');
-      setProducts(response.data);
+      // Garante que só mostre produtos marcados como 'available' (disponíveis) no banco
+      const availableProducts = response.data.filter((p: Product) => p.available);
+      setProducts(availableProducts);
+      setFilteredProducts(availableProducts);
     } catch (error) {
       console.error('Erro ao buscar produtos:', error);
       Alert.alert('Erro', 'Não foi possível carregar o cardápio.');
@@ -46,10 +72,22 @@ export default function Home() {
   }
 
   const formatPrice = (price: number) => {
-    return Number(price).toLocaleString('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    });
+    return Number(price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
+  // --- FUNÇÃO INTELIGENTE DE IMAGEM ---
+  // Garante que a rota /uploads exista e que não haja barras duplas //
+  const getImageUrl = (imagePath: string | null) => {
+    if (!imagePath) return 'https://via.placeholder.com/100?text=Sem+Foto';
+    
+    let cleanPath = imagePath.replace(/^\//, ''); // Remove barra inicial se tiver
+    if (!cleanPath.startsWith('uploads/')) {
+      cleanPath = `uploads/${cleanPath}`;
+    }
+    
+    // Se a base URL terminar com /, removemos para juntar perfeitamente
+    const base = api.defaults.baseURL?.replace(/\/$/, '') || '';
+    return `${base}/${cleanPath}`;
   };
 
   const renderProduct = ({ item }: { item: Product }) => (
@@ -58,11 +96,7 @@ export default function Home() {
       onPress={() => navigation.navigate('ProductDetails', { product_id: item.id })}
     >
       <Image 
-        source={{ 
-          uri: item.image 
-            ? `${api.defaults.baseURL}/${item.image.replace(/^\//, '')}` 
-            : 'https://via.placeholder.com/100?text=Sem+Foto' 
-        }} 
+        source={{ uri: getImageUrl(item.image) }} 
         className="w-24 h-24 rounded-xl bg-slate-700"
         resizeMode="cover"
       />
@@ -96,9 +130,10 @@ export default function Home() {
   );
 
   return (
-    <View className="flex-1 p-6 bg-slate-900 pt-16">
+    <View className="flex-1 bg-slate-900 pt-16">
       
-      <View className="flex-row justify-between items-center mb-8">
+      {/* HEADER */}
+      <View className="flex-row justify-between items-center px-6 mb-6">
         <View>
           <Text className="text-2xl font-bold text-white">
             Torres<Text className="text-orange-500">Burgers</Text>
@@ -132,28 +167,60 @@ export default function Home() {
         )}
       </View>
 
-      <Text className="text-xl font-bold text-white mb-4">Nosso Cardápio</Text>
+      {/* FILTROS HORIZONTAIS */}
+      <View className="mb-6">
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 24 }}
+        >
+          {CATEGORIES.map((cat) => (
+            <TouchableOpacity
+              key={cat.id}
+              onPress={() => setActiveCategory(cat.id)}
+              className={`flex-row items-center px-4 py-2 rounded-full mr-3 border ${
+                activeCategory === cat.id 
+                  ? 'bg-orange-600 border-orange-600' 
+                  : 'bg-slate-800 border-slate-700'
+              }`}
+            >
+              <Text className="text-base mr-2">{cat.icon}</Text>
+              <Text className={`font-bold ${activeCategory === cat.id ? 'text-white' : 'text-slate-300'}`}>
+                {cat.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
+      <Text className="text-xl font-bold text-white px-6 mb-4">
+        {activeCategory === 'todos' ? 'Nosso Cardápio' : CATEGORIES.find(c => c.id === activeCategory)?.label}
+      </Text>
+
+      {/* LISTA DE PRODUTOS */}
       {loading ? (
         <View className="flex-1 justify-center items-center">
           <ActivityIndicator size="large" color="#f97316" />
         </View>
       ) : (
         <FlatList
-          data={products}
+          data={filteredProducts}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderProduct}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: cart.length > 0 ? 120 : 20 }}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: cart.length > 0 ? 120 : 20 }}
           ListEmptyComponent={
-            <Text className="text-slate-400 text-center mt-10">
-              Nenhum produto encontrado. 🍔
-            </Text>
+            <View className="items-center mt-10">
+              <Text className="text-4xl mb-2">🍽️</Text>
+              <Text className="text-slate-400 text-center">
+                Nenhum produto encontrado nesta categoria.
+              </Text>
+            </View>
           }
         />
       )}
 
-      {/* BOTÃO FLUTUANTE LIGADO CORRETAMENTE AQUI */}
+      {/* BOTÃO FLUTUANTE DO CARRINHO */}
       {cart.length > 0 && (
         <TouchableOpacity 
           className="absolute bottom-6 left-6 right-6 bg-orange-600 p-4 rounded-2xl flex-row justify-between items-center shadow-lg active:scale-95"
