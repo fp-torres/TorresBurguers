@@ -2,7 +2,10 @@ import React, { useContext, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Image, ActivityIndicator, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import Feather from '@expo/vector-icons/Feather';
+
 import { AuthContext } from '../../contexts/AuthContext';
+import { CartContext } from '../../contexts/CartContext'; 
 import api from '../../services/api';
 import { AppStackParamList } from '../../routes/app.routes'; 
 
@@ -18,8 +21,9 @@ interface Product {
 }
 
 export default function Home() {
-  // Puxamos o user e o signOut do Contexto
   const { signOut, user } = useContext(AuthContext);
+  const { cart, totalCartValue } = useContext(CartContext); 
+  
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -56,7 +60,7 @@ export default function Home() {
       <Image 
         source={{ 
           uri: item.image 
-            ? `${api.defaults.baseURL}/${item.image}` 
+            ? `${api.defaults.baseURL}/${item.image.replace(/^\//, '')}` 
             : 'https://via.placeholder.com/100?text=Sem+Foto' 
         }} 
         className="w-24 h-24 rounded-xl bg-slate-700"
@@ -94,14 +98,12 @@ export default function Home() {
   return (
     <View className="flex-1 p-6 bg-slate-900 pt-16">
       
-      {/* HEADER DINÂMICO */}
       <View className="flex-row justify-between items-center mb-8">
         <View>
           <Text className="text-2xl font-bold text-white">
             Torres<Text className="text-orange-500">Burgers</Text>
           </Text>
           
-          {/* Se o user existir, mostra o nome. Se não, mostra visitante */}
           {user ? (
             <Text className="text-lg text-slate-300 mt-1">
               E aí, <Text className="text-orange-500 font-bold">{user.name.split(' ')[0]}</Text>! 👋
@@ -113,7 +115,6 @@ export default function Home() {
           )}
         </View>
 
-        {/* Se o user existir, mostra o botão Sair. Se não, mostra o botão Entrar */}
         {user ? (
           <TouchableOpacity 
             onPress={signOut}
@@ -143,7 +144,7 @@ export default function Home() {
           keyExtractor={(item) => String(item.id)}
           renderItem={renderProduct}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 20 }}
+          contentContainerStyle={{ paddingBottom: cart.length > 0 ? 120 : 20 }}
           ListEmptyComponent={
             <Text className="text-slate-400 text-center mt-10">
               Nenhum produto encontrado. 🍔
@@ -151,6 +152,26 @@ export default function Home() {
           }
         />
       )}
+
+      {/* BOTÃO FLUTUANTE LIGADO CORRETAMENTE AQUI */}
+      {cart.length > 0 && (
+        <TouchableOpacity 
+          className="absolute bottom-6 left-6 right-6 bg-orange-600 p-4 rounded-2xl flex-row justify-between items-center shadow-lg active:scale-95"
+          onPress={() => navigation.navigate('Cart')}
+        >
+          <View className="flex-row items-center">
+            <View className="bg-orange-800 w-8 h-8 rounded-full items-center justify-center mr-3">
+              <Text className="text-white font-bold">{cart.length}</Text>
+            </View>
+            <Text className="text-white font-bold text-lg">Ver Carrinho</Text>
+          </View>
+          
+          <Text className="text-white font-bold text-xl">
+            {formatPrice(totalCartValue)}
+          </Text>
+        </TouchableOpacity>
+      )}
+
     </View>
   );
 }
