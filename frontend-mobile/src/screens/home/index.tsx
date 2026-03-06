@@ -6,7 +6,6 @@ import Feather from '@expo/vector-icons/Feather';
 
 import { AuthContext } from '../../contexts/AuthContext';
 import { CartContext } from '../../contexts/CartContext'; 
-// AQUI: Importamos o nosso contexto de Tema
 import { ThemeContext } from '../../contexts/ThemeContext'; 
 import api from '../../services/api';
 import { AppStackParamList } from '../../routes/app.routes'; 
@@ -34,10 +33,11 @@ const CATEGORIES = [
 ];
 
 export default function Home() {
-  const { signOut, user } = useContext(AuthContext);
+  // Pegamos o user como 'any' localmente para aceitar o avatar
+  const { signOut, user } = useContext(AuthContext) as any;
   const { cart, totalCartValue } = useContext(CartContext); 
-  // Consumindo o Tema atual e a função de trocar
-  const { theme, toggleTheme } = useContext(ThemeContext);
+  
+  const { themeMode, activeTheme, cycleTheme } = useContext(ThemeContext);
   
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
@@ -76,21 +76,23 @@ export default function Home() {
     return Number(price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
-  const getImageUrl = (imagePath: string | null) => {
+  const getImageUrl = (imagePath: string | null | undefined) => {
     if (!imagePath) return 'https://via.placeholder.com/100?text=Sem+Foto';
-    
     let cleanPath = imagePath.replace(/^\//, ''); 
     if (!cleanPath.startsWith('uploads/')) {
       cleanPath = `uploads/${cleanPath}`;
     }
-    
     const base = api.defaults.baseURL?.replace(/\/$/, '') || '';
     return `${base}/${cleanPath}`;
   };
 
+  const getThemeIcon = () => {
+    if (themeMode === 'system') return 'smartphone';
+    return themeMode === 'dark' ? 'moon' : 'sun';
+  };
+
   const renderProduct = ({ item }: { item: Product }) => (
     <TouchableOpacity 
-      // Repare como usamos bg-white para Light Mode e dark:bg-slate-800 para Dark Mode
       className="bg-white dark:bg-slate-800 p-4 rounded-2xl mb-4 flex-row items-center shadow-sm dark:shadow-md border border-gray-100 dark:border-transparent active:scale-95"
       onPress={() => navigation.navigate('ProductDetails', { product_id: item.id })}
     >
@@ -129,10 +131,8 @@ export default function Home() {
   );
 
   return (
-    // Fundo principal: cinza bem clarinho no Light, slate-900 no Dark
     <View className="flex-1 bg-gray-50 dark:bg-slate-900 pt-16">
       
-      {/* HEADER */}
       <View className="flex-row justify-between items-start px-6 mb-6">
         <View>
           <Text className="text-2xl font-bold text-slate-900 dark:text-white">
@@ -150,26 +150,28 @@ export default function Home() {
           )}
         </View>
 
-        {/* Lado Direito do Header: Botão de Tema + Botão de Login */}
         <View className="flex-row items-center">
-          {/* BOTÃO DE TROCAR TEMA */}
           <TouchableOpacity 
-            onPress={toggleTheme}
+            onPress={cycleTheme}
             className="mr-3 p-2 bg-gray-200 dark:bg-slate-800 rounded-full border border-gray-300 dark:border-slate-700 active:scale-95"
           >
             <Feather 
-              name={theme === 'dark' ? 'sun' : 'moon'} 
+              name={getThemeIcon()} 
               size={20} 
-              color={theme === 'dark' ? '#fbbf24' : '#475569'} 
+              color={activeTheme === 'dark' ? '#fbbf24' : '#475569'} 
             />
           </TouchableOpacity>
 
           {user ? (
             <TouchableOpacity 
-              onPress={signOut}
-              className="bg-white dark:bg-slate-800 px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-700 active:scale-95"
+              onPress={() => navigation.navigate('Profile')}
+              className="w-10 h-10 rounded-full bg-orange-600 border-2 border-orange-200 dark:border-slate-700 justify-center items-center active:scale-95"
             >
-              <Text className="text-red-500 dark:text-red-400 font-bold text-sm">Sair</Text>
+              {user.avatar ? (
+                <Image source={{ uri: getImageUrl(user.avatar) }} className="w-full h-full rounded-full" />
+              ) : (
+                <Text className="text-white font-bold text-lg">{user.name.charAt(0).toUpperCase()}</Text>
+              )}
             </TouchableOpacity>
           ) : (
             <TouchableOpacity 
@@ -182,13 +184,8 @@ export default function Home() {
         </View>
       </View>
 
-      {/* FILTROS HORIZONTAIS */}
       <View className="mb-6">
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 24 }}
-        >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24 }}>
           {CATEGORIES.map((cat) => (
             <TouchableOpacity
               key={cat.id}
@@ -201,9 +198,7 @@ export default function Home() {
             >
               <Text className="text-base mr-2">{cat.icon}</Text>
               <Text className={`font-bold ${
-                activeCategory === cat.id 
-                  ? 'text-white' 
-                  : 'text-slate-600 dark:text-slate-300'
+                activeCategory === cat.id ? 'text-white' : 'text-slate-600 dark:text-slate-300'
               }`}>
                 {cat.label}
               </Text>
@@ -216,7 +211,6 @@ export default function Home() {
         {activeCategory === 'todos' ? 'Nosso Cardápio' : CATEGORIES.find(c => c.id === activeCategory)?.label}
       </Text>
 
-      {/* LISTA DE PRODUTOS */}
       {loading ? (
         <View className="flex-1 justify-center items-center">
           <ActivityIndicator size="large" color="#f97316" />
@@ -239,7 +233,6 @@ export default function Home() {
         />
       )}
 
-      {/* BOTÃO FLUTUANTE DO CARRINHO */}
       {cart.length > 0 && (
         <TouchableOpacity 
           className="absolute bottom-6 left-6 right-6 bg-orange-600 p-4 rounded-2xl flex-row justify-between items-center shadow-lg shadow-orange-600/30 active:scale-95"

@@ -5,23 +5,20 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider } from './src/contexts/AuthContext';
 import { CartProvider } from './src/contexts/CartContext'; 
-// Importando o nosso Cérebro de Temas
 import { ThemeProvider, ThemeContext } from './src/contexts/ThemeContext'; 
 import Routes from './src/routes'; 
 
-// Este componente interno serve para conseguirmos "escutar" a mudança do tema
 function AppContent() {
-  const { theme } = useContext(ThemeContext);
+  // Agora usamos o activeTheme, que sabe exatamente qual cor está renderizando
+  const { activeTheme } = useContext(ThemeContext);
 
   return (
     <>
-      {/* O StatusBar muda a cor dos ícones da bateria/wifi e o fundo lá no topo do celular */}
       <StatusBar 
-        barStyle={theme === 'dark' ? 'light-content' : 'dark-content'} 
-        backgroundColor={theme === 'dark' ? '#0f172a' : '#f3f4f6'} 
+        barStyle={activeTheme === 'dark' ? 'light-content' : 'dark-content'} 
+        backgroundColor={activeTheme === 'dark' ? '#0f172a' : '#f9fafb'} 
       />
-      {/* O NavigationContainer muda a cor de fundo padrão de transição das telas */}
-      <NavigationContainer theme={theme === 'dark' ? DarkTheme : DefaultTheme}>
+      <NavigationContainer theme={activeTheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AuthProvider>
           <CartProvider>
             <Routes />
@@ -35,7 +32,6 @@ function AppContent() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      {/* O ThemeProvider abraça todo o aplicativo, permitindo que qualquer tela mude o tema */}
       <ThemeProvider>
         <AppContent />
       </ThemeProvider>

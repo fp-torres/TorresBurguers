@@ -1,46 +1,72 @@
 import React, { createContext, useState, useEffect } from 'react';
-import { useColorScheme } from 'nativewind';
+import { Appearance, useColorScheme as useRNColorScheme } from 'react-native';
+import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+export type ThemeMode = 'light' | 'dark' | 'system';
+
 interface ThemeContextData {
-  theme: 'light' | 'dark';
-  toggleTheme: () => void;
+  themeMode: ThemeMode; // A escolha do usuário (Sistema, Claro ou Escuro)
+  activeTheme: 'light' | 'dark'; // A cor real que está sendo mostrada agora
+  cycleTheme: () => void; // Função para alternar entre os 3 modos
 }
 
 export const ThemeContext = createContext<ThemeContextData>({} as ThemeContextData);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // O NativeWind tem um hook próprio para forçar o CSS a mudar de cor
-  const { colorScheme, setColorScheme } = useColorScheme();
+  // Hook do NativeWind para forçar o CSS Tailwind
+  const { setColorScheme } = useNativeWindColorScheme();
+  // Hook nativo do React Native que avisa quando o celular muda de cor sozinho
+  const systemColorScheme = useRNColorScheme(); 
   
-  // O estado que nosso app vai ler (começa no escuro para manter o que já fizemos)
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [themeMode, setThemeMode] = useState<ThemeMode>('system');
+  const [activeTheme, setActiveTheme] = useState<'light' | 'dark'>('dark');
 
+  // Ao abrir o app, carrega a preferência salva
   useEffect(() => {
     async function loadTheme() {
-      const savedTheme = await AsyncStorage.getItem('@TorresBurgers:theme');
-      if (savedTheme) {
-        setTheme(savedTheme as 'light' | 'dark');
-        setColorScheme(savedTheme as 'light' | 'dark');
+      const savedMode = await AsyncStorage.getItem('@TorresBurgers:themeMode') as ThemeMode;
+      if (savedMode) {
+        applyTheme(savedMode);
       } else {
-        // Se é a primeira vez abrindo o app, força o dark
-        setColorScheme('dark');
-        setTheme('dark');
+        applyTheme('system'); // Padrão: Seguir o sistema
       }
     }
     loadTheme();
-  }, [setColorScheme]);
+  }, []);
 
-  async function toggleTheme() {
-    const newTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(newTheme);
-    setColorScheme(newTheme);
-    // Salva a escolha na memória do celular
-    await AsyncStorage.setItem('@TorresBurgers:theme', newTheme);
+  // Fica escutando: se estiver no modo 'system' e o celular mudar de cor, o app muda junto!
+  useEffect(() => {
+    if (themeMode === 'system') {
+      const currentSystemTheme = systemColorScheme === 'light' ? 'light' : 'dark';
+      setColorScheme(currentSystemTheme);
+      setActiveTheme(currentSystemTheme);
+    }
+  }, [systemColorScheme, themeMode]);
+
+  async function applyTheme(mode: ThemeMode) {
+    setThemeMode(mode);
+    await AsyncStorage.setItem('@TorresBurgers:themeMode', mode);
+
+    if (mode === 'system') {
+      const currentSystemTheme = Appearance.getColorScheme() === 'light' ? 'light' : 'dark';
+      setColorScheme(currentSystemTheme);
+      setActiveTheme(currentSystemTheme);
+    } else {
+      setColorScheme(mode);
+      setActiveTheme(mode);
+    }
+  }
+
+  // Alterna entre: Sistema -> Claro -> Escuro -> Sistema...
+  function cycleTheme() {
+    if (themeMode === 'system') applyTheme('light');
+    else if (themeMode === 'light') applyTheme('dark');
+    else applyTheme('system');
   }
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={{ themeMode, activeTheme, cycleTheme }}>
       {children}
     </ThemeContext.Provider>
   );

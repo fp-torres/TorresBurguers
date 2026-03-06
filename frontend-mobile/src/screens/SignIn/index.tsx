@@ -3,7 +3,9 @@ import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Alert, Keyb
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from '@expo/vector-icons/Feather';
+
 import { AuthContext } from '../../contexts/AuthContext';
+import { ThemeContext } from '../../contexts/ThemeContext'; // Importando o Tema
 import { AppStackParamList } from '../../routes/app.routes'; 
 
 type SignInRouteProp = {
@@ -14,6 +16,7 @@ type SignInRouteProp = {
 
 export default function SignIn() {
   const { signIn } = useContext(AuthContext);
+  const { activeTheme } = useContext(ThemeContext); // Usando o tema ativo
   const route = useRoute<SignInRouteProp>();
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   
@@ -76,10 +79,10 @@ export default function SignIn() {
 
         <View className="space-y-4">
           <View className="bg-white dark:bg-slate-800 rounded-xl px-4 py-3 flex-row items-center border border-gray-200 dark:border-slate-700 mb-4 shadow-sm dark:shadow-none">
-            <Feather name="mail" size={20} color="#9ca3af" className="dark:text-slate-400" />
+            <Feather name="mail" size={20} color={activeTheme === 'dark' ? '#9ca3af' : '#64748b'} />
             <TextInput 
               placeholder="Digite seu e-mail"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={activeTheme === 'dark' ? '#64748b' : '#9ca3af'}
               className="flex-1 ml-3 text-slate-900 dark:text-white text-base"
               value={email}
               onChangeText={setEmail}
@@ -88,21 +91,31 @@ export default function SignIn() {
             />
           </View>
 
-          <View className="bg-white dark:bg-slate-800 rounded-xl px-4 py-3 flex-row items-center border border-gray-200 dark:border-slate-700 mb-8 shadow-sm dark:shadow-none">
-            <Feather name="lock" size={20} color="#9ca3af" className="dark:text-slate-400" />
-            <TextInput 
-              placeholder="Sua senha"
-              placeholderTextColor="#9ca3af"
-              className="flex-1 ml-3 text-slate-900 dark:text-white text-base"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
+          <View className="mb-8">
+            <View className="bg-white dark:bg-slate-800 rounded-xl px-4 py-3 flex-row items-center border border-gray-200 dark:border-slate-700 shadow-sm dark:shadow-none">
+              <Feather name="lock" size={20} color={activeTheme === 'dark' ? '#9ca3af' : '#64748b'} />
+              <TextInput 
+                placeholder="Sua senha"
+                placeholderTextColor={activeTheme === 'dark' ? '#64748b' : '#9ca3af'}
+                className="flex-1 ml-3 text-slate-900 dark:text-white text-base"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+              />
+            </View>
+
+            {/* AQUI: Opção de esqueci minha senha */}
+            <TouchableOpacity 
+              className="mt-3 self-end"
+              onPress={() => navigation.navigate('ForgotPassword')}
+            >
+              <Text className="text-orange-600 dark:text-orange-500 font-bold">Esqueceu sua senha?</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
         <TouchableOpacity 
-          className="w-full bg-orange-600 rounded-xl py-4 flex-row justify-center items-center active:scale-95 shadow-md shadow-orange-600/30"
+          className="w-full bg-orange-600 rounded-xl py-4 flex-row justify-center items-center active:scale-95 shadow-md shadow-orange-600/30 mb-6"
           onPress={handleLogin}
           disabled={loading}
         >
@@ -112,6 +125,16 @@ export default function SignIn() {
             <Text className="text-white font-bold text-lg">Entrar</Text>
           )}
         </TouchableOpacity>
+
+        {/* AQUI: Criar conta (Aparece somente para clientes) */}
+        {loginType === 'cliente' && (
+          <View className="flex-row justify-center items-center mt-4">
+            <Text className="text-slate-500 dark:text-slate-400 text-base">Ainda não tem conta? </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
+              <Text className="text-orange-600 dark:text-orange-500 font-bold text-base">Cadastre-se</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
       </View>
     </KeyboardAvoidingView>
