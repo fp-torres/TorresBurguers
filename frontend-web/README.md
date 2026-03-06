@@ -1,73 +1,198 @@
-# React + TypeScript + Vite
+# 💻 TorresBurgers | Frontend Web & Backoffice
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Este repositório contém a **interface web do ecossistema TorresBurgers**.
 
-Currently, two official plugins are available:
+Desenvolvido com foco em **alta performance** e **design responsivo**, o sistema é dividido em duas grandes frentes:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Experiência do Cliente (Menu Digital)**
+- **Painel Administrativo (Gestão de Pedidos e Logística)**
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+# 🚀 Tecnologias Utilizadas
 
-## Expanding the ESLint configuration
+- **React + Vite**  
+  Build ultra-rápido e desenvolvimento otimizado.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **TailwindCSS v4**  
+  A nova geração do CSS utilitário para estilização performática.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- **Axios**  
+  Cliente HTTP para comunicação com a API NestJS.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- **Lucide React**  
+  Conjunto de ícones leves e elegantes.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- **Recharts / Chart.js**  
+  Visualização de dados de vendas e métricas em tempo real.
+
+- **Context API**  
+  Gestão de estado global para o carrinho e autenticação.
+
+---
+
+# ✨ Funcionalidades Principais
+
+## 🛒 Menu Digital (Client-Side)
+
+### Catálogo Dinâmico
+
+- Listagem de produtos consumida em **tempo real via API**
+
+### Carrinho Persistente
+
+- O cliente pode atualizar **itens e adicionais**
+- O progresso do pedido é mantido durante a navegação
+
+### Filtros por Categoria
+
+Navegação rápida entre:
+
+- Combos
+- Lanches
+- Bebidas
+- Sobremesas
+
+### Promoções Inteligentes
+
+- Banners contextuais baseados em **eventos e campanhas de marketing**
+
+---
+
+# ⚙️ Painel do Restaurante (Admin-Side)
+
+## Dashboard Analítico
+
+- Gráficos de performance
+- Vendas diárias
+- Ticket médio
+
+Bibliotecas utilizadas:
+
+- **Recharts**
+- **Chart.js**
+
+---
+
+## Kanban de Pedidos
+
+Gerenciamento visual do fluxo da cozinha:
+
+```
+Pendente → Preparo → Entrega
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+---
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Gestão de Cardápio
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- Cadastro de produtos
+- Edição de produtos
+- Desativação com **Soft Delete**
+- Gestão de **adicionais**
+
+---
+
+## Logística de Entrega
+
+- Atribuição manual de **motoboys**
+- Distribuição automática de entregas
+- Controle de pedidos concluídos
+
+---
+
+# 🏗 Estrutura de Pastas
+
+```bash
+frontend-web/
+├── public/              # Ativos estáticos (ícones, logos)
+
+├── src/
+│   ├── assets/          # Estilos globais e imagens
+│   ├── components/      # Componentes reutilizáveis (Botões, Cards, Modais)
+│   ├── contexts/        # Gerenciamento de estado (Auth, Cart, Theme)
+│   ├── hooks/           # Hooks customizados
+│   ├── pages/           # Telas (Home, Login, Admin, Dashboard)
+│   ├── services/        # Configuração do Axios e chamadas à API
+│   └── utils/           # Funções auxiliares e formatadores de preço
+
+├── .env.example         # Exemplo de variáveis de ambiente
+└── tailwind.config.js   # Configurações do Tailwind v4
 ```
+
+---
+
+# 📦 Instalação e Execução
+
+## 1️⃣ Acesse a pasta do projeto
+
+```bash
+cd frontend-web
+```
+
+---
+
+## 2️⃣ Instale as dependências
+
+```bash
+npm install
+```
+
+---
+
+## 3️⃣ Configure o ambiente
+
+Crie um arquivo `.env` baseado no `.env.example`:
+
+```env
+VITE_API_URL=http://localhost:3000
+```
+
+---
+
+## 4️⃣ Inicie o servidor de desenvolvimento
+
+```bash
+npm run dev
+```
+
+---
+
+# 📡 Integração com o Backend
+
+O **frontend web** está configurado para se comunicar com a **API NestJS**.
+
+Em ambiente de desenvolvimento, certifique-se de que o backend esteja rodando para que as seguintes funcionalidades funcionem corretamente:
+
+- autenticação
+- listagem de produtos
+- pedidos
+- gestão administrativa
+
+### 💡 Dica
+
+Se estiver testando o **fluxo mobile simultaneamente**, utilize a **URL do túnel (Serveo)** no seu `.env`.
+
+Exemplo:
+
+```env
+VITE_API_URL=https://seu-tunel.serveo.net
+```
+
+Isso mantém **consistência de dados entre Web e Mobile**.
+
+---
+
+# 🛣 Roadmap Web
+
+- [x] Interface Responsiva (Mobile First)
+
+- [x] Fluxo de Carrinho e Checkout
+
+- [x] Painel Administrativo Base
+
+Próximas melhorias:
+
+- [ ] Integração com **WebSockets** para atualização automática do Kanban
+
+- [ ] Relatórios avançados para exportação em **PDF / Excel**

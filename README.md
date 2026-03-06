@@ -1,45 +1,28 @@
 # 🍔 TorresBurgers | Full Stack Delivery System
 
-<div align="center">
-  <h1>TorresBurgers</h1>
-
-  <br />
-
-  [![Status](https://img.shields.io/badge/STATUS-EM_DESENVOLVIMENTO-orange?style=for-the-badge&logo=fire)](https://github.com/fp-torres)
-  [![License](https://img.shields.io/badge/LICENSE-MIT-green?style=for-the-badge)](LICENSE)
-  [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-  [![NestJS](https://img.shields.io/badge/NestJS-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)](https://nestjs.com/)
-  [![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactjs.org/)
-  [![React Native](https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactnative.dev/)
-  [![Expo](https://img.shields.io/badge/Expo-000020?style=for-the-badge&logo=expo&logoColor=white)](https://expo.dev/)
-  [![TailwindCSS](https://img.shields.io/badge/Tailwind_v4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
-</div>
-
-<p align="center">
-  <strong>Uma plataforma de delivery completa (Web & Mobile), simulando um ambiente de produção real com pagamentos, otimização de performance e logística avançada.</strong>
-</p>
-
-<p align="center">
-  <a href="#-sobre-o-projeto">Sobre</a> •
-  <a href="#-funcionalidades">Funcionalidades</a> •
-  <a href="#-arquitetura-e-performance">Arquitetura</a> •
-  <a href="#-stack-tecnológica">Stack</a> •
-  <a href="#-instalação-e-execução">Instalação</a> •
-  <a href="#-mobile--tunneling">Mobile & Redes</a> •
-  <a href="#-roadmap">Roadmap</a>
-</p>
-
 ---
 
 # 📋 Sobre o Projeto
 
-O **TorresBurgers** nasceu com o objetivo de criar uma solução que vai além do CRUD básico. Ele resolve problemas reais de aplicações de delivery: **escalabilidade de imagens**, **gestão de estados complexos (pedidos)**, **integrações financeiras seguras** e **logística de entregas**.
+O **TorresBurgers** nasceu com o objetivo de criar uma solução que vai além do CRUD básico.
 
-O sistema é um ecossistema completo composto por:
+Ele resolve problemas reais de aplicações de delivery:
 
-1. **Painel Administrativo (Web):** Gestão do restaurante e despacho de pedidos  
-2. **App do Cliente (Mobile):** Aplicação nativa para pedidos com foco em UX e performance  
-3. **API Robusta (Backend):** Servidor NestJS com arquitetura limpa e segura  
+- **Escalabilidade de imagens**
+- **Gestão de estados complexos (pedidos)**
+- **Integrações financeiras seguras**
+- **Logística de entregas**
+
+O sistema é um **ecossistema completo**, composto por:
+
+- **Painel Administrativo (Web)**  
+  Gestão do restaurante e despacho de pedidos
+
+- **App do Cliente (Mobile)**  
+  Aplicação nativa para pedidos com foco em UX e performance
+
+- **API Robusta (Backend)**  
+  Servidor **NestJS** com arquitetura limpa e segura
 
 ---
 
@@ -47,78 +30,89 @@ O sistema é um ecossistema completo composto por:
 
 ## 📱 App Mobile
 
-- **Autenticação Persistente**
-  - Login seguro com JWT salvo via `AsyncStorage`
-  - Usuário permanece logado mesmo após fechar o app
+### Sistema de Temas Dinâmico
 
-- **Tratamento de Erros**
-  - Feedback visual com `Alert` nativo
-  - Tratamento de falhas de conexão
+- Suporte completo a **Dark Mode** e **Light Mode**
+- Persistência da preferência do usuário via `AsyncStorage`
 
-- **Interceptors Axios**
-  - Injeção automática de token nas requisições
-  - Tratamento global de timeout
+### Autenticação Persistente
 
-- **Networking Avançado**
-  - Suporte para ambientes corporativos
-  - Tunneling com Serveo/Cloudflare
+- Login seguro com **JWT salvo via AsyncStorage**
+- Usuário permanece logado mesmo após fechar o app
 
----
+### Tratamento de Erros
 
-## 🛒 Web & Experiência do Cliente
+- Feedback visual com **Alert nativo**
+- Tratamento de falhas de conexão
 
-- **Catálogo Dinâmico**
-  - Filtros por categoria
-  - Busca em tempo real
+### Interceptors Axios
 
-- **Carrinho Inteligente**
-  - Persistência de dados
-  - Cálculo automático de adicionais
+- Injeção automática de **token nas requisições**
+- Tratamento global de **timeout**
 
-- **Marketing Contextual**
-  - Banners ativados via API de futebol
-  - Promoções em dias de jogos importantes
+### Networking Avançado
+
+- Suporte para **ambientes corporativos**
+- **Tunneling inteligente** com Serveo
 
 ---
 
-## ⚙️ Painel Administrativo (Backoffice)
+# 🛒 Web & Experiência do Cliente
 
-- **Dashboard de Vendas**
-  - Gráficos com Recharts / Chart.js
+### Catálogo Dinâmico
 
-- **Kanban de Pedidos**
-  - Fluxo visual:
-  
+- Filtros por categoria
+- Busca em tempo real
 
+### Carrinho Inteligente
+
+- Persistência de dados
+- Cálculo automático de adicionais
+
+### Marketing Contextual
+
+- Banners ativados via **API de futebol**
+- Promoções temáticas
+
+---
+
+# ⚙️ Painel Administrativo (Backoffice)
+
+### Dashboard de Vendas
+
+- Gráficos analíticos com **Recharts / Chart.js**
+
+### Kanban de Pedidos
+
+Fluxo visual:
+
+```
 Pendente → Preparo → Entrega → Concluído
+```
 
+### Logística de Entregas
 
-- **Logística de Entregas**
-  - Atribuição de motoboys
-  - Visualização de rotas
+- Atribuição de **motoboys**
+- Visualização de **rotas de entrega**
 
 ---
 
-## 🔧 Sistema & Backend
+# 🔧 Sistema & Backend
 
-### Otimização de Mídia
+### Otimização de Mídia (Pipeline Sharp)
 
-Pipeline com **Sharp**
-
-- Upload interceptado em memória
-- Conversão automática para **WebP**
-- Redução de até **90% do tamanho das imagens**
+Conversão automática para **WebP**, reduzindo até **90% do tamanho das imagens** sem perda perceptível de qualidade.
 
 ### Pagamentos
 
-- Integração Sandbox
+- Integração **Sandbox**
 - Suporte para **PIX**
 
 ### Segurança
 
-- JWT Authentication
-- Bcrypt para hash de senhas
-- Validação com `class-validator`
+- **JWT Authentication**
+- **Bcrypt** para hash de senhas
+- Validação com **class-validator**
 
 ---
 
@@ -130,9 +124,9 @@ O projeto segue princípios de:
 - **SOLID**
 - **Separação de Domínios**
 
-Backend desenvolvido com **NestJS**.
+---
 
-## Estrutura do Projeto
+# 📂 Estrutura do Projeto
 
 ```bash
 TorresBurgers/
@@ -149,98 +143,136 @@ TorresBurgers/
     ├── src/services/
     ├── src/screens/
     └── src/contexts/
-🚀 Stack Tecnológica
-Camada	Tecnologias
-Backend	NestJS, PostgreSQL, TypeORM, Sharp, JWT, Class Validator
-Frontend Web	React (Vite), TailwindCSS v4, Axios, Lucide, Recharts
-Mobile	React Native, Expo, NativeWind, AsyncStorage
-DevOps	Docker, Git, Serveo Tunneling
-📦 Instalação e Execução
-Pré-requisitos
+```
 
-Node.js 18+
+---
 
-PostgreSQL
+# 📡 Mobile & Tunneling (Automação Remota)
 
-1️⃣ Backend
+Para rodar o app em **redes corporativas (Linux no trabalho)** ou **em casa (Windows)**, utilizamos um script de **automação de túnel**.
+
+---
+
+## Script Inteligente (`npm run tunnel`)
+
+Criamos um script **start-tunnel.js** que:
+
+1. Inicia o túnel SSH via **Serveo**
+2. Captura a **URL dinâmica gerada**
+3. Atualiza automaticamente o arquivo:
+
+```
+src/services/api.ts
+```
+
+com a nova **baseURL da API**.
+
+---
+
+## Como usar
+
+```bash
+# Na pasta frontend-mobile
+
+npm run tunnel
+```
+
+---
+
+# 🚀 Stack Tecnológica
+
+| Camada | Tecnologias |
+|------|-------------|
+| **Backend** | NestJS, PostgreSQL, TypeORM, Sharp, JWT, Class Validator |
+| **Frontend Web** | React (Vite), TailwindCSS v4, Axios, Lucide, Recharts |
+| **Mobile** | React Native, Expo, NativeWind, AsyncStorage, Context API |
+| **DevOps** | Docker, Git, Serveo Tunneling |
+
+---
+
+# 📦 Instalação e Execução
+
+## 1️⃣ Backend
+
+```bash
 cd TorresBurgers/backend
-
 npm install
 npm run start:dev
-2️⃣ Frontend Web
-cd ../frontend-web
+```
 
+---
+
+## 2️⃣ Frontend Web
+
+```bash
+cd ../frontend-web
 npm install
 npm run dev
-3️⃣ Mobile
+```
+
+---
+
+## 3️⃣ Mobile
+
+```bash
 cd ../frontend-mobile
+npm install
+npm run tunnel   # Configura a API automaticamente
+npm run start    # Inicia o Expo
+```
 
-npx expo install
-npx expo start -c
-📡 Mobile & Tunneling
+---
 
-Para rodar o app em redes corporativas ou Linux com firewall, use túnel SSH.
+# 🔐 Variáveis de Ambiente
 
-Inicie o backend
-npm run start:dev
-Crie o túnel
-ssh -R 80:127.0.0.1:3000 serveo.net
-Configure a API no mobile
+Crie um arquivo `.env` dentro de `/backend`.
 
-Edite:
-
-src/services/api.ts
-
-Exemplo:
-
-baseURL: "https://torres.serveo.net"
-Rode o Expo
-npx expo start -c --tunnel
-🔐 Variáveis de Ambiente
-
-Crie .env dentro de /backend.
-
+```env
 DB_HOST=localhost
 DB_PORT=5432
 DB_USERNAME=postgres
-DB_PASSWORD=admin
+DB_PASSWORD=0000
 DB_DATABASE=torresburgers
 
 JWT_SECRET=sua_chave_secreta_aqui
-🛣 Roadmap
-[x] CRUD Produtos e Usuários
-[x] Autenticação JWT Web & Mobile
-[x] Otimização de Imagens
-[x] App Mobile com Persistência
-[x] Tunneling para desenvolvimento remoto
+```
 
-[ ] WebSockets para status do pedido
-[ ] Push Notifications (Expo)
-[ ] Integração ViaCEP
-🤝 Contribuição
+---
 
-Faça um Fork
+# 🛣 Roadmap
 
-Crie sua branch
+- [x] CRUD Produtos e Usuários
+- [x] Autenticação JWT Web & Mobile
+- [x] Otimização de Imagens (WebP)
+- [x] Script de Automação de Túnel SSH
+- [x] Sistema de Temas (Dark/Light)
 
+Próximas features:
+
+- [ ] WebSockets para status do pedido em tempo real
+- [ ] Push Notifications (Expo)
+
+---
+
+# 🤝 Contribuição
+
+1. Faça um **Fork**
+2. Crie sua branch
+
+```bash
 git checkout -b feature/incrivel
+```
 
-Faça commit
+3. Faça o commit
 
+```bash
 git commit -m "feat: add incredible feature"
+```
 
-Push
+4. Envie o push
 
+```bash
 git push origin feature/incrivel
+```
 
-Abra um Pull Request
-
-<p align="center">
-
-Desenvolvido por Felipe Torres 🚀
-
-Foco: Clean Code • Performance • Mobile First • Arquitetura Escalável
-
-</p> ```
-
-npm run tunnel
+5. Abra um **Pull Request**
