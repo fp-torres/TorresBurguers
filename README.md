@@ -218,7 +218,7 @@ npm run dev
 cd ../frontend-mobile
 npm install
 npm run tunnel   # Configura a API automaticamente
-npm run start    # Inicia o Expo
+npx expo start --tunnel    # Inicia o Expo
 ```
 
 ---
