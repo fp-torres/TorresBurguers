@@ -31,7 +31,6 @@ export default function MyOrders() {
       async function fetchMyOrders() {
         setLoading(true);
         try {
-          // Sua rota exata do backend
           const response = await api.get('/orders/my-orders');
           setOrders(response.data);
         } catch (error) {
@@ -54,7 +53,6 @@ export default function MyOrders() {
     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
-  // Dicionário de Status (Traduz o ENUM do backend para a UI)
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'PENDING':
@@ -76,7 +74,6 @@ export default function MyOrders() {
 
   const renderOrder = ({ item }: { item: Order }) => {
     const badge = getStatusBadge(item.status);
-    // Soma a quantidade de itens no pedido
     const totalItems = item.items ? item.items.reduce((acc, curr) => acc + curr.quantity, 0) : 0;
 
     return (
@@ -108,10 +105,10 @@ export default function MyOrders() {
             {formatPrice(item.total_price)}
           </Text>
           
-          {/* Botão para detalhes (Em breve) */}
+          {/* BOTÃO CONECTADO NA NAVEGAÇÃO AGORA */}
           <TouchableOpacity 
             className="flex-row items-center px-4 py-2 bg-orange-50 dark:bg-orange-600/10 rounded-lg"
-            onPress={() => Alert.alert('Em breve', 'Detalhes completos do pedido.')}
+            onPress={() => navigation.navigate('OrderDetails', { order_id: item.id })}
           >
             <Text className="text-orange-600 dark:text-orange-500 font-bold mr-2">Ver detalhes</Text>
             <Feather name="chevron-right" size={16} color="#f97316" />

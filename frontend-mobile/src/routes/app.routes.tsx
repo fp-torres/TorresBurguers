@@ -12,6 +12,7 @@ import Profile from '../screens/Profile';
 import SignUp from '../screens/SignUp'; 
 import ForgotPassword from '../screens/ForgotPassword'; 
 import MyOrders from '../screens/MyOrders'; 
+import OrderDetails from '../screens/OrderDetails'; // <-- Importado aqui
 
 export type AppStackParamList = {
   Home: undefined;
@@ -25,6 +26,7 @@ export type AppStackParamList = {
   SignUp: undefined; 
   ForgotPassword: undefined; 
   MyOrders: undefined; 
+  OrderDetails: { order_id: number }; // <-- Rota registrada com parâmetro
 };
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -46,6 +48,7 @@ export default function AppRoutes() {
       <Stack.Screen name="SignUp" component={SignUp} />
       <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
       <Stack.Screen name="MyOrders" component={MyOrders} />
+      <Stack.Screen name="OrderDetails" component={OrderDetails} />
     </Stack.Navigator>
   );
 }
