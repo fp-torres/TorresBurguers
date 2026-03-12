@@ -12,7 +12,9 @@ import Profile from '../screens/Profile';
 import SignUp from '../screens/SignUp'; 
 import ForgotPassword from '../screens/ForgotPassword'; 
 import MyOrders from '../screens/MyOrders'; 
-import OrderDetails from '../screens/OrderDetails'; // <-- Importado aqui
+import OrderDetails from '../screens/OrderDetails';
+import PaymentPix from '../screens/PaymentPix';
+import PaymentCard from '../screens/PaymentCard';
 
 export type AppStackParamList = {
   Home: undefined;
@@ -26,7 +28,9 @@ export type AppStackParamList = {
   SignUp: undefined; 
   ForgotPassword: undefined; 
   MyOrders: undefined; 
-  OrderDetails: { order_id: number }; // <-- Rota registrada com parâmetro
+  OrderDetails: { order_id: number }; 
+  PaymentPix: { payment_id: number, qr_code: string, qr_code_base64: string, total: number }; 
+  PaymentCard: { payload_order: any, total: number, email: string }; 
 };
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -49,6 +53,8 @@ export default function AppRoutes() {
       <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
       <Stack.Screen name="MyOrders" component={MyOrders} />
       <Stack.Screen name="OrderDetails" component={OrderDetails} />
+      <Stack.Screen name="PaymentPix" component={PaymentPix} />
+      <Stack.Screen name="PaymentCard" component={PaymentCard} />
     </Stack.Navigator>
   );
 }

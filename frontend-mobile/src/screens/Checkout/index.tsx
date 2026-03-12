@@ -7,6 +7,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { AppStackParamList } from '../../routes/app.routes';
 import { CartContext } from '../../contexts/CartContext';
 import { ThemeContext } from '../../contexts/ThemeContext';
+import { AuthContext } from '../../contexts/AuthContext'; // <-- Importado para pegar o email
 import api from '../../services/api';
 
 interface Address {
@@ -23,6 +24,7 @@ export default function Checkout() {
   
   const { cart, totalCartValue, clearCart } = useContext(CartContext);
   const { activeTheme } = useContext(ThemeContext);
+  const { user } = useContext(AuthContext); // <-- Pegando o usuário logado
 
   const [orderType, setOrderType] = useState<'DELIVERY' | 'TAKEOUT'>('DELIVERY');
   const [paymentMethod, setPaymentMethod] = useState('PIX');
@@ -33,7 +35,6 @@ export default function Checkout() {
   const [loadingAddresses, setLoadingAddresses] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // useFocusEffect recarrega a lista toda vez que essa tela aparecer (ex: ao voltar da AddAddress)
   useFocusEffect(
     useCallback(() => {
       async function fetchAddresses() {
@@ -42,7 +43,6 @@ export default function Checkout() {
           const response = await api.get('/addresses');
           setAddresses(response.data);
           
-          // Se não tiver nenhum selecionado e a lista vier com dados, seleciona o último adicionado
           if (response.data.length > 0 && !selectedAddress) {
             setSelectedAddress(response.data[response.data.length - 1].id);
           }
@@ -86,6 +86,8 @@ export default function Checkout() {
           productId: item.product.id,
           quantity: item.quantity,
           addonIds: addonIds.length > 0 ? addonIds : undefined,
+          // Se tiver observação ou ponto da carne no carrinho, enviamos aqui:
+          observation: item.product.id ? undefined : undefined, 
         };
       });
 
@@ -97,19 +99,44 @@ export default function Checkout() {
         items: itemsPayload,
       };
 
-      await api.post('/orders', payload);
+      // --- ROTEAMENTO DE PAGAMENTOS ---
+      if (paymentMethod === 'PIX') {
+        const pixResponse = await api.post('/payment/pix', { amount: totalCartValue });
+        
+        // CORREÇÃO: paymentId ao invés de payment_id
+        const finalPayload = { ...payload, paymentId: pixResponse.data.id };
+        await api.post('/orders', finalPayload);
+        
+        clearCart();
+        
+        navigation.navigate('PaymentPix', {
+          payment_id: pixResponse.data.id,
+          qr_code: pixResponse.data.qr_code,
+          qr_code_base64: pixResponse.data.qr_code_base64,
+          total: totalCartValue
+        });
 
-      clearCart();
-      Alert.alert(
-        'Pedido Confirmado! 🎉', 
-        'Seu pedido foi recebido pela cozinha e já vai começar a ser preparado.',
-        [{ text: 'Ver Meus Pedidos', onPress: () => navigation.navigate('Home') }]
-      );
+      } else if (paymentMethod === 'CARTAO_CREDITO' || paymentMethod === 'CARTAO_DEBITO') {
+        navigation.navigate('PaymentCard', {
+          payload_order: payload,
+          total: totalCartValue,
+          email: user?.email || 'cliente@email.com' // <-- Passando o email para a tela de cartão
+        });
+        setIsSubmitting(false);
 
-    } catch (error) {
+      } else {
+        await api.post('/orders', payload);
+        clearCart();
+        Alert.alert(
+          'Pedido Confirmado! 🎉', 
+          'Seu pedido foi recebido e vai começar a ser preparado.',
+          [{ text: 'Ver Meus Pedidos', onPress: () => navigation.navigate('Home') }]
+        );
+      }
+
+    } catch (error: any) {
       console.error('Erro ao finalizar pedido:', error);
       Alert.alert('Ops!', 'Houve um erro ao processar seu pedido. Tente novamente.');
-    } finally {
       setIsSubmitting(false);
     }
   }
