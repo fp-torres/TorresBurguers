@@ -2,7 +2,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 👇 ATUALIZADO COM A URL QUE O SEU TERMINAL GEROU AGORA
-const API_URL = 'https://742ffce4940db988-189-113-142-250.serveousercontent.com'; 
+const API_URL = 'https://ff13f3513162e23b-189-113-142-250.serveousercontent.com'; 
 
 const api = axios.create({
   baseURL: API_URL,
