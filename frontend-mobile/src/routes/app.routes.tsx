@@ -15,6 +15,7 @@ import MyOrders from '../screens/MyOrders';
 import OrderDetails from '../screens/OrderDetails';
 import PaymentPix from '../screens/PaymentPix';
 import PaymentCard from '../screens/PaymentCard';
+import AdminDashboard from '../screens/AdminDashboard'; // Importando o novo painel
 
 export type AppStackParamList = {
   Home: undefined;
@@ -31,6 +32,7 @@ export type AppStackParamList = {
   OrderDetails: { order_id: number }; 
   PaymentPix: { payment_id: number, qr_code: string, qr_code_base64: string, total: number }; 
   PaymentCard: { payload_order: any, total: number, email: string }; 
+  AdminDashboard: undefined; // Adicionando a tipagem da rota
 };
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -55,6 +57,7 @@ export default function AppRoutes() {
       <Stack.Screen name="OrderDetails" component={OrderDetails} />
       <Stack.Screen name="PaymentPix" component={PaymentPix} />
       <Stack.Screen name="PaymentCard" component={PaymentCard} />
+      <Stack.Screen name="AdminDashboard" component={AdminDashboard} />
     </Stack.Navigator>
   );
 }

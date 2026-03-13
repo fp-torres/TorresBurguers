@@ -2,7 +2,8 @@ import React, { createContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
 
-interface User {
+// Exportando a interface User para poder usar em outras telas se precisar
+export interface User {
   id: number;
   name: string;
   email: string;
@@ -13,7 +14,8 @@ interface AuthContextData {
   signed: boolean;
   user: User | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<void>; // Corrigido para password
+  // Alterado: Agora o signIn retorna uma Promise com o User, em vez de void
+  signIn: (email: string, password: string) => Promise<User>; 
   signOut: () => Promise<void>;
 }
 
@@ -44,12 +46,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadStorageData();
   }, []);
 
-  async function signIn(email: string, password: string) {
+  // Alterado para retornar o userData no final
+  async function signIn(email: string, password: string): Promise<User> {
     try {
       console.log("--- TENTANDO LOGAR ---");
-      console.log("Enviando para API:", { email, password }); // Log para conferência
+      console.log("Enviando para API:", { email, password }); 
 
-      // O Backend espera EXATAMENTE { email, password }
       const response = await api.post('/auth/login', { 
         email: email.trim(), 
         password: password 
@@ -65,9 +67,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       api.defaults.headers.Authorization = `Bearer ${access_token}`;
       setUser(userData);
 
+      // RETORNANDO O USUÁRIO PARA A TELA DE LOGIN SABER QUEM É
+      return userData; 
+
     } catch (error: any) {
       console.error("--- ERRO NO LOGIN ---");
-      // Se o backend devolver o motivo do erro (ex: senha incorreta), mostramos aqui:
       if (error.response?.data) {
         console.error("RESPOSTA DO BACKEND:", JSON.stringify(error.response.data, null, 2));
       } else {

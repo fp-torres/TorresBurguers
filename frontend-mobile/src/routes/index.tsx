@@ -15,6 +15,5 @@ export default function Routes() {
     );
   }
 
-  // Liberamos a catraca! Todo mundo entra direto no AppRoutes (que abre a Home)
   return <AppRoutes />;
 }

@@ -5,7 +5,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from '@expo/vector-icons/Feather';
 
 import { AuthContext } from '../../contexts/AuthContext';
-import { ThemeContext } from '../../contexts/ThemeContext'; // Importando o Tema
+import { ThemeContext } from '../../contexts/ThemeContext'; 
 import { AppStackParamList } from '../../routes/app.routes'; 
 
 type SignInRouteProp = {
@@ -15,8 +15,9 @@ type SignInRouteProp = {
 };
 
 export default function SignIn() {
-  const { signIn } = useContext(AuthContext);
-  const { activeTheme } = useContext(ThemeContext); // Usando o tema ativo
+  // Importando também o signOut para barrar quem entrar no lugar errado
+  const { signIn, signOut } = useContext(AuthContext);
+  const { activeTheme } = useContext(ThemeContext); 
   const route = useRoute<SignInRouteProp>();
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   
@@ -42,13 +43,48 @@ export default function SignIn() {
 
     setLoading(true);
     try {
-      await signIn(email, password);
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Home' }],
-      });
+      // 1. Faz o login e guarda os dados de quem logou
+      const loggedUser = await signIn(email, password);
+
+      // 2. BLOQUEIO: Cliente tentando entrar como Funcionário
+      if (loginType === 'funcionario' && loggedUser.role === 'CLIENT') {
+        await signOut(); // Desloga o cara na mesma hora
+        setLoading(false);
+        Alert.alert(
+          'Acesso Negado', 
+          'Sua conta é de Cliente. Por favor, volte e acesse a área correta.'
+        );
+        return;
+      }
+
+      // 3. BLOQUEIO: Funcionário tentando entrar como Cliente
+      if (loginType === 'cliente' && loggedUser.role !== 'CLIENT') {
+        await signOut(); // Desloga o cara na mesma hora
+        setLoading(false);
+        Alert.alert(
+          'Acesso Negado', 
+          'Esta área é exclusiva para clientes. Acesse o painel corporativo.'
+        );
+        return;
+      }
+
+      // 4. SUCESSO E NAVEGAÇÃO CORRETA
+      if (loggedUser.role === 'ADMIN' || loggedUser.role === 'EMPLOYEE') {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'AdminDashboard' }],
+        });
+      } else {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Home' }],
+        });
+      }
+
     } catch (error) {
       setLoading(false); 
+      // Mostra o erro se o email/senha estiver errado
+      Alert.alert('Erro no Login', 'E-mail ou senha incorretos. Verifique seus dados e tente novamente.');
     }
   }
 
@@ -104,7 +140,6 @@ export default function SignIn() {
               />
             </View>
 
-            {/* AQUI: Opção de esqueci minha senha */}
             <TouchableOpacity 
               className="mt-3 self-end"
               onPress={() => navigation.navigate('ForgotPassword')}
@@ -126,7 +161,6 @@ export default function SignIn() {
           )}
         </TouchableOpacity>
 
-        {/* AQUI: Criar conta (Aparece somente para clientes) */}
         {loginType === 'cliente' && (
           <View className="flex-row justify-center items-center mt-4">
             <Text className="text-slate-500 dark:text-slate-400 text-base">Ainda não tem conta? </Text>
