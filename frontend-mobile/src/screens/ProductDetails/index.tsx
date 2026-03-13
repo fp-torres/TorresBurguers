@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { View, Text, TouchableOpacity, Image, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Image, ScrollView, ActivityIndicator, Alert, Modal } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from '@expo/vector-icons/Feather';
@@ -7,7 +7,6 @@ import api from '../../services/api';
 import { AppStackParamList } from '../../routes/app.routes'; 
 
 import { CartContext } from '../../contexts/CartContext';
-// AQUI: Importamos o ThemeContext para ler qual é a cor atual da tela
 import { ThemeContext } from '../../contexts/ThemeContext';
 
 interface Addon {
@@ -43,13 +42,16 @@ export default function ProductDetails() {
   const { product_id } = route.params;
 
   const { addItemToCart } = useContext(CartContext);
-  const { activeTheme } = useContext(ThemeContext); // Consumindo o tema ativo
+  const { activeTheme } = useContext(ThemeContext);
 
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   
   const [quantity, setQuantity] = useState(1);
   const [selectedAddons, setSelectedAddons] = useState<SelectedAddon[]>([]);
+  
+  // Controle do Modal de Sucesso
+  const [successModalVisible, setSuccessModalVisible] = useState(false);
 
   useEffect(() => {
     async function fetchProduct() {
@@ -133,13 +135,20 @@ export default function ProductDetails() {
     };
 
     addItemToCart(newItem);
+    
+    // Mostra o Modal personalizado em vez do Alert do sistema
+    setSuccessModalVisible(true);
+  }
 
-    Alert.alert('Sucesso!', 'Seu lanche foi adicionado ao carrinho! 🍔', [
-      {
-        text: 'Continuar Comprando',
-        onPress: () => navigation.navigate('Home')
-      }
-    ]);
+  // Ações do Modal
+  function handleContinueShopping() {
+    setSuccessModalVisible(false);
+    navigation.navigate('Home');
+  }
+
+  function handleGoToCart() {
+    setSuccessModalVisible(false);
+    navigation.navigate('Cart');
   }
 
   const getImageUrl = (imagePath: string | null) => {
@@ -162,6 +171,46 @@ export default function ProductDetails() {
 
   return (
     <View className="flex-1 bg-gray-50 dark:bg-slate-900">
+      
+      {/* MODAL DE SUCESSO PÓS-ADIÇÃO */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={successModalVisible}
+        onRequestClose={handleContinueShopping}
+      >
+        <View className="flex-1 bg-black/50 justify-center items-center px-6">
+          <View className="bg-white dark:bg-slate-800 w-full rounded-3xl p-6 items-center shadow-xl">
+            <View className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full items-center justify-center mb-4">
+              <Feather name="check" size={32} color="#16a34a" />
+            </View>
+            
+            <Text className="text-xl font-bold text-slate-900 dark:text-white mb-2 text-center">
+              Adicionado com Sucesso!
+            </Text>
+            <Text className="text-slate-500 dark:text-slate-400 text-center mb-6">
+              O lanche já está no seu carrinho. Continuar comprando ou ver o Carrinho?
+            </Text>
+
+            <View className="w-full flex-row justify-between">
+              <TouchableOpacity 
+                className="flex-1 bg-gray-100 dark:bg-slate-700 py-4 rounded-xl items-center mr-2 active:scale-95 border border-gray-200 dark:border-slate-600"
+                onPress={handleContinueShopping}
+              >
+                <Text className="text-slate-700 dark:text-slate-300 font-bold">Continuar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                className="flex-1 bg-orange-600 py-4 rounded-xl items-center ml-2 active:scale-95 shadow-md shadow-orange-600/30"
+                onPress={handleGoToCart}
+              >
+                <Text className="text-white font-bold">Ver Carrinho</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         
         {/* Container da Imagem */}
@@ -223,9 +272,9 @@ export default function ProductDetails() {
       </ScrollView>
 
       {/* RODAPÉ FIXO */}
-      <View className="absolute bottom-0 w-full bg-white dark:bg-slate-800 border-t border-gray-200 dark:border-slate-700 p-5 flex-row justify-between items-center shadow-lg">
+      <View className="absolute bottom-0 w-full bg-white dark:bg-slate-800 border-t border-gray-200 dark:border-slate-700 p-5 flex-row justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
         
-        <View className="flex-row items-center bg-gray-100 dark:bg-slate-900 rounded-xl p-1 mr-4">
+        <View className="flex-row items-center bg-gray-100 dark:bg-slate-900 rounded-xl p-1 mr-4 border border-gray-200 dark:border-slate-700">
           <TouchableOpacity onPress={() => setQuantity(Math.max(1, quantity - 1))} className="p-3">
             <Feather 
               name="minus" 

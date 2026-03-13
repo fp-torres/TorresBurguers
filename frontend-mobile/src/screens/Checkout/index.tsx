@@ -7,7 +7,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { AppStackParamList } from '../../routes/app.routes';
 import { CartContext } from '../../contexts/CartContext';
 import { ThemeContext } from '../../contexts/ThemeContext';
-import { AuthContext } from '../../contexts/AuthContext'; // <-- Importado para pegar o email
+import { AuthContext } from '../../contexts/AuthContext'; 
 import api from '../../services/api';
 
 interface Address {
@@ -24,7 +24,7 @@ export default function Checkout() {
   
   const { cart, totalCartValue, clearCart } = useContext(CartContext);
   const { activeTheme } = useContext(ThemeContext);
-  const { user } = useContext(AuthContext); // <-- Pegando o usuário logado
+  const { user } = useContext(AuthContext); 
 
   const [orderType, setOrderType] = useState<'DELIVERY' | 'TAKEOUT'>('DELIVERY');
   const [paymentMethod, setPaymentMethod] = useState('PIX');
@@ -34,6 +34,9 @@ export default function Checkout() {
   const [selectedAddress, setSelectedAddress] = useState<number | null>(null);
   const [loadingAddresses, setLoadingAddresses] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Novo estado para controlar a expansão da lista de endereços
+  const [showAllAddresses, setShowAllAddresses] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -44,6 +47,7 @@ export default function Checkout() {
           setAddresses(response.data);
           
           if (response.data.length > 0 && !selectedAddress) {
+            // Seleciona automaticamente o último endereço cadastrado
             setSelectedAddress(response.data[response.data.length - 1].id);
           }
         } catch (error) {
@@ -86,7 +90,6 @@ export default function Checkout() {
           productId: item.product.id,
           quantity: item.quantity,
           addonIds: addonIds.length > 0 ? addonIds : undefined,
-          // Se tiver observação ou ponto da carne no carrinho, enviamos aqui:
           observation: item.product.id ? undefined : undefined, 
         };
       });
@@ -99,11 +102,9 @@ export default function Checkout() {
         items: itemsPayload,
       };
 
-      // --- ROTEAMENTO DE PAGAMENTOS ---
       if (paymentMethod === 'PIX') {
         const pixResponse = await api.post('/payment/pix', { amount: totalCartValue });
         
-        // CORREÇÃO: paymentId ao invés de payment_id
         const finalPayload = { ...payload, paymentId: pixResponse.data.id };
         await api.post('/orders', finalPayload);
         
@@ -120,7 +121,7 @@ export default function Checkout() {
         navigation.navigate('PaymentCard', {
           payload_order: payload,
           total: totalCartValue,
-          email: user?.email || 'cliente@email.com' // <-- Passando o email para a tela de cartão
+          email: user?.email || 'cliente@email.com'
         });
         setIsSubmitting(false);
 
@@ -140,6 +141,10 @@ export default function Checkout() {
       setIsSubmitting(false);
     }
   }
+
+  // Prepara a lista de endereços (inverte para o mais novo ficar no topo)
+  const reversedAddresses = [...addresses].reverse();
+  const displayedAddresses = showAllAddresses ? reversedAddresses : reversedAddresses.slice(0, 3);
 
   return (
     <KeyboardAvoidingView 
@@ -199,23 +204,40 @@ export default function Checkout() {
                 </Text>
               </View>
             ) : (
-              addresses.map(addr => (
-                <TouchableOpacity 
-                  key={addr.id}
-                  onPress={() => setSelectedAddress(addr.id)}
-                  className={`p-4 rounded-xl mb-3 flex-row items-center border ${selectedAddress === addr.id ? 'border-orange-500 bg-orange-50 dark:bg-orange-600/10' : 'border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-800'}`}
-                >
-                  <View className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mr-3 ${selectedAddress === addr.id ? 'border-orange-500' : 'border-gray-300 dark:border-slate-600'}`}>
-                    {selectedAddress === addr.id && <View className="w-2.5 h-2.5 rounded-full bg-orange-500" />}
-                  </View>
-                  <View>
-                    <Text className="font-bold text-slate-900 dark:text-white text-base">
-                      {addr.nickname ? `${addr.nickname} - ` : ''}{addr.street}, {addr.number}
+              <View>
+                {displayedAddresses.map(addr => (
+                  <TouchableOpacity 
+                    key={addr.id}
+                    onPress={() => setSelectedAddress(addr.id)}
+                    className={`p-4 rounded-xl mb-3 flex-row items-center border ${selectedAddress === addr.id ? 'border-orange-500 bg-orange-50 dark:bg-orange-600/10' : 'border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-800'}`}
+                  >
+                    <View className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mr-3 flex-shrink-0 ${selectedAddress === addr.id ? 'border-orange-500' : 'border-gray-300 dark:border-slate-600'}`}>
+                      {selectedAddress === addr.id && <View className="w-2.5 h-2.5 rounded-full bg-orange-500" />}
+                    </View>
+                    {/* flex-1 e numberOfLines evitam que o texto escape da caixa */}
+                    <View className="flex-1">
+                      <Text className="font-bold text-slate-900 dark:text-white text-base" numberOfLines={1}>
+                        {addr.nickname ? `${addr.nickname} - ` : ''}{addr.street}, {addr.number}
+                      </Text>
+                      <Text className="text-slate-500 dark:text-slate-400 text-sm" numberOfLines={1}>
+                        {addr.neighborhood} - {addr.city}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+                
+                {/* Botão sutil de "Ver Todos" (só aparece se tiver mais que 3) */}
+                {addresses.length > 3 && (
+                  <TouchableOpacity 
+                    onPress={() => setShowAllAddresses(!showAllAddresses)}
+                    className="py-2 items-center active:opacity-70"
+                  >
+                    <Text className="text-slate-500 dark:text-slate-400 font-medium text-sm">
+                      {showAllAddresses ? 'Ocultar endereços' : `Ver todos os ${addresses.length} endereços`}
                     </Text>
-                    <Text className="text-slate-500 dark:text-slate-400 text-sm">{addr.neighborhood} - {addr.city}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
           </View>
         )}
@@ -256,7 +278,7 @@ export default function Checkout() {
         </View>
 
         <TouchableOpacity 
-          className="w-full bg-green-600 rounded-xl py-4 flex-row justify-center items-center active:scale-95"
+          className="w-full bg-green-600 rounded-xl py-4 flex-row justify-center items-center active:scale-95 shadow-md shadow-green-600/30"
           onPress={handleFinishOrder}
           disabled={isSubmitting}
         >
