@@ -1,225 +1,138 @@
-# 📱 TorresBurgers | Mobile App (React Native & Expo)
+<div align="center">
 
-Esta é a **aplicação nativa do ecossistema TorresBurgers**, focada em proporcionar a melhor experiência de compra para o cliente final.
+<img src="assets/icon.png" alt="TorresBurgers Logo" width="100" />
 
-Construída com **React Native** e **Expo**, a aplicação utiliza uma arquitetura moderna para garantir:
+# 🍔 TorresBurgers — Mobile App
 
-- alta performance
-- responsividade (**100% mobile-first**)
-- suporte a múltiplos temas
+**A melhor experiência de pedido, direto no seu bolso.**
+
+![React Native](https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![Expo](https://img.shields.io/badge/Expo-000020?style=for-the-badge&logo=expo&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![NativeWind](https://img.shields.io/badge/NativeWind-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)
+
+</div>
 
 ---
 
-# ✨ Funcionalidades Mobile
+## 📖 Sobre
 
-## 🌓 Sistema de Temas Dinâmico
+O **TorresBurgers Mobile** é a aplicação nativa do ecossistema TorresBurgers — construída com **React Native** e **Expo** para oferecer performance máxima, responsividade total e uma experiência de compra fluida do início ao checkout.
 
-### Dark & Light Mode
+---
 
-Implementação utilizando:
+## ✨ Funcionalidades
 
-- **NativeWind**
-- **Context API**
+### 🌓 Temas Dinâmicos (Dark & Light)
+- Alternância em tempo real entre modo claro e escuro
+- Preferência persistida localmente via **AsyncStorage**
+- Responde automaticamente à preferência de tema do sistema operacional
+- Estilização com **NativeWind** + **Context API**
 
-### Persistência
+### 🛒 Gestão de Carrinho
+- Estado global via **CartContext** — consistente em todas as telas
+- Cálculo automático de totais com suporte a preços promocionais e adicionais
+- **Pill Button** flutuante na Home com resumo do pedido em tempo real
 
-A preferência de tema é armazenada localmente no dispositivo através do:
+### 🔐 Autenticação & Segurança
+- Login seguro com **JWT** e persistência de sessão
+- Barreira de checkout: login solicitado apenas na finalização do pedido
+- Navegação protegida com **Reset Navigation** e **GoBack seguro**
+
+### 📡 Networking & Dev Experience
+- Script `npm run tunnel` que inicia o túnel SSH, captura a URL dinâmica e atualiza a `baseURL` da API automaticamente
+- Função inteligente de processamento de imagens para compatibilidade com caminhos `/uploads` do backend **NestJS** e URLs de túnel dinâmico
+
+---
+
+## 🏗 Estrutura de Pastas
 
 ```
-AsyncStorage
-```
-
-### UI Adaptativa
-
-Interface que responde em **tempo real** a:
-
-- mudança de luminosidade
-- preferência de tema do sistema
-
----
-
-# 🛒 Gestão de Pedidos (Carrinho)
-
-### Estado Global
-
-Uso do **CartContext** para gerir:
-
-- itens
-- quantidades
-- adicionais
-
-de forma consistente entre todas as telas.
-
----
-
-### Cálculo em Tempo Real
-
-Totalizador automático que considera:
-
-- preços promocionais
-- valores de extras
-
----
-
-### Feedback Visual
-
-Botão flutuante (**Pill Button**) na tela **Home** com resumo do carrinho.
-
----
-
-# 🔐 Segurança e Acesso
-
-### Autenticação JWT
-
-Login seguro com persistência de **token JWT**.
-
----
-
-### Barreira de Checkout
-
-Validação automática que solicita login **apenas no momento da finalização do pedido**.
-
----
-
-### Navegação Segura
-
-Fluxos protegidos utilizando:
-
-- **Reset Navigation**
-- **GoBack seguro**
-- proteção de rotas
-
----
-
-# 📡 Networking & Dev Experience
-
-## Automação de Túnel (`npm run tunnel`)
-
-Script personalizado que:
-
-1. inicia o túnel **SSH**
-2. captura a **URL dinâmica gerada**
-3. atualiza automaticamente a configuração da API
-
----
-
-## Tratamento de Imagens
-
-Função inteligente para processar **caminhos estáticos** vindos do backend **NestJS**.
-
-Isso garante compatibilidade com:
-
-```
-/uploads
-```
-
-e URLs de **túnel dinâmico**.
-
----
-
-# 🏗 Estrutura de Pastas
-
-```bash
 frontend-mobile/
-├── assets/              # Ícones, splash screen e fontes
-
+├── assets/                 # Ícones, splash screen e fontes
 ├── src/
-│   ├── @types/          # Definições de tipos globais
-│   ├── components/      # Componentes de UI reutilizáveis
-│   ├── contexts/        # Provedores de Estado (Auth, Cart, Theme)
-│   ├── routes/          # Configuração de Stack Navigation
-│   ├── screens/         # Telas (Home, Cart, ProductDetails, etc.)
-│   ├── services/        # Integração com Axios e API
-│   └── utils/           # Funções auxiliares e formatadores
-
-├── start-tunnel.js      # Script de automação do túnel SSH
-├── tailwind.config.js   # Configuração do NativeWind
-└── App.tsx              # Ponto de entrada da aplicação
+│   ├── @types/             # Definições de tipos globais
+│   ├── components/         # Componentes de UI reutilizáveis
+│   ├── contexts/           # Provedores de estado (Auth, Cart, Theme)
+│   ├── routes/             # Configuração de Stack Navigation
+│   ├── screens/            # Telas (Home, Cart, ProductDetails...)
+│   ├── services/           # Integração com Axios e API
+│   └── utils/              # Funções auxiliares e formatadores
+├── start-tunnel.js         # Script de automação do túnel SSH
+├── tailwind.config.js      # Configuração do NativeWind
+└── App.tsx                 # Ponto de entrada da aplicação
 ```
 
 ---
 
-# 🚀 Como Executar
+## 🚀 Como Executar
 
-## Pré-requisitos
+### Pré-requisitos
 
-- **Node.js instalado**
-- **Expo Go** no telemóvel  
-  ou
-- **Emulador Android/iOS configurado**
+- [Node.js](https://nodejs.org/) instalado
+- [Expo Go](https://expo.dev/client) no celular **ou** emulador Android/iOS configurado
 
 ---
 
-# 📦 Passo a Passo
+### Passo a passo
 
-## 1️⃣ Instale as dependências
-
+**1. Instale as dependências**
 ```bash
 npm install
 ```
 
----
-
-## 2️⃣ Inicie a conexão com a API
-
-Se estiver trabalhando remotamente ou em rede corporativa restrita:
-
+**2. Conecte à API** *(somente em rede remota ou corporativa)*
 ```bash
 npm run tunnel
 ```
+> Esse comando cria o túnel, captura a URL pública e atualiza a `baseURL` automaticamente.
 
-Esse comando:
-
-- cria o túnel
-- captura a URL pública
-- atualiza automaticamente a **baseURL da API**
-
----
-
-## 3️⃣ Inicie o Expo
-
+**3. Inicie o Expo**
 ```bash
 npm run start
 ```
 
----
+**4. Abra no dispositivo**
 
-## 4️⃣ Abra no dispositivo
+Escaneie o **QR Code** com o Expo Go ou use os atalhos no terminal:
 
-- Escaneie o **QR Code** com o **Expo Go**
-
-ou utilize os atalhos no terminal:
-
-```
-a → Android
-i → iOS
-```
+| Tecla | Ação |
+|-------|------|
+| `a` | Abrir no Android |
+| `i` | Abrir no iOS |
 
 ---
 
-# 🛠 Stack Tecnológica
+## 🛠 Stack Tecnológica
 
 | Tecnologia | Finalidade |
-|-------------|-------------|
-| React Native | Framework base para apps nativos |
-| Expo | Ecossistema de ferramentas e workflow |
-| NativeWind | Estilização baseada em Tailwind CSS |
-| React Navigation | Gestão de rotas e pilhas de ecrãs |
-| Axios | Consumo de API REST |
-| AsyncStorage | Armazenamento local de dados |
+|---|---|
+| **React Native** | Framework base para apps nativos |
+| **Expo** | Ecossistema de ferramentas e workflow |
+| **TypeScript** | Tipagem estática e segurança de código |
+| **NativeWind** | Estilização baseada em Tailwind CSS |
+| **React Navigation** | Gestão de rotas e pilhas de telas |
+| **Axios** | Consumo de API REST |
+| **AsyncStorage** | Armazenamento local de dados |
 
 ---
 
-# 🛣 Roadmap Mobile
+## 🛣 Roadmap
 
-Funcionalidades já implementadas:
+**Já implementado**
+- [x] Contexto global de Carrinho e Autenticação
+- [x] Suporte a Dark / Light Mode
+- [x] Automação de configuração da API via túnel
 
-- [x] Contexto global de **Carrinho e Autenticação**
-- [x] Suporte a **Dark / Light Mode**
-- [x] Automação de configuração da **API via túnel**
+**Em desenvolvimento**
+- [ ] Fluxo completo de Pagamento (Checkout)
+- [ ] Push Notifications para status do pedido
+- [ ] Integração com mapas para rastreio de entrega
 
-Próximas melhorias:
+---
 
-- [ ] Implementação do **Fluxo de Pagamento (Checkout Completo)**
-- [ ] **Push Notifications** para status do pedido
-- [ ] Integração com **Mapas para rastreio de entrega**
+<div align="center">
+
+Feito com 🍔 pela equipe **TorresBurgers**
+
+</div>
