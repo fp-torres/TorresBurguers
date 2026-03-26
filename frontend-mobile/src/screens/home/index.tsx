@@ -66,51 +66,78 @@ export default function Home() {
   
   const [visibleCount, setVisibleCount] = useState(6);
 
-  // Estado para o Admin controlar abertura/fechamento da loja
+  // Estado Real da Loja
   const [isStoreOpen, setIsStoreOpen] = useState(true); 
 
   useEffect(() => {
     fetchProducts();
-    loadBanner();
-    // Aqui futuramente você pode colocar a chamada da API para checar se a loja está aberta:
-    // fetchStoreStatus();
+    loadStoreStatusAndBanner();
   }, []);
 
   useEffect(() => {
     setVisibleCount(6);
   }, [activeCategory, searchTerm]);
 
-  async function loadBanner() {
+  async function loadStoreStatusAndBanner() {
     const todayIndex = TEST_DAY !== null ? TEST_DAY : new Date().getDay();
     let currentBanner = DAILY_OFFERS[todayIndex] || DAILY_OFFERS[0];
-    
-    if ((todayIndex === 3 || todayIndex === 0) && !currentBanner.isClosed) {
-      if (FORCE_GAME_DAY) {
-         currentBanner = {
-            title: "Hoje tem Jogão! ⚽",
-            subtitle: `SIMULAÇÃO: Flamengo x Vasco às 21:30 - Brasileirão.`,
-            image: "https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=800&auto=format&fit=crop", 
-            icon: "award",
-            isClosed: false
-         };
-      } else {
-        try {
-          const { data } = await api.get('/promotions/football');
-          if (data && data.hasGame) {
-            currentBanner = {
+    let storeStatus = true;
+
+    // 1. Regra Absoluta: Segunda-feira a loja NÃO abre.
+    if (todayIndex === 1) {
+      storeStatus = false;
+      currentBanner = DAILY_OFFERS[1]; 
+    } else {
+      // 2. Se não for segunda, pergunta ao Backend (Admin)
+      try {
+        const statusRes = await api.get('/store/status');
+        storeStatus = statusRes.data.is_open;
+        
+        // Se o Admin fechou a loja
+        if (!storeStatus) {
+          currentBanner = {
+            title: "Loja Fechada",
+            subtitle: "Fechamos temporariamente. Voltamos em breve!",
+            image: "https://images.unsplash.com/photo-1559339352-11d035aa65de?q=80&w=800&auto=format&fit=crop",
+            icon: "lock",
+            isClosed: true
+          };
+        }
+      } catch (error) {
+        console.log("Aviso: Não foi possível obter o status da loja da API.");
+      }
+
+      // 3. Checagem de Jogo (Só roda se a loja estiver aberta e for dia de jogo)
+      if (storeStatus && (todayIndex === 3 || todayIndex === 0)) {
+        if (FORCE_GAME_DAY) {
+           currentBanner = {
               title: "Hoje tem Jogão! ⚽",
-              subtitle: `${data.home} x ${data.away} às ${data.time} - ${data.tournament}.`,
+              subtitle: `SIMULAÇÃO: Flamengo x Vasco às 21:30 - Brasileirão.`,
               image: "https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=800&auto=format&fit=crop", 
               icon: "award",
               isClosed: false
-            };
+           };
+        } else {
+          try {
+            const { data } = await api.get('/promotions/football');
+            if (data && data.hasGame) {
+              currentBanner = {
+                title: "Hoje tem Jogão! ⚽",
+                subtitle: `${data.home} x ${data.away} às ${data.time} - ${data.tournament}.`,
+                image: "https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=800&auto=format&fit=crop", 
+                icon: "award",
+                isClosed: false
+              };
+            }
+          } catch (error) {
+            // Segue a vida
           }
-        } catch (error) {
-          // Sem jogo hoje
         }
       }
     }
+
     setBanner(currentBanner);
+    setIsStoreOpen(storeStatus);
   }
 
   async function fetchProducts() {
@@ -126,8 +153,7 @@ export default function Home() {
   }
 
   const handleProductPress = (productId: number) => {
-    // Validação usando o status da loja e do banner
-    if (banner.isClosed || !isStoreOpen) {
+    if (!isStoreOpen || banner.isClosed) {
       Alert.alert("Loja Fechada", "Nossa loja está fechada no momento. Volte mais tarde!");
       return;
     }
@@ -165,9 +191,9 @@ export default function Home() {
     <TouchableOpacity 
       key={product.id}
       onPress={() => handleProductPress(product.id)}
-      disabled={banner.isClosed || !isStoreOpen}
+      disabled={!isStoreOpen || banner.isClosed}
       className={`w-64 bg-white dark:bg-slate-800 p-4 rounded-3xl mr-4 border border-gray-100 dark:border-slate-700 shadow-sm overflow-hidden
-        ${banner.isClosed || !isStoreOpen ? 'opacity-80' : 'active:scale-95'}
+        ${!isStoreOpen || banner.isClosed ? 'opacity-80' : 'active:scale-95'}
       `}
     >
       {isPromo && (
@@ -177,7 +203,7 @@ export default function Home() {
       )}
       <View className="h-32 bg-gray-50 dark:bg-slate-900 rounded-2xl mb-4 overflow-hidden relative">
         <Image source={{ uri: getImageUrl(product.image) }} className="w-full h-full" resizeMode="cover" />
-        {(banner.isClosed || !isStoreOpen) && <View className="absolute inset-0 bg-black/40" />}
+        {(!isStoreOpen || banner.isClosed) && <View className="absolute inset-0 bg-black/40" />}
       </View>
       
       <Text className="font-bold text-gray-800 dark:text-white text-lg mb-1" numberOfLines={1}>{product.name}</Text>
@@ -187,9 +213,9 @@ export default function Home() {
         <Text className="font-extrabold text-lg text-gray-900 dark:text-gray-100">
           {formatPrice(product.promotion_price || product.price)}
         </Text>
-        <View className={`px-4 py-2 rounded-xl ${banner.isClosed || !isStoreOpen ? 'bg-gray-300 dark:bg-slate-700' : 'bg-slate-900 dark:bg-orange-600'}`}>
-          <Text className={`text-xs font-bold ${banner.isClosed || !isStoreOpen ? 'text-gray-500 dark:text-gray-400' : 'text-white'}`}>
-            {banner.isClosed || !isStoreOpen ? 'Fechado' : 'Add'}
+        <View className={`px-4 py-2 rounded-xl ${!isStoreOpen || banner.isClosed ? 'bg-gray-300 dark:bg-slate-700' : 'bg-slate-900 dark:bg-orange-600'}`}>
+          <Text className={`text-xs font-bold ${!isStoreOpen || banner.isClosed ? 'text-gray-500 dark:text-gray-400' : 'text-white'}`}>
+            {!isStoreOpen || banner.isClosed ? 'Fechado' : 'Add'}
           </Text>
         </View>
       </View>
@@ -199,14 +225,14 @@ export default function Home() {
   const renderVerticalCard = ({ item }: { item: Product }) => (
     <TouchableOpacity 
       onPress={() => handleProductPress(item.id)}
-      disabled={banner.isClosed || !isStoreOpen}
+      disabled={!isStoreOpen || banner.isClosed}
       className={`bg-white dark:bg-slate-800 p-4 rounded-3xl mb-4 flex-row items-center border border-gray-100 dark:border-slate-700 shadow-sm
-        ${banner.isClosed || !isStoreOpen ? 'opacity-70 grayscale' : 'active:scale-95'}
+        ${!isStoreOpen || banner.isClosed ? 'opacity-70 grayscale' : 'active:scale-95'}
       `}
     >
       <View className="w-24 h-24 rounded-2xl bg-gray-100 dark:bg-slate-900 overflow-hidden relative">
         <Image source={{ uri: getImageUrl(item.image) }} className="w-full h-full" resizeMode="cover" />
-        {(banner.isClosed || !isStoreOpen) && <View className="absolute inset-0 bg-black/50" />}
+        {(!isStoreOpen || banner.isClosed) && <View className="absolute inset-0 bg-black/50" />}
       </View>
       
       <View className="flex-1 ml-4 justify-center">
@@ -225,8 +251,8 @@ export default function Home() {
             )}
           </View>
           
-          <View className={`w-8 h-8 rounded-full items-center justify-center ${banner.isClosed || !isStoreOpen ? 'bg-gray-200 dark:bg-slate-700' : 'bg-orange-100 dark:bg-orange-600/20'}`}>
-            <Feather name="plus" size={16} color={banner.isClosed || !isStoreOpen ? '#9ca3af' : '#ea580c'} />
+          <View className={`w-8 h-8 rounded-full items-center justify-center ${!isStoreOpen || banner.isClosed ? 'bg-gray-200 dark:bg-slate-700' : 'bg-orange-100 dark:bg-orange-600/20'}`}>
+            <Feather name="plus" size={16} color={!isStoreOpen || banner.isClosed ? '#9ca3af' : '#ea580c'} />
           </View>
         </View>
       </View>
@@ -235,53 +261,66 @@ export default function Home() {
 
   const listHeaderComponent = (
     <View>
-      {/* 1. Header Fixo Superior */}
-      <View className="flex-row justify-between items-start px-6 mb-6">
-        <View>
+      {/* 1. Header Fixo Superior - APLICADA RESPONSIVIDADE AQUI */}
+      <View className="flex-row justify-between items-center px-6 mb-6">
+        
+        {/* Bloco da Esquerda (Logo e Bem vindo) - Flex 1 para empurrar o resto */}
+        <View className="flex-1 mr-2">
           <View className="flex-row items-center mb-1">
-            <Text className="text-2xl font-bold text-slate-900 dark:text-white mr-2">
+            <Text className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mr-2" numberOfLines={1}>
               Torres<Text className="text-orange-500">Burgers</Text>
             </Text>
-            {/* ÍCONE DE STATUS DA LOJA */}
-            <View className={`p-1.5 rounded-full ${isStoreOpen ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
-              <Feather name={isStoreOpen ? 'unlock' : 'lock'} size={14} color={isStoreOpen ? '#16a34a' : '#ef4444'} />
+            <View className={`p-1.5 rounded-full ${isStoreOpen && !banner.isClosed ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
+              <Feather name={isStoreOpen && !banner.isClosed ? 'unlock' : 'lock'} size={12} color={isStoreOpen && !banner.isClosed ? '#16a34a' : '#ef4444'} />
             </View>
           </View>
-          <Text className="text-base text-slate-600 dark:text-slate-400">
+          <Text className="text-xs sm:text-base text-slate-600 dark:text-slate-400" numberOfLines={1}>
             {user ? `E aí, ${user.name.split(' ')[0]}! 👋` : 'Bem-vindo(a) visitante! 🍔'}
           </Text>
         </View>
         
-        <View className="flex-row items-center">
-          <TouchableOpacity onPress={cycleTheme} className="mr-3 p-2 bg-gray-200 dark:bg-slate-800 rounded-full border border-gray-300 dark:border-slate-700 active:scale-95">
+        {/* Bloco da Direita (Botões) - Organizados com Gap */}
+        <View className="flex-row items-center gap-2 sm:gap-3">
+          
+          <TouchableOpacity onPress={() => navigation.navigate('Cart')} className="p-2 sm:p-2.5 bg-gray-200 dark:bg-slate-800 rounded-full border border-gray-300 dark:border-slate-700 active:scale-95 relative">
+            <Feather name="shopping-cart" size={18} color={activeTheme === 'dark' ? '#cbd5e1' : '#475569'} />
+            {cart.length > 0 && (
+              <View className="absolute -top-1 -right-1 bg-red-600 w-4 h-4 rounded-full items-center justify-center">
+                <Text className="text-white text-[9px] font-bold">{cart.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={cycleTheme} className="p-2 sm:p-2.5 bg-gray-200 dark:bg-slate-800 rounded-full border border-gray-300 dark:border-slate-700 active:scale-95">
             <Feather name={getThemeIcon() as any} size={18} color={activeTheme === 'dark' ? '#fbbf24' : '#475569'} />
           </TouchableOpacity>
+          
           {user ? (
-            <TouchableOpacity onPress={() => navigation.navigate('Profile')} className="w-10 h-10 rounded-full bg-orange-600 border-2 border-orange-200 dark:border-slate-700 justify-center items-center">
-              {user.avatar ? <Image source={{ uri: getImageUrl(user.avatar) }} className="w-full h-full rounded-full" /> : <Text className="text-white font-bold text-lg">{user.name.charAt(0)}</Text>}
+            <TouchableOpacity onPress={() => navigation.navigate('Profile')} className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-orange-600 border-2 border-orange-200 dark:border-slate-700 justify-center items-center overflow-hidden">
+              {user.avatar ? <Image source={{ uri: getImageUrl(user.avatar) }} className="w-full h-full" /> : <Text className="text-white font-bold text-base">{user.name.charAt(0)}</Text>}
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity onPress={() => navigation.navigate('Welcome')} className="bg-orange-600 px-4 py-2 rounded-lg active:scale-95 shadow-md">
-              <Text className="text-white font-bold text-sm">Entrar</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Welcome')} className="bg-orange-600 px-3 py-2 sm:px-4 rounded-lg active:scale-95 shadow-md">
+              <Text className="text-white font-bold text-xs sm:text-sm">Entrar</Text>
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {/* 2. Banner do Dia (Design Melhorado com Bloco Escuro para Leitura) */}
+      {/* 2. Banner do Dia - CORRIGIDO O OVERLAY */}
       <View className="px-6 mb-8">
         <View className="w-full h-64 rounded-3xl overflow-hidden shadow-xl relative bg-slate-900">
-          <Image source={{ uri: banner.image }} className="absolute inset-0 w-full h-full" resizeMode="cover" />
           
-          {/* Fundo escuro leve para não estourar a imagem superior */}
-          <View className={`absolute inset-0 ${banner.isClosed ? 'bg-black/60' : 'bg-black/20'}`} />
+          {/* IMAGEM E MÁSCARA ESCURA */}
+          <Image source={{ uri: banner.image }} className="absolute inset-0 w-full h-full" resizeMode="cover" />
+          <View className={`absolute inset-0 ${banner.isClosed || !isStoreOpen ? 'bg-black/60' : 'bg-black/20'}`} />
           
           {/* Bloco Sólido na Base garantindo 100% de leitura do texto */}
           <View className="absolute bottom-0 w-full bg-black/80 px-5 py-4">
-            <View className={`self-start px-3 py-1 rounded-full mb-2 flex-row items-center ${banner.isClosed ? 'bg-red-600' : 'bg-orange-600'}`}>
-              <Feather name={banner.isClosed ? 'lock' : 'clock'} size={12} color="#fff" />
+            <View className={`self-start px-3 py-1 rounded-full mb-2 flex-row items-center ${banner.isClosed || !isStoreOpen ? 'bg-red-600' : 'bg-orange-600'}`}>
+              <Feather name={banner.isClosed || !isStoreOpen ? 'lock' : 'clock'} size={12} color="#fff" />
               <Text className="text-white text-[10px] font-bold ml-1.5 uppercase tracking-wider">
-                {banner.isClosed ? 'LOJA FECHADA' : 'OFERTA DE HOJE'}
+                {banner.isClosed || !isStoreOpen ? 'LOJA FECHADA' : 'OFERTA DE HOJE'}
               </Text>
             </View>
             <Text className="text-2xl font-extrabold text-white mb-1 leading-tight">{banner.title}</Text>
