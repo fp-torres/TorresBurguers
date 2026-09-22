@@ -9,7 +9,7 @@ interface PixCheckoutProps {
   onExpired: () => void; // Callback para quando o tempo acabar ou usuário cancelar
 }
 
-export default function PixCheckout({ qrCode, copyPaste, onExpired }: PixCheckoutProps) {
+export default function PixCheckout({ copyPaste, onExpired }: PixCheckoutProps) {
   const [timeLeft, setTimeLeft] = useState(600); // 10 minutos em segundos
 
   useEffect(() => {

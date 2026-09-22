@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Icon } from '@iconify/react';
-import { X, Sun, Moon, Monitor, Smartphone } from 'lucide-react';
+import { X, Sun, Moon, Monitor } from 'lucide-react';
 import { useState } from 'react';
 import ConfirmModal from '../ConfirmModal';
 import { useTheme } from '../../contexts/ThemeContext'; // Importando o Tema

@@ -19,7 +19,6 @@ const CATEGORIES = [
 export default function Products() {
   const [products, setProducts] = useState<Product[]>([]);
   const [deletedProducts, setDeletedProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -38,7 +37,7 @@ export default function Products() {
     try {
       const data = await productService.getAll();
       setProducts(data);
-    } catch { toast.error("Erro ao carregar produtos"); } finally { setLoading(false); }
+    } catch { toast.error("Erro ao carregar produtos"); }
   }
 
   async function loadDeletedProducts() {

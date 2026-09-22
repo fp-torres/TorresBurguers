@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { 
-  ShoppingBag, ChefHat, User, LogOut, Briefcase, 
+  ShoppingBag, ChefHat, User, LogOut,
   LayoutDashboard, Clock, ChevronDown, UserCog, Package,
   Sun, Moon, Monitor, Smartphone, Menu
 } from 'lucide-react';

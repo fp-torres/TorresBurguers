@@ -1,0 +1,1094 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Guia Completo do Projeto TorresBurgers</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 16mm 14mm 18mm;
+    }
+
+    :root {
+      --ink: #172033;
+      --muted: #5f6b7a;
+      --soft: #eef2f6;
+      --line: #d8e0ea;
+      --brand: #df5d1b;
+      --brand-dark: #9b3412;
+      --code: #111827;
+      --code-bg: #f5f7fa;
+      --ok: #126c43;
+      --warn: #9a4e00;
+      --danger: #9d1c1c;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: white;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.45;
+    }
+
+    h1, h2, h3, h4 {
+      margin: 0 0 8px;
+      line-height: 1.18;
+      color: #101827;
+    }
+
+    h1 {
+      font-size: 29pt;
+      letter-spacing: -0.02em;
+    }
+
+    h2 {
+      margin-top: 26px;
+      padding-top: 10px;
+      border-top: 2px solid var(--line);
+      font-size: 17pt;
+    }
+
+    h3 {
+      margin-top: 18px;
+      font-size: 12.5pt;
+    }
+
+    h4 {
+      margin-top: 14px;
+      font-size: 10.5pt;
+      color: #263348;
+    }
+
+    p {
+      margin: 0 0 9px;
+    }
+
+    a {
+      color: var(--brand-dark);
+      text-decoration: none;
+    }
+
+    ul, ol {
+      margin: 6px 0 12px 20px;
+      padding: 0;
+    }
+
+    li {
+      margin: 3px 0;
+    }
+
+    code {
+      padding: 1px 4px;
+      border-radius: 4px;
+      background: var(--code-bg);
+      color: var(--code);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 9.3pt;
+    }
+
+    pre {
+      margin: 8px 0 13px;
+      padding: 10px 12px;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--code-bg);
+      color: var(--code);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 8.8pt;
+      line-height: 1.42;
+    }
+
+    table {
+      width: 100%;
+      margin: 8px 0 14px;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 9.1pt;
+    }
+
+    th, td {
+      padding: 7px 8px;
+      vertical-align: top;
+      border: 1px solid var(--line);
+      overflow-wrap: anywhere;
+    }
+
+    th {
+      background: #f0f4f8;
+      color: #1e293b;
+      font-weight: 700;
+      text-align: left;
+    }
+
+    .cover {
+      display: flex;
+      min-height: 250mm;
+      flex-direction: column;
+      justify-content: center;
+      page-break-after: always;
+      border-left: 8px solid var(--brand);
+      padding-left: 24px;
+    }
+
+    .subtitle {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13pt;
+      max-width: 600px;
+    }
+
+    .meta {
+      margin-top: 32px;
+      color: var(--muted);
+      font-size: 10pt;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 18px 0 0;
+    }
+
+    .badge {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: #fbfcfe;
+      font-size: 9pt;
+      font-weight: 700;
+      color: #2b3748;
+    }
+
+    .note, .warning, .success, .danger {
+      margin: 10px 0 13px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid;
+    }
+
+    .note {
+      border-color: #bed4ef;
+      background: #f2f7fd;
+    }
+
+    .warning {
+      border-color: #f0c47a;
+      background: #fff8e8;
+      color: #513307;
+    }
+
+    .success {
+      border-color: #9bd5b7;
+      background: #effaf4;
+      color: #123b29;
+    }
+
+    .danger {
+      border-color: #efb3b3;
+      background: #fff1f1;
+      color: #571717;
+    }
+
+    .toc {
+      page-break-after: always;
+    }
+
+    .toc ol {
+      columns: 2;
+      column-gap: 28px;
+      margin-left: 18px;
+    }
+
+    .toc li {
+      break-inside: avoid;
+      margin-bottom: 5px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 9pt;
+    }
+
+    .nowrap {
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <h1>TorresBurgers</h1>
+    <p class="subtitle">Guia completo para clonar, configurar, executar, entender e manter o projeto full stack.</p>
+    <div class="badge-row">
+      <span class="badge">Backend NestJS</span>
+      <span class="badge">PostgreSQL + TypeORM</span>
+      <span class="badge">Frontend React + Vite</span>
+      <span class="badge">Mobile Expo</span>
+      <span class="badge">Mercado Pago sandbox</span>
+    </div>
+    <p class="meta">
+      Gerado em 22/09/2026<br />
+      Workspace analisado: <code>/home/crase/Área de trabalho/TorresBurguers</code><br />
+      Objetivo: permitir que outro desenvolvedor suba o ambiente completo e entenda os fluxos principais de API, banco, web e mobile.
+    </p>
+  </section>
+
+  <section class="toc">
+    <h2>Sumário</h2>
+    <ol>
+      <li>Visão geral</li>
+      <li>Checklist de execução rápida</li>
+      <li>Estrutura do repositório</li>
+      <li>Pré-requisitos</li>
+      <li>Variáveis de ambiente</li>
+      <li>Banco de dados PostgreSQL</li>
+      <li>Backend NestJS</li>
+      <li>Frontend web</li>
+      <li>Frontend mobile</li>
+      <li>Autenticação, perfis e permissões</li>
+      <li>Mapa de endpoints da API</li>
+      <li>Modelagem do banco</li>
+      <li>Integrações externas</li>
+      <li>Fluxos principais</li>
+      <li>Uploads e imagens</li>
+      <li>Verificações executadas</li>
+      <li>Problemas conhecidos e recomendações</li>
+      <li>Troubleshooting</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>1. Visão geral</h2>
+    <p>
+      O TorresBurgers é um sistema de delivery com três aplicações principais:
+      API backend em NestJS, painel/web de cliente e administração em React/Vite, e aplicativo mobile em React Native/Expo.
+      A API centraliza autenticação, produtos, adicionais, pedidos, endereços, status da loja, pagamentos, promoções e upload de imagens.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Camada</th>
+          <th>Tecnologias</th>
+          <th>Responsabilidade</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Backend</td>
+          <td>NestJS 11, TypeScript, TypeORM, PostgreSQL, JWT, Bcrypt, Sharp, Swagger</td>
+          <td>API REST, regras de negócio, autenticação, banco, uploads, pagamentos e integrações externas.</td>
+        </tr>
+        <tr>
+          <td>Web</td>
+          <td>React 19, Vite 7, TailwindCSS 4, Axios, Recharts, Lucide, Mercado Pago SDK</td>
+          <td>Cardápio do cliente, carrinho, checkout, perfil, pedidos, dashboard administrativo e gestão de cardápio/equipe.</td>
+        </tr>
+        <tr>
+          <td>Mobile</td>
+          <td>Expo 54, React Native 0.81, NativeWind, AsyncStorage, React Navigation, Axios</td>
+          <td>Experiência mobile de cliente e painel admin simplificado, com configuração de API via túnel Serveo.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="warning">
+      <strong>Estado real do código:</strong> algumas configurações ainda estão hardcoded. O backend sempre escuta em <code>3000</code>;
+      o web usa <code>http://localhost:3000</code> diretamente em <code>frontend-web/src/services/api.ts</code>;
+      o mobile usa uma URL Serveo diretamente em <code>frontend-mobile/src/services/api.ts</code>, atualizada pelo script <code>npm run tunnel</code>.
+    </div>
+  </section>
+
+  <section>
+    <h2>2. Checklist de execução rápida</h2>
+    <p>Este é o caminho curto para outro desenvolvedor subir tudo localmente.</p>
+
+    <h3>1. Clonar o projeto</h3>
+    <pre>git clone &lt;URL_DO_REPOSITORIO&gt;
+cd TorresBurguers</pre>
+
+    <h3>2. Preparar PostgreSQL</h3>
+    <pre>createdb -U postgres torresburgers</pre>
+    <p>Se o usuário/senha forem diferentes, ajuste o arquivo <code>backend/.env</code>.</p>
+
+    <h3>3. Configurar backend</h3>
+    <pre>cd backend
+npm install</pre>
+    <p>Crie <code>backend/.env</code>:</p>
+    <pre>DB_HOST=localhost
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=0000
+DB_DATABASE=torresburgers
+
+JWT_SECRET=troque_esta_chave_por_um_valor_grande_e_secreto
+FOOTBALL_DATA_TOKEN=opcional_token_football_data</pre>
+
+    <h3>4. Subir a API</h3>
+    <pre>npm run start:dev</pre>
+    <p>A API ficará em <code>http://localhost:3000</code> e o Swagger em <code>http://localhost:3000/api</code>.</p>
+
+    <h3>5. Criar primeiro usuário admin</h3>
+    <p>Em banco novo não há seed. Crie o admin pela rota pública de usuários:</p>
+    <pre>curl -X POST http://localhost:3000/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Admin Torres",
+    "email": "admin@torresburgers.com",
+    "phone": "21999999999",
+    "password": "SenhaAdmin123!",
+    "role": "ADMIN"
+  }'</pre>
+
+    <h3>6. Subir frontend web</h3>
+    <pre>cd ../frontend-web
+npm install
+npm run dev</pre>
+    <p>Abra a URL exibida pelo Vite, normalmente <code>http://localhost:5173</code>.</p>
+
+    <h3>7. Subir mobile</h3>
+    <pre>cd ../frontend-mobile
+npm install
+npm run tunnel
+npm run start</pre>
+    <p>
+      Use <code>npm run tunnel</code> em uma janela de terminal para expor a API local via Serveo e atualizar
+      <code>frontend-mobile/src/services/api.ts</code>. Depois rode o Expo em outra janela.
+    </p>
+  </section>
+
+  <section>
+    <h2>3. Estrutura do repositório</h2>
+    <pre>TorresBurguers/
+├── backend/                  API NestJS
+│   ├── src/auth/              login, JWT e roles
+│   ├── src/users/             usuários, perfis e avatares
+│   ├── src/products/          produtos e adicionais
+│   ├── src/orders/            pedidos, dashboard e logística
+│   ├── src/addresses/         endereços e busca de CEP
+│   ├── src/store/             status da loja aberta/fechada
+│   ├── src/payment/           PIX/cartão Mercado Pago sandbox
+│   ├── src/promotions/        banner futebol/promoções
+│   ├── src/common/            upload e manutenção de imagens
+│   └── uploads/               imagens servidas em /uploads
+├── frontend-web/              React + Vite
+│   └── src/
+│       ├── pages/             telas de cliente e admin
+│       ├── components/        modais, sidebar, cartão, footer
+│       ├── contexts/          auth, carrinho e tema
+│       ├── services/          Axios e serviços REST
+│       └── routes/            rotas web
+├── frontend-mobile/           Expo + React Native
+│   ├── src/screens/           telas mobile
+│   ├── src/routes/            stacks de navegação
+│   ├── src/contexts/          auth, carrinho e tema
+│   ├── src/services/          Axios e serviços REST
+│   └── start-tunnel.js        automação de túnel Serveo
+└── docs/                      documentação gerada</pre>
+
+    <div class="note">
+      Não há <code>docker-compose.yml</code>, <code>Dockerfile</code> ou <code>.env.example</code> no workspace atual. O setup documentado aqui assume instalação local do PostgreSQL e execução por <code>npm</code>.
+    </div>
+  </section>
+
+  <section>
+    <h2>4. Pré-requisitos</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Ferramenta</th>
+          <th>Versão recomendada</th>
+          <th>Observações</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Node.js</td>
+          <td>20.19+ ou 22.12+</td>
+          <td>O Vite 7 avisa que exige Node 20.19+ ou 22.12+. No ambiente analisado, Node 18.19 ainda gerou build, mas a recomendação correta é Node 20 LTS.</td>
+        </tr>
+        <tr>
+          <td>npm</td>
+          <td>9+</td>
+          <td>O projeto usa <code>package-lock.json</code> em cada app.</td>
+        </tr>
+        <tr>
+          <td>PostgreSQL</td>
+          <td>14+ ou 16+</td>
+          <td>Testado no ambiente com PostgreSQL client 16.15.</td>
+        </tr>
+        <tr>
+          <td>Expo Go</td>
+          <td>Compatível com Expo 54</td>
+          <td>Necessário para testar o app no celular físico.</td>
+        </tr>
+        <tr>
+          <td>SSH</td>
+          <td>OpenSSH</td>
+          <td>Necessário para <code>frontend-mobile/npm run tunnel</code> usando Serveo.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>5. Variáveis de ambiente</h2>
+    <h3>Backend</h3>
+    <p>Crie <code>backend/.env</code>. O arquivo real é ignorado pelo Git.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Variável</th>
+          <th>Usada atualmente?</th>
+          <th>Descrição</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>DB_HOST</code></td>
+          <td>Sim</td>
+          <td>Host PostgreSQL. Default no código: <code>localhost</code>.</td>
+        </tr>
+        <tr>
+          <td><code>DB_PORT</code></td>
+          <td>Sim</td>
+          <td>Porta PostgreSQL. Default no código: <code>5432</code>.</td>
+        </tr>
+        <tr>
+          <td><code>DB_USERNAME</code></td>
+          <td>Sim</td>
+          <td>Usuário do banco. Default: <code>postgres</code>.</td>
+        </tr>
+        <tr>
+          <td><code>DB_PASSWORD</code></td>
+          <td>Sim</td>
+          <td>Senha do banco. Default: <code>0000</code>.</td>
+        </tr>
+        <tr>
+          <td><code>DB_DATABASE</code></td>
+          <td>Sim</td>
+          <td>Nome do banco. Default: <code>torresburgers</code>.</td>
+        </tr>
+        <tr>
+          <td><code>JWT_SECRET</code></td>
+          <td>Sim</td>
+          <td>Chave de assinatura JWT. Obrigatória para ambiente real.</td>
+        </tr>
+        <tr>
+          <td><code>FOOTBALL_DATA_TOKEN</code></td>
+          <td>Sim, opcional</td>
+          <td>Token da Football Data API para banner de jogos. Sem token, cai para promoção semanal local.</td>
+        </tr>
+        <tr>
+          <td><code>PORT</code></td>
+          <td>Não</td>
+          <td>Existe no <code>.env</code>, mas <code>main.ts</code> fixa <code>app.listen(3000, '0.0.0.0')</code>.</td>
+        </tr>
+        <tr>
+          <td><code>JWT_EXPIRES_IN</code></td>
+          <td>Não</td>
+          <td>Existe no <code>.env</code>, mas o módulo JWT fixa <code>expiresIn: '1d'</code>.</td>
+        </tr>
+        <tr>
+          <td><code>MP_ACCESS_TOKEN</code></td>
+          <td>Não</td>
+          <td>Existe no <code>.env</code>, mas o token do Mercado Pago está hardcoded no serviço de pagamento. Recomenda-se mover para esta variável.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Frontend web</h3>
+    <p>
+      O README cita <code>VITE_API_URL</code>, mas o código atual não usa essa variável. O arquivo
+      <code>frontend-web/src/services/api.ts</code> possui <code>baseURL: 'http://localhost:3000'</code>.
+      Para trocar de API hoje, altere esse arquivo ou refatore para usar <code>import.meta.env.VITE_API_URL</code>.
+    </p>
+
+    <h3>Frontend mobile</h3>
+    <p>
+      O arquivo <code>frontend-mobile/src/services/api.ts</code> possui uma constante <code>API_URL</code>.
+      O script <code>npm run tunnel</code> inicia <code>ssh -R 80:127.0.0.1:3000 serveo.net</code>, captura a URL pública e reescreve essa constante automaticamente.
+    </p>
+  </section>
+
+  <section>
+    <h2>6. Banco de dados PostgreSQL</h2>
+    <h3>Configuração TypeORM</h3>
+    <p>
+      O backend configura TypeORM em <code>backend/src/app.module.ts</code> com <code>synchronize: true</code>.
+      Em desenvolvimento, isso cria e ajusta tabelas automaticamente a partir das entidades.
+    </p>
+    <pre>TypeOrmModule.forRoot({
+  type: 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '5432'),
+  username: process.env.DB_USERNAME || 'postgres',
+  password: process.env.DB_PASSWORD || '0000',
+  database: process.env.DB_DATABASE || 'torresburgers',
+  entities: [User, Product, Order, OrderItem, Address, Addon, StoreConfig],
+  synchronize: true,
+})</pre>
+
+    <div class="danger">
+      <strong>Importante:</strong> <code>synchronize: true</code> é conveniente em desenvolvimento, mas não deve ser usado em produção. Para produção, crie migrations TypeORM e desative o synchronize.
+    </div>
+
+    <h3>Criar banco limpo</h3>
+    <pre>createdb -U postgres torresburgers</pre>
+    <p>Depois, inicie o backend. Ele criará as tabelas e a configuração inicial da loja em <code>store_config</code> com <code>id=1</code> e <code>is_open=true</code>.</p>
+
+    <h3>Restaurar backup SQL</h3>
+    <p>
+      O IDE indicava um arquivo chamado <code>bdtorresburgers.backup.sql</code>, mas esse arquivo não estava presente no filesystem no momento em que este guia foi gerado.
+      Se o backup for entregue junto do projeto, use:
+    </p>
+    <pre>createdb -U postgres torresburgers
+psql -U postgres -d torresburgers -f bdtorresburgers.backup.sql</pre>
+    <p>
+      Se o dump tiver comandos de owner/role incompatíveis, edite o SQL ou restaure com um usuário compatível.
+      Como o projeto usa <code>synchronize: true</code>, o backend pode completar colunas ausentes ao iniciar, mas isso não substitui migrations.
+    </p>
+  </section>
+
+  <section>
+    <h2>7. Backend NestJS</h2>
+    <h3>Comandos</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Comando</th>
+          <th>Finalidade</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>npm run start:dev</code></td>
+          <td>Inicia a API em modo watch na porta <code>3000</code>.</td>
+        </tr>
+        <tr>
+          <td><code>npm run build</code></td>
+          <td>Compila TypeScript para <code>dist/</code>.</td>
+        </tr>
+        <tr>
+          <td><code>npm run start:prod</code></td>
+          <td>Executa <code>node dist/main</code> depois do build.</td>
+        </tr>
+        <tr>
+          <td><code>npm test</code></td>
+          <td>Roda testes unitários Jest do backend.</td>
+        </tr>
+        <tr>
+          <td><code>npm run test:e2e</code></td>
+          <td>Roda testes e2e, se configurados e atualizados.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>URLs importantes</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>URL</th>
+          <th>Uso</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>http://localhost:3000</code></td>
+          <td>Base da API.</td>
+        </tr>
+        <tr>
+          <td><code>http://localhost:3000/api</code></td>
+          <td>Swagger/OpenAPI gerado pelo Nest.</td>
+        </tr>
+        <tr>
+          <td><code>http://localhost:3000/uploads/&lt;arquivo&gt;</code></td>
+          <td>Arquivos estáticos da pasta <code>backend/uploads</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Módulos principais</h3>
+    <ul>
+      <li><code>AuthModule</code>: login, JWT, estratégia Passport e roles.</li>
+      <li><code>UsersModule</code>: cadastro, atualização, soft delete, restauração e exclusão definitiva de usuários.</li>
+      <li><code>ProductsModule</code>: produtos, categorias, adicionais, soft delete e upload de imagem.</li>
+      <li><code>OrdersModule</code>: criação de pedidos, status, dashboard, logística e motoboys.</li>
+      <li><code>AddressesModule</code>: CRUD de endereços por usuário e proxy de CEP.</li>
+      <li><code>StoreModule</code>: status aberta/fechada da loja.</li>
+      <li><code>PaymentModule</code>: cartão, PIX, status e webhook simples.</li>
+      <li><code>PromotionsModule</code>: banner da home via Football Data API ou promoção semanal fallback.</li>
+      <li><code>CommonModule</code>: manutenção de imagens e otimização em massa.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>8. Frontend web</h2>
+    <h3>Comandos</h3>
+    <pre>cd frontend-web
+npm install
+npm run dev
+npm run build
+npm run preview</pre>
+
+    <h3>Rotas web</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Rota</th>
+          <th>Perfil</th>
+          <th>Descrição</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>/</code></td><td>Público/cliente</td><td>Home/cardápio.</td></tr>
+        <tr><td><code>/cart</code></td><td>Cliente</td><td>Carrinho e checkout.</td></tr>
+        <tr><td><code>/signin</code></td><td>Cliente</td><td>Login do cliente.</td></tr>
+        <tr><td><code>/signup</code></td><td>Cliente</td><td>Cadastro de cliente.</td></tr>
+        <tr><td><code>/my-orders</code></td><td>Cliente logado</td><td>Pedidos do cliente.</td></tr>
+        <tr><td><code>/profile</code></td><td>Cliente logado</td><td>Dados do perfil.</td></tr>
+        <tr><td><code>/login</code></td><td>Equipe</td><td>Login administrativo/funcionários.</td></tr>
+        <tr><td><code>/dashboard</code></td><td>ADMIN</td><td>Indicadores, gráficos e status da loja.</td></tr>
+        <tr><td><code>/orders</code></td><td>ADMIN/KITCHEN/COURIER/EMPLOYEE</td><td>Kanban/lista de pedidos e logística.</td></tr>
+        <tr><td><code>/products</code></td><td>ADMIN</td><td>Gestão de cardápio e lixeira de produtos.</td></tr>
+        <tr><td><code>/users</code></td><td>ADMIN</td><td>Gestão de equipe/usuários.</td></tr>
+        <tr><td><code>/trash</code></td><td>ADMIN</td><td>Lixeira de produtos e usuários.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Autenticação no web</h3>
+    <p>
+      O token é salvo em <code>localStorage</code> como <code>torresburgers.token</code> e o usuário como <code>torresburgers.user</code>.
+      O interceptor Axios injeta <code>Authorization: Bearer &lt;token&gt;</code>.
+    </p>
+  </section>
+
+  <section>
+    <h2>9. Frontend mobile</h2>
+    <h3>Comandos</h3>
+    <pre>cd frontend-mobile
+npm install
+npm run tunnel
+npm run start</pre>
+    <p>Outros comandos disponíveis: <code>npm run android</code>, <code>npm run ios</code> e <code>npm run web</code>.</p>
+
+    <h3>Telas principais</h3>
+    <p>
+      O stack mobile contém <code>Home</code>, <code>ProductDetails</code>, <code>Cart</code>, <code>Checkout</code>,
+      <code>AddAddress</code>, <code>Profile</code>, <code>SignUp</code>, <code>ForgotPassword</code>, <code>MyOrders</code>,
+      <code>OrderDetails</code>, <code>PaymentPix</code>, <code>PaymentCard</code> e <code>AdminDashboard</code>.
+    </p>
+
+    <h3>Autenticação no mobile</h3>
+    <p>
+      O token é salvo no AsyncStorage como <code>@TorresBurgers:token</code> e o usuário como <code>@TorresBurgers:user</code>.
+      O interceptor Axios injeta o bearer token em cada requisição.
+    </p>
+
+    <h3>Uso do túnel</h3>
+    <p>
+      Celular físico normalmente não acessa <code>localhost</code> do computador. Por isso o script <code>start-tunnel.js</code>
+      expõe a porta local <code>3000</code> via Serveo e troca a constante <code>API_URL</code> no arquivo mobile.
+    </p>
+  </section>
+
+  <section>
+    <h2>10. Autenticação, perfis e permissões</h2>
+    <h3>Roles</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Role</th>
+          <th>Uso esperado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>CLIENT</code></td><td>Cliente que faz pedidos e gerencia seus endereços.</td></tr>
+        <tr><td><code>ADMIN</code></td><td>Acesso total administrativo.</td></tr>
+        <tr><td><code>KITCHEN</code></td><td>Operação de pedidos/cozinha.</td></tr>
+        <tr><td><code>COURIER</code></td><td>Entregador/motoboy.</td></tr>
+        <tr><td><code>EMPLOYEE</code></td><td>Funcionário genérico com acesso parcial no web.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Login</h3>
+    <p><code>POST /auth/login</code> recebe <code>email</code> e <code>password</code>. Resposta:</p>
+    <pre>{
+  "access_token": "jwt...",
+  "user": {
+    "id": 1,
+    "name": "Admin Torres",
+    "email": "admin@torresburgers.com",
+    "role": "ADMIN"
+  }
+}</pre>
+
+    <h3>Senha</h3>
+    <p>
+      A senha deve ter no mínimo 9 caracteres, pelo menos uma letra maiúscula e um número ou símbolo.
+      As senhas são salvas com Bcrypt usando <code>saltRounds = 10</code>.
+    </p>
+
+    <div class="warning">
+      <strong>Segurança de bootstrap:</strong> <code>POST /users</code> está público e aceita <code>role</code>.
+      Isso facilita criar o primeiro admin, mas em produção deve ser protegido ou separado em um fluxo de seed controlado.
+    </div>
+  </section>
+
+  <section class="page-break">
+    <h2>11. Mapa de endpoints da API</h2>
+    <p>Base URL local: <code>http://localhost:3000</code>. Rotas protegidas usam <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+
+    <h3>Auth</h3>
+    <table>
+      <thead><tr><th>Método</th><th>Rota</th><th>Acesso</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/auth/login</code></td><td>Público</td><td>Autentica usuário por email e senha.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Users</h3>
+    <table>
+      <thead><tr><th>Método</th><th>Rota</th><th>Acesso</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/users</code></td><td>Público</td><td>Cria usuário. Aceita JSON ou multipart com campo <code>file</code> para avatar.</td></tr>
+        <tr><td>GET</td><td><code>/users</code></td><td>ADMIN</td><td>Lista usuários ativos.</td></tr>
+        <tr><td>GET</td><td><code>/users/trash</code></td><td>ADMIN</td><td>Lista usuários removidos por soft delete.</td></tr>
+        <tr><td>GET</td><td><code>/users/:id</code></td><td>JWT</td><td>Busca usuário por id.</td></tr>
+        <tr><td>PATCH</td><td><code>/users/:id</code></td><td>JWT</td><td>Atualiza usuário. Aceita avatar em multipart.</td></tr>
+        <tr><td>PATCH</td><td><code>/users/:id/restore</code></td><td>ADMIN</td><td>Restaura usuário da lixeira.</td></tr>
+        <tr><td>DELETE</td><td><code>/users/:id</code></td><td>JWT</td><td>Soft delete. Admin pode excluir qualquer um; usuário pode excluir a si mesmo.</td></tr>
+        <tr><td>DELETE</td><td><code>/users/:id/permanent</code></td><td>ADMIN</td><td>Exclusão definitiva.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Products</h3>
+    <table>
+      <thead><tr><th>Método</th><th>Rota</th><th>Acesso</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/products</code></td><td>Público</td><td>Lista produtos ativos com adicionais permitidos.</td></tr>
+        <tr><td>GET</td><td><code>/products/:id</code></td><td>Público</td><td>Busca um produto.</td></tr>
+        <tr><td>POST</td><td><code>/products</code></td><td>ADMIN</td><td>Cria produto. Usa multipart com <code>file</code> opcional.</td></tr>
+        <tr><td>PATCH</td><td><code>/products/:id</code></td><td>ADMIN</td><td>Atualiza produto. Usa multipart com <code>file</code> opcional.</td></tr>
+        <tr><td>GET</td><td><code>/products/trash</code></td><td>ADMIN</td><td>Lista produtos em soft delete.</td></tr>
+        <tr><td>PATCH</td><td><code>/products/:id/restore</code></td><td>ADMIN</td><td>Restaura produto.</td></tr>
+        <tr><td>DELETE</td><td><code>/products/:id</code></td><td>ADMIN</td><td>Move produto para lixeira.</td></tr>
+        <tr><td>DELETE</td><td><code>/products/:id/permanent</code></td><td>ADMIN</td><td>Exclui produto definitivamente.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Addons</h3>
+    <table>
+      <thead><tr><th>Método</th><th>Rota</th><th>Acesso</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/addons</code></td><td>Público</td><td>Lista adicionais.</td></tr>
+        <tr><td>POST</td><td><code>/addons</code></td><td>Público no código atual</td><td>Cria adicional.</td></tr>
+        <tr><td>PATCH</td><td><code>/addons/:id</code></td><td>Público no código atual</td><td>Atualiza adicional.</td></tr>
+        <tr><td>DELETE</td><td><code>/addons/:id</code></td><td>Público no código atual</td><td>Soft delete de adicional.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Orders</h3>
+    <table>
+      <thead><tr><th>Método</th><th>Rota</th><th>Acesso</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/orders</code></td><td>CLIENT</td><td>Cria pedido. Bloqueia ADMIN e funcionários.</td></tr>
+        <tr><td>GET</td><td><code>/orders/my-orders</code></td><td>JWT</td><td>Lista pedidos do usuário logado.</td></tr>
+        <tr><td>GET</td><td><code>/orders</code></td><td>ADMIN/KITCHEN/COURIER</td><td>Lista todos os pedidos.</td></tr>
+        <tr><td>GET</td><td><code>/orders/:id</code></td><td>JWT</td><td>Busca pedido por id.</td></tr>
+        <tr><td>PATCH</td><td><code>/orders/:id</code></td><td>ADMIN/KITCHEN/COURIER</td><td>Atualiza status e outros campos parciais.</td></tr>
+        <tr><td>PATCH</td><td><code>/orders/:id/cancel</code></td><td>JWT</td><td>Cancela pedido. Cliente só cancela enquanto <code>PENDING</code>; ADMIN pode cancelar.</td></tr>
+        <tr><td>GET</td><td><code>/orders/summary</code></td><td>ADMIN</td><td>Resumo do dashboard.</td></tr>
+        <tr><td>GET</td><td><code>/orders/charts</code></td><td>ADMIN</td><td>Dados de gráficos dos últimos 7 dias.</td></tr>
+        <tr><td>GET</td><td><code>/orders/drivers/list</code></td><td>ADMIN</td><td>Lista usuários com role <code>COURIER</code>.</td></tr>
+        <tr><td>PATCH</td><td><code>/orders/:id/assign</code></td><td>ADMIN</td><td>Atribui motoboy e muda status para <code>DELIVERING</code>.</td></tr>
+        <tr><td>GET</td><td><code>/orders/:id/nearby</code></td><td>ADMIN</td><td>Sugere pedidos próximos no mesmo bairro.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Addresses</h3>
+    <table>
+      <thead><tr><th>Método</th><th>Rota</th><th>Acesso</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/addresses/cep/:cep</code></td><td>Público</td><td>Busca CEP via ViaCEP e fallback BrasilAPI.</td></tr>
+        <tr><td>POST</td><td><code>/addresses</code></td><td>JWT</td><td>Cria endereço para usuário logado.</td></tr>
+        <tr><td>GET</td><td><code>/addresses</code></td><td>JWT</td><td>Lista endereços do usuário logado.</td></tr>
+        <tr><td>GET</td><td><code>/addresses/:id</code></td><td>JWT</td><td>Busca endereço do próprio usuário.</td></tr>
+        <tr><td>PATCH</td><td><code>/addresses/:id</code></td><td>JWT</td><td>Atualiza endereço do próprio usuário.</td></tr>
+        <tr><td>DELETE</td><td><code>/addresses/:id</code></td><td>JWT</td><td>Remove endereço do próprio usuário.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Store, Payment, Promotions, Uploads e Maintenance</h3>
+    <table>
+      <thead><tr><th>Método</th><th>Rota</th><th>Acesso</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/store/status</code></td><td>Público</td><td>Retorna loja aberta/fechada e mensagens.</td></tr>
+        <tr><td>PATCH</td><td><code>/store/status</code></td><td>ADMIN</td><td>Atualiza status da loja.</td></tr>
+        <tr><td>POST</td><td><code>/payment/card</code></td><td>Público no código atual</td><td>Processa cartão via Mercado Pago sandbox.</td></tr>
+        <tr><td>POST</td><td><code>/payment/pix</code></td><td>Público no código atual</td><td>Gera pagamento PIX sandbox ou fallback visual.</td></tr>
+        <tr><td>GET</td><td><code>/payment/status/:id</code></td><td>Público no código atual</td><td>Consulta status do pagamento.</td></tr>
+        <tr><td>POST</td><td><code>/payment/webhook</code></td><td>Público no código atual</td><td>Webhook simples que apenas loga e responde <code>{ status: "ok" }</code>.</td></tr>
+        <tr><td>GET</td><td><code>/promotions/football</code></td><td>Público</td><td>Retorna banner de futebol ou promoção semanal.</td></tr>
+        <tr><td>POST</td><td><code>/uploads</code></td><td>Público no código atual</td><td>Upload avulso de imagem, otimizada para WebP.</td></tr>
+        <tr><td>POST</td><td><code>/maintenance/optimize-images</code></td><td>ADMIN</td><td>Otimização em massa de imagens existentes.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="page-break">
+    <h2>12. Modelagem do banco</h2>
+    <h3>Enums importantes</h3>
+    <table>
+      <thead><tr><th>Enum</th><th>Valores</th></tr></thead>
+      <tbody>
+        <tr><td><code>UserRole</code></td><td><code>CLIENT</code>, <code>ADMIN</code>, <code>KITCHEN</code>, <code>COURIER</code>, <code>EMPLOYEE</code></td></tr>
+        <tr><td><code>ProductCategory</code></td><td><code>hamburgueres</code>, <code>entradas</code>, <code>acompanhamentos</code>, <code>bebidas</code>, <code>sobremesas</code>, <code>molhos</code>, <code>adicionais</code>, <code>combos</code></td></tr>
+        <tr><td><code>OrderStatus</code></td><td><code>PENDING</code>, <code>PREPARING</code>, <code>READY_FOR_PICKUP</code>, <code>DELIVERING</code>, <code>DONE</code>, <code>CANCELED</code></td></tr>
+        <tr><td><code>OrderType</code></td><td><code>DELIVERY</code>, <code>TAKEOUT</code></td></tr>
+        <tr><td><code>PaymentStatus</code></td><td><code>PENDING</code>, <code>PAID</code>, <code>FAILED</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3>Tabelas e campos principais</h3>
+    <table>
+      <thead><tr><th>Tabela</th><th>Campos principais</th><th>Relações</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>users</code></td>
+          <td><code>id</code>, <code>name</code>, <code>email</code> único, <code>password_hash</code>, <code>phone</code>, <code>avatar</code>, <code>role</code>, timestamps, <code>deleted_at</code></td>
+          <td>1:N com <code>orders</code> e <code>addresses</code>; também pode ser driver em pedidos.</td>
+        </tr>
+        <tr>
+          <td><code>products</code></td>
+          <td><code>id</code>, <code>name</code>, <code>description</code>, <code>price</code>, <code>promotion_price</code>, <code>is_highlight</code>, <code>image</code>, <code>category</code>, <code>ingredients</code>, <code>available</code>, <code>deleted_at</code></td>
+          <td>N:N com <code>addons</code> via <code>product_allowed_addons</code>; 1:N com <code>order_items</code>.</td>
+        </tr>
+        <tr>
+          <td><code>addons</code></td>
+          <td><code>id</code>, <code>name</code>, <code>description</code>, <code>price</code>, <code>image</code>, <code>available</code>, <code>category</code>, <code>deleted_at</code></td>
+          <td>N:N com produtos permitidos e itens de pedido.</td>
+        </tr>
+        <tr>
+          <td><code>orders</code></td>
+          <td><code>id</code>, <code>status</code>, <code>payment_status</code>, <code>type</code>, <code>total_price</code>, <code>delivery_fee</code>, <code>payment_method</code>, <code>change_for</code>, <code>payment_id</code>, <code>estimated_delivery_time</code>, timestamps</td>
+          <td>N:1 com <code>users</code>, <code>addresses</code> e driver <code>users</code>; 1:N com <code>order_items</code>.</td>
+        </tr>
+        <tr>
+          <td><code>order_items</code></td>
+          <td><code>id</code>, <code>quantity</code>, <code>observation</code>, <code>meat_point</code>, <code>removed_ingredients</code></td>
+          <td>N:1 com <code>orders</code> e <code>products</code>; N:N com <code>addons</code> via <code>order_item_addons</code>.</td>
+        </tr>
+        <tr>
+          <td><code>addresses</code></td>
+          <td><code>id</code>, <code>zipCode</code>, <code>street</code>, <code>number</code>, <code>complement</code>, <code>neighborhood</code>, <code>city</code>, <code>state</code>, <code>nickname</code>, <code>latitude</code>, <code>longitude</code>, <code>created_at</code></td>
+          <td>N:1 com <code>users</code>.</td>
+        </tr>
+        <tr>
+          <td><code>store_config</code></td>
+          <td><code>id</code>, <code>is_open</code>, <code>opening_message</code>, <code>closing_message</code></td>
+          <td>Configuração única, criada automaticamente com <code>id=1</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>13. Integrações externas</h2>
+    <table>
+      <thead><tr><th>Integração</th><th>Onde está</th><th>Necessário para funcionar?</th><th>Observações</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Mercado Pago</td>
+          <td><code>backend/src/payment/payment.service.ts</code>, web <code>PaymentForm</code>, mobile <code>PaymentCard</code></td>
+          <td>Sim para cartão/PIX real ou sandbox.</td>
+          <td>Access token e public key de teste estão hardcoded. Mover para <code>.env</code> antes de produção.</td>
+        </tr>
+        <tr>
+          <td>Football Data API</td>
+          <td><code>backend/src/promotions/promotions.service.ts</code></td>
+          <td>Opcional.</td>
+          <td>Usa <code>FOOTBALL_DATA_TOKEN</code>. Sem token, retorna promoção semanal local.</td>
+        </tr>
+        <tr>
+          <td>ViaCEP</td>
+          <td><code>backend/src/addresses/addresses.service.ts</code></td>
+          <td>Opcional, melhora cadastro.</td>
+          <td>Primeira tentativa de busca de CEP.</td>
+        </tr>
+        <tr>
+          <td>BrasilAPI CEP</td>
+          <td><code>backend/src/addresses/addresses.service.ts</code></td>
+          <td>Opcional, fallback.</td>
+          <td>Usada se ViaCEP falhar.</td>
+        </tr>
+        <tr>
+          <td>Serveo</td>
+          <td><code>frontend-mobile/start-tunnel.js</code></td>
+          <td>Necessário para celular físico fora do localhost.</td>
+          <td>Requer SSH e conexão externa.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>14. Fluxos principais</h2>
+    <h3>Cadastro e login</h3>
+    <ol>
+      <li>Cliente ou admin cria usuário via <code>POST /users</code>.</li>
+      <li>Senha é validada pelo DTO e salva como <code>password_hash</code> com Bcrypt.</li>
+      <li>Login via <code>POST /auth/login</code>.</li>
+      <li>Frontend salva token e usuário em storage local.</li>
+      <li>Axios envia o token como bearer nas próximas requisições.</li>
+    </ol>
+
+    <h3>Pedido delivery</h3>
+    <ol>
+      <li>Cliente consulta <code>/store/status</code> e <code>/products</code>.</li>
+      <li>Cliente monta carrinho com produtos, adicionais, ponto da carne, observações e remoções de ingredientes.</li>
+      <li>Cliente escolhe ou cria endereço em <code>/addresses</code>.</li>
+      <li>Checkout pode passar por <code>/payment/pix</code> ou <code>/payment/card</code>.</li>
+      <li>Cliente cria pedido em <code>POST /orders</code> com role <code>CLIENT</code>.</li>
+      <li>Backend calcula frete por bairro e tempo estimado.</li>
+      <li>Equipe acompanha e muda status no painel.</li>
+    </ol>
+
+    <h3>Pedido retirada</h3>
+    <p>
+      Para <code>TAKEOUT</code>, <code>addressId</code> não é obrigatório, o frete é <code>0</code> e o tempo estimado é <code>15-20 min</code>.
+    </p>
+
+    <h3>Logística de entregas</h3>
+    <ol>
+      <li>ADMIN lista motoboys em <code>GET /orders/drivers/list</code>.</li>
+      <li>ADMIN atribui motoboy com <code>PATCH /orders/:id/assign</code>.</li>
+      <li>O pedido vai automaticamente para <code>DELIVERING</code>.</li>
+      <li><code>GET /orders/:id/nearby</code> sugere pedidos <code>READY_FOR_PICKUP</code> do mesmo bairro e sem driver.</li>
+    </ol>
+
+    <h3>Pagamento</h3>
+    <p>
+      O Mercado Pago está em modo sandbox. O backend possui fallback e simulação: cartão rejeitado ou erro técnico pode retornar status aprovado simulado;
+      PIX pode retornar um QR visual mock se o sandbox falhar. Isso é útil para desenvolvimento, mas deve ser removido/isolado em produção.
+    </p>
+  </section>
+
+  <section>
+    <h2>15. Uploads e imagens</h2>
+    <p>
+      Uploads de usuários, produtos e upload avulso passam pelo <code>OptimizeImagePipe</code>.
+      O pipe valida JPG/JPEG/PNG/WebP, cria a pasta <code>uploads</code> se necessário, redimensiona para largura máxima de 800px e converte para WebP com qualidade 80.
+    </p>
+    <p>
+      O backend expõe a pasta <code>uploads</code> em <code>/uploads</code> via <code>ServeStaticModule</code>.
+      Produtos salvam apenas o nome do arquivo; avatares de usuário normalmente salvam <code>/uploads/&lt;arquivo&gt;</code>.
+    </p>
+    <pre>POST /uploads
+Content-Type: multipart/form-data
+Campo do arquivo: file
+Resposta: { "filename": "compressed-...webp" }</pre>
+  </section>
+
+  <section>
+    <h2>16. Verificações executadas</h2>
+    <p>Comandos executados no workspace em 22/09/2026:</p>
+    <table>
+      <thead><tr><th>Comando</th><th>Resultado</th><th>Observação</th></tr></thead>
+      <tbody>
+        <tr><td><code>backend/npm run build</code></td><td class="nowrap">OK</td><td>Compilação Nest concluída.</td></tr>
+        <tr><td><code>backend/npm test -- --runInBand</code></td><td class="nowrap">OK</td><td>1 suite, 1 teste passando.</td></tr>
+        <tr><td><code>frontend-web/npm run build</code></td><td class="nowrap">OK</td><td>Build Vite gerado. Avisou que Node ideal é 20.19+ ou 22.12+.</td></tr>
+        <tr><td><code>frontend-mobile/npx tsc --noEmit</code></td><td class="nowrap">OK</td><td>TypeScript mobile sem erros.</td></tr>
+        <tr><td><code>frontend-web/npm run lint</code></td><td class="nowrap">Falha</td><td>Falha por regras estritas já existentes: <code>any</code>, hooks, fast refresh e regras novas do React.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>17. Problemas conhecidos e recomendações</h2>
+    <ol>
+      <li><strong>Hardcoded secrets:</strong> mover token Mercado Pago e public keys para variáveis de ambiente.</li>
+      <li><strong>Porta hardcoded:</strong> usar <code>process.env.PORT || 3000</code> em <code>backend/src/main.ts</code>.</li>
+      <li><strong>Frontend web ignora <code>VITE_API_URL</code>:</strong> refatorar <code>frontend-web/src/services/api.ts</code> para usar env.</li>
+      <li><strong>Mobile altera código ao rodar tunnel:</strong> considerar usar arquivo de ambiente ou Expo Constants.</li>
+      <li><strong><code>synchronize: true</code>:</strong> trocar por migrations antes de produção.</li>
+      <li><strong>Rotas públicas sensíveis:</strong> proteger <code>/addons</code>, <code>/uploads</code> e <code>/payment</code> conforme necessidade.</li>
+      <li><strong>Criação pública de admin:</strong> após bootstrap, proteger criação de roles administrativas.</li>
+      <li><strong>CORS aberto:</strong> hoje <code>origin: true</code>. Em produção, restringir domínios.</li>
+      <li><strong>Payment sandbox bypass:</strong> não usar em produção.</li>
+      <li><strong>Sem Docker:</strong> criar <code>docker-compose.yml</code> para PostgreSQL e, se desejado, API.</li>
+      <li><strong>Sem <code>.env.example</code>:</strong> criar exemplos para backend, web e mobile.</li>
+      <li><strong>Lint web falhando:</strong> decidir se as regras são desejadas ou ajustar/refatorar gradualmente.</li>
+      <li><strong>Backup SQL ausente no filesystem atual:</strong> se o projeto depende de dados iniciais, versionar um seed seguro ou entregar dump sanitizado.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>18. Troubleshooting</h2>
+    <h3>Backend não conecta no banco</h3>
+    <ul>
+      <li>Confirme que PostgreSQL está rodando: <code>systemctl status postgresql</code>.</li>
+      <li>Confirme que o banco existe: <code>psql -U postgres -l</code>.</li>
+      <li>Confira <code>DB_HOST</code>, <code>DB_PORT</code>, <code>DB_USERNAME</code>, <code>DB_PASSWORD</code> e <code>DB_DATABASE</code>.</li>
+    </ul>
+
+    <h3>Web não acessa API</h3>
+    <ul>
+      <li>Verifique se a API está em <code>http://localhost:3000</code>.</li>
+      <li>Confira <code>frontend-web/src/services/api.ts</code>.</li>
+      <li>Abra <code>http://localhost:3000/api</code> para validar que o backend está vivo.</li>
+    </ul>
+
+    <h3>Mobile não acessa API</h3>
+    <ul>
+      <li>Rode o backend antes de abrir o túnel.</li>
+      <li>Execute <code>npm run tunnel</code> em <code>frontend-mobile</code>.</li>
+      <li>Confirme que <code>src/services/api.ts</code> recebeu a nova URL pública.</li>
+      <li>Se Serveo cair, reinicie o túnel e o app Expo.</li>
+    </ul>
+
+    <h3>Pedido retorna "loja fechada"</h3>
+    <ul>
+      <li>Consulte <code>GET /store/status</code>.</li>
+      <li>Altere com ADMIN: <code>PATCH /store/status</code> enviando <code>{ "is_open": true }</code>.</li>
+    </ul>
+
+    <h3>Erro ao criar pedido delivery</h3>
+    <ul>
+      <li>O usuário precisa ter role <code>CLIENT</code>.</li>
+      <li>Pedidos <code>DELIVERY</code> exigem <code>addressId</code>.</li>
+      <li>A loja precisa estar aberta.</li>
+      <li>Produtos precisam existir no banco.</li>
+    </ul>
+
+    <h3>Upload falha</h3>
+    <ul>
+      <li>Use campo multipart chamado <code>file</code>.</li>
+      <li>Use JPG, JPEG, PNG ou WebP.</li>
+      <li>Verifique permissão de escrita em <code>backend/uploads</code>.</li>
+    </ul>
+
+    <h3>Build web reclama do Node</h3>
+    <p>Instale Node 20.19+ ou 22.12+ para alinhar com Vite 7.</p>
+  </section>
+</body>
+</html>

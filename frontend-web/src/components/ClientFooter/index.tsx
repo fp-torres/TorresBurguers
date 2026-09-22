@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Facebook, Instagram, Twitter, MapPin, Phone, Mail, ArrowRight, ShieldCheck, Clock } from 'lucide-react';
+import { Facebook, Instagram, Twitter, MapPin, Phone, ArrowRight, Clock } from 'lucide-react';
 
 export default function ClientFooter() {
   return (
