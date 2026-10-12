@@ -1,10 +1,16 @@
-import { 
-  Entity, PrimaryGeneratedColumn, Column, 
-  CreateDateColumn, UpdateDateColumn, DeleteDateColumn, 
-  OneToMany, ManyToMany, JoinTable 
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  DeleteDateColumn,
+  OneToMany,
+  ManyToMany,
+  JoinTable,
 } from 'typeorm';
 import { OrderItem } from '../../orders/entities/order-item.entity';
-import { Addon } from './addon.entity'; 
+import { Addon } from './addon.entity';
 
 export enum ProductCategory {
   BURGER = 'hamburgueres',
@@ -14,7 +20,7 @@ export enum ProductCategory {
   DESSERT = 'sobremesas',
   SAUCE = 'molhos',
   ADDON = 'adicionais',
-  COMBO = 'combos'
+  COMBO = 'combos',
 }
 
 @Entity('products')
@@ -43,7 +49,7 @@ export class Product {
   @Column({
     type: 'enum',
     enum: ProductCategory,
-    default: ProductCategory.BURGER
+    default: ProductCategory.BURGER,
   })
   category: ProductCategory;
 
@@ -51,10 +57,10 @@ export class Product {
   ingredients: string[];
 
   @ManyToMany(() => Addon, { cascade: true })
-  @JoinTable({ 
-    name: 'product_allowed_addons', 
+  @JoinTable({
+    name: 'product_allowed_addons',
     joinColumn: { name: 'product_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'addon_id', referencedColumnName: 'id' }
+    inverseJoinColumn: { name: 'addon_id', referencedColumnName: 'id' },
   })
   allowed_addons: Addon[];
 
@@ -68,8 +74,8 @@ export class Product {
   updated_at: Date;
 
   // --- NOVA COLUNA PARA SOFT DELETE ---
-  @DeleteDateColumn() 
-  deleted_at: Date; 
+  @DeleteDateColumn()
+  deleted_at: Date;
 
   @OneToMany(() => OrderItem, (item) => item.product)
   items: OrderItem[];

@@ -1,10 +1,41 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DeepPartial, IsNull, Repository } from 'typeorm';
+import { omitUndefined } from '../common/transforms';
+import { BRAND } from '../config/brand';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { Address } from './entities/address.entity';
-import { User } from '../users/entities/user.entity';
+
+/** Tempo máximo de espera por cada serviço de CEP. */
+const CEP_TIMEOUT_MS = 5000;
+
+/** Endereço do CEP no formato do ViaCEP (o que os front-ends já usam). */
+export interface CepLookupResult {
+  cep: string;
+  logradouro: string;
+  complemento: string;
+  bairro: string;
+  localidade: string;
+  uf: string;
+}
+
+interface JsonResponse {
+  status: number;
+  data: Record<string, unknown> | null;
+}
+
+const text = (value: unknown): string =>
+  typeof value === 'string' ? value : '';
+
+const formatCep = (digits: string) =>
+  `${digits.slice(0, 5)}-${digits.slice(5)}`;
 
 @Injectable()
 export class AddressesService {
@@ -12,98 +43,143 @@ export class AddressesService {
 
   constructor(
     @InjectRepository(Address)
-    private addressRepository: Repository<Address>,
+    private readonly addressRepository: Repository<Address>,
   ) {}
 
-  // --- BUSCA CEP COM FALLBACK (ViaCEP -> BrasilAPI) ---
-  async findCep(cep: string) {
-    const cleanCep = cep.replace(/\D/g, '');
-    
-    if (cleanCep.length !== 8) {
-      throw new BadRequestException('CEP inválido. O CEP deve conter exatamente 8 números.');
+  // --- BUSCA DE CEP (ViaCEP com fallback para a BrasilAPI) ---
+
+  /**
+   * 400: CEP com formato inválido · 404: CEP inexistente · 502: serviços de CEP fora do ar.
+   */
+  async findCep(cep: string): Promise<CepLookupResult> {
+    const digits = (cep ?? '').replace(/\D/g, '');
+    if (digits.length !== 8) {
+      throw new BadRequestException(
+        'CEP inválido. Informe os 8 dígitos (ex.: 22041-001).',
+      );
     }
 
-    // --- TENTATIVA 1: ViaCEP ---
+    let notFound = false;
+
+    // 1ª tentativa: ViaCEP (responde 200 com { erro: true } quando o CEP não existe)
     try {
-      this.logger.log(`Tentativa 1: ViaCEP -> ${cleanCep}`);
-      const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (!data.erro) {
-          this.logger.log(`Sucesso via ViaCEP: ${data.localidade}`);
-          return data;
-        }
+      const { status, data } = await this.getJson(
+        `https://viacep.com.br/ws/${digits}/json/`,
+      );
+      if (status === 200 && data && !data.erro) {
+        return {
+          cep: formatCep(text(data.cep).replace(/\D/g, '') || digits),
+          logradouro: text(data.logradouro),
+          complemento: text(data.complemento),
+          bairro: text(data.bairro),
+          localidade: text(data.localidade),
+          uf: text(data.uf),
+        };
       }
-      this.logger.warn(`ViaCEP falhou (Status: ${response.status}). Tentando Plano B...`);
-    } catch (e) {
-      this.logger.error(`Erro de conexão com ViaCEP: ${e.message}`);
-    }
-
-    // --- TENTATIVA 2: BrasilAPI (Fallback) ---
-    try {
-      this.logger.log(`Tentativa 2 (Fallback): BrasilAPI -> ${cleanCep}`);
-      const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${cleanCep}`);
-      
-      if (!response.ok) {
-        throw new Error(`BrasilAPI retornou status ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      // NORMALIZAÇÃO: O BrasilAPI usa nomes em inglês. 
-      // Convertemos para o padrão ViaCEP que seu Frontend já espera.
-      return {
-        logradouro: data.street || '',
-        bairro: data.neighborhood || '',
-        localidade: data.city || '',
-        uf: data.state || '',
-        cep: data.cep || cleanCep,
-        complemento: '' // BrasilAPI v1 geralmente não traz complemento
-      };
-
+      if (status === 200) notFound = true;
+      else this.logger.warn(`ViaCEP respondeu HTTP ${status}.`);
     } catch (error) {
-      this.logger.error(`Todas as APIs de CEP falharam ou CEP não existe.`);
-      throw new NotFoundException('Não foi possível localizar o CEP automaticamente. Digite o endereço manualmente.');
+      this.logger.warn(`ViaCEP indisponível: ${(error as Error).message}`);
     }
+
+    // 2ª tentativa: BrasilAPI (responde 404 quando o CEP não existe)
+    try {
+      const { status, data } = await this.getJson(
+        `https://brasilapi.com.br/api/cep/v1/${digits}`,
+      );
+      if (status === 200 && data) {
+        return {
+          cep: formatCep(text(data.cep).replace(/\D/g, '') || digits),
+          logradouro: text(data.street),
+          complemento: '',
+          bairro: text(data.neighborhood),
+          localidade: text(data.city),
+          uf: text(data.state),
+        };
+      }
+      if (status === 404) notFound = true;
+      else this.logger.warn(`BrasilAPI respondeu HTTP ${status}.`);
+    } catch (error) {
+      this.logger.warn(`BrasilAPI indisponível: ${(error as Error).message}`);
+    }
+
+    if (notFound) {
+      throw new NotFoundException(
+        'CEP não encontrado. Confira o número ou preencha o endereço manualmente.',
+      );
+    }
+    throw new BadGatewayException(
+      'Não foi possível consultar o CEP agora. Preencha o endereço manualmente.',
+    );
   }
 
-  // --- MÉTODOS CRUD ORIGINAIS ---
+  private async getJson(url: string): Promise<JsonResponse> {
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': `${BRAND.slug}-api`,
+      },
+      signal: AbortSignal.timeout(CEP_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      return { status: response.status, data: null };
+    }
+    const data = (await response.json()) as unknown;
+    return {
+      status: response.status,
+      data:
+        data && typeof data === 'object'
+          ? (data as Record<string, unknown>)
+          : null,
+    };
+  }
+
+  // --- ENDEREÇOS DO USUÁRIO LOGADO (endereço de outra pessoa → 404) ---
 
   async create(createAddressDto: CreateAddressDto, userId: number) {
     const address = this.addressRepository.create({
-      ...createAddressDto,
-      user: { id: userId } as User, 
-    });
-    return this.addressRepository.save(address);
+      ...omitUndefined(createAddressDto),
+      user: { id: userId },
+    } as DeepPartial<Address>);
+    const saved = await this.addressRepository.save(address);
+    return this.findOne(saved.id, userId);
   }
 
-  async findAll(userId: number) {
+  findAll(userId: number) {
     return this.addressRepository.find({
-      where: { user: { id: userId } }, 
+      where: { user: { id: userId }, deleted_at: IsNull() },
+      order: { id: 'ASC' },
     });
   }
 
   async findOne(id: number, userId: number) {
     const address = await this.addressRepository.findOne({
-      where: { id, user: { id: userId } }, 
+      where: { id, user: { id: userId }, deleted_at: IsNull() },
     });
-
     if (!address) {
-      throw new NotFoundException(`Endereço não encontrado ou acesso negado.`);
+      throw new NotFoundException('Endereço não encontrado.');
     }
     return address;
   }
 
   async update(id: number, updateAddressDto: UpdateAddressDto, userId: number) {
-    const address = await this.findOne(id, userId); 
-    
-    this.addressRepository.merge(address, updateAddressDto);
-    return this.addressRepository.save(address);
+    const address = await this.findOne(id, userId);
+    this.addressRepository.merge(
+      address,
+      omitUndefined(updateAddressDto) as DeepPartial<Address>,
+    );
+    await this.addressRepository.save(address);
+    return this.findOne(id, userId);
   }
 
+  /**
+   * Exclusão lógica: o endereço some da lista do cliente, mas pedidos antigos
+   * continuam exibindo onde foram entregues (nunca falha por estar em uso).
+   */
   async remove(id: number, userId: number) {
-    const address = await this.findOne(id, userId); 
-    return this.addressRepository.remove(address);
+    const address = await this.findOne(id, userId);
+    await this.addressRepository.update(address.id, { deleted_at: new Date() });
+    return { id: address.id, message: 'Endereço removido.' };
   }
 }

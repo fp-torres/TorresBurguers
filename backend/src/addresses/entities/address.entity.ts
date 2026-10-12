@@ -1,4 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  CreateDateColumn,
+} from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 
 @Entity('addresses')
@@ -6,11 +13,12 @@ export class Address {
   @PrimaryGeneratedColumn()
   id: number;
 
+  // Novos cadastros guardam só os 8 dígitos (ex.: 22041001)
   @Column()
-  zipCode: string; 
+  zipCode: string;
 
   @Column()
-  street: string; 
+  street: string;
 
   @Column()
   number: string;
@@ -19,7 +27,7 @@ export class Address {
   complement: string;
 
   @Column()
-  neighborhood: string; 
+  neighborhood: string;
 
   @Column()
   city: string;
@@ -45,4 +53,13 @@ export class Address {
 
   @CreateDateColumn()
   created_at: Date;
+
+  /**
+   * Exclusão lógica feita pelo cliente (DELETE /addresses/:id).
+   * Coluna comum (não @DeleteDateColumn) de propósito: pedidos antigos continuam carregando
+   * o endereço normalmente, enquanto as consultas de endereços filtram deleted_at IS NULL.
+   * Fica fora dos SELECTs (select: false) para não aparecer nas respostas.
+   */
+  @Column({ type: 'timestamp', nullable: true, select: false })
+  deleted_at: Date | null;
 }

@@ -3,6 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Mail, Loader2, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCart } from '../../../contexts/CartContext'; 
+import { getApiErrorMessage } from '../../../services/api';
+import { homePathForRole, isStaffRole, roleLabel } from '../../../utils/roles';
+import { BRAND } from '../../../config/brand';
+import BrandLogo from '../../../components/BrandLogo';
 import toast from 'react-hot-toast';
 
 export default function ClientLogin() {
@@ -20,9 +24,17 @@ export default function ClientLogin() {
     try {
       const loggedUser = await signIn({ email, password });
       toast.success(`Bem-vindo, ${loggedUser.name.split(' ')[0]}!`); 
+
+      // Contas da equipe vão direto para o painel do seu perfil
+      if (isStaffRole(loggedUser.role)) {
+        toast(`Você entrou como ${roleLabel(loggedUser.role)}. Abrindo o painel da equipe.`, { icon: '🧑‍🍳' });
+        navigate(homePathForRole(loggedUser.role), { replace: true });
+        return;
+      }
+
       if (cartItems.length > 0) { navigate('/cart'); } else { navigate('/'); }
     } catch (error) {
-      toast.error('Email ou senha inválidos.'); 
+      toast.error(getApiErrorMessage(error, 'Não foi possível entrar. Tente novamente.', { 401: 'Email ou senha inválidos.' }));
     } finally { setLoading(false); }
   }
 
@@ -35,6 +47,9 @@ export default function ClientLogin() {
         </Link>
         
         <div className="text-center">
+          <Link to="/" className="inline-flex mb-6 hover:opacity-90 transition-opacity" aria-label="Página inicial">
+            <BrandLogo size={48} />
+          </Link>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Bem-vindo de volta! 🍔</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-2">Faça login para continuar seu pedido.</p>
         </div>
@@ -59,7 +74,15 @@ export default function ClientLogin() {
               <input required type="password" value={password} onChange={e => setPassword(e.target.value)} className="pl-10 block w-full border-gray-300 dark:border-slate-700 rounded-xl border p-3 focus:ring-orange-500 focus:border-orange-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500" placeholder="******" />
             </div>
             <div className="flex justify-end mt-1">
-              <a href="#" onClick={(e) => { e.preventDefault(); toast('Envie um e-mail para contato@torresburgers.com', { icon: '📧' }); }} className="text-sm text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 font-medium">
+              {/* Não há recuperação automática de senha: a loja (Administrador) define uma nova */}
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  toast(`Fale com a loja pelo e-mail ${BRAND.supportEmail}: um administrador pode definir uma nova senha para você.`, { icon: '📧', duration: 7000 });
+                }}
+                className="text-sm text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 font-medium"
+              >
                 Esqueceu a senha?
               </a>
             </div>

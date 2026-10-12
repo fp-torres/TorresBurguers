@@ -1,72 +1,72 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { STORAGE_KEYS } from '../config/brand';
 
 type Theme = 'light' | 'dark' | 'system';
 
 interface ThemeContextType {
   theme: Theme;
   setTheme: (theme: Theme) => void;
-  currentMode: 'light' | 'dark'; 
+  currentMode: 'light' | 'dark';
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+const THEMES: Theme[] = ['light', 'dark', 'system'];
+const DARK_QUERY = '(prefers-color-scheme: dark)';
+
+function readStoredTheme(): Theme {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEYS.theme);
+    return THEMES.includes(saved as Theme) ? (saved as Theme) : 'system';
+  } catch {
+    return 'system';
+  }
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    const saved = localStorage.getItem('torresburgers.theme');
-    return (saved as Theme) || 'system';
-  });
+  const [theme, setTheme] = useState<Theme>(readStoredTheme);
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() => window.matchMedia(DARK_QUERY).matches);
 
-  const [currentMode, setCurrentMode] = useState<'light' | 'dark'>('light');
+  // Acompanha o tema do sistema operacional (usado quando a preferência é "Sistema")
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(DARK_QUERY);
+    const handleChange = () => setSystemPrefersDark(mediaQuery.matches);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
+  const currentMode: 'light' | 'dark' = theme === 'system' ? (systemPrefersDark ? 'dark' : 'light') : theme;
+
+  // Aplica a classe no HTML e força o color-scheme (barras de rolagem nativas)
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');
+    root.classList.add(currentMode);
+    root.style.colorScheme = currentMode;
+  }, [currentMode]);
 
-    let effectiveTheme: 'light' | 'dark' = 'light';
-
-    if (theme === 'system') {
-      effectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    } else {
-      effectiveTheme = theme;
-    }
-
-    // Aplica a classe no HTML
-    root.classList.add(effectiveTheme);
-    // Força o atributo color-scheme para barras de rolagem nativas
-    root.style.colorScheme = effectiveTheme; 
-    
-    setCurrentMode(effectiveTheme);
-    localStorage.setItem('torresburgers.theme', theme);
-  }, [theme]);
-
-  // Listener para mudança de sistema
   useEffect(() => {
-    if (theme !== 'system') return;
-
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = () => {
-      const newMode = mediaQuery.matches ? 'dark' : 'light';
-      document.documentElement.classList.remove('light', 'dark');
-      document.documentElement.classList.add(newMode);
-      document.documentElement.style.colorScheme = newMode;
-      setCurrentMode(newMode);
-    };
-
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
+    try {
+      localStorage.setItem(STORAGE_KEYS.theme, theme);
+    } catch {
+      // Armazenamento bloqueado: a preferência vale só nesta visita
+    }
   }, [theme]);
+
+  const value = useMemo(() => ({ theme, setTheme, currentMode }), [theme, currentMode]);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme: setThemeState, currentMode }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useTheme() {
   const context = useContext(ThemeContext);
   if (context === undefined) {
-    throw new Error('useTheme must be used within a ThemeProvider');
+    throw new Error('useTheme deve ser usado dentro de um ThemeProvider');
   }
   return context;
 }

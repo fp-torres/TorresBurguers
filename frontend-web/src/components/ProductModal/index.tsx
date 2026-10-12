@@ -1,7 +1,14 @@
-import { useState, useEffect } from 'react';
-import { X, Minus, Plus, ChefHat, Info } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
+import { X, Minus, Plus, ChefHat, Info, Lock } from 'lucide-react';
 import type { Product } from '../../services/productService';
-import { useCart, type Addon } from '../../contexts/CartContext'; 
+import { assetUrl } from '../../services/api';
+import { useCart, type Addon } from '../../contexts/CartContext';
+import { useStoreStatus } from '../../contexts/StoreStatusContext';
+import {
+  DEFAULT_MEAT_POINT, MAX_ITEM_QUANTITY, MAX_OBSERVATION_LENGTH, MEAT_POINTS,
+  effectivePrice, hasMeatPoint, hasPromotion,
+} from '../../utils/catalog';
+import { formatCurrency } from '../../utils/format';
 
 interface ProductModalProps {
   product: Product | null;
@@ -10,30 +17,38 @@ interface ProductModalProps {
 }
 
 export default function ProductModal({ product, isOpen, onClose }: ProductModalProps) {
+  if (!isOpen || !product) return null;
+  // Cada abertura monta o conteúdo do zero: quantidade, adicionais e observação começam limpos
+  return <ProductModalContent key={product.id} product={product} onClose={onClose} />;
+}
+
+function ProductModalContent({ product, onClose }: { product: Product; onClose: () => void }) {
   const { addToCart } = useCart();
+  const { isClosed } = useStoreStatus();
+  const titleId = useId();
+
+  const withMeatPoint = hasMeatPoint(product);
   const [quantity, setQuantity] = useState(1);
   const [observation, setObservation] = useState('');
-  const [meatPoint, setMeatPoint] = useState('Ao Ponto');
+  const [meatPoint, setMeatPoint] = useState(DEFAULT_MEAT_POINT);
   const [selectedAddons, setSelectedAddons] = useState<Addon[]>([]);
   const [removedIngredients, setRemovedIngredients] = useState<string[]>([]);
 
+  // Esc fecha o modal
   useEffect(() => {
-    if (isOpen) {
-      setQuantity(1);
-      setObservation('');
-      setMeatPoint('Ao Ponto');
-      setSelectedAddons([]);
-      setRemovedIngredients([]);
-    }
-  }, [isOpen, product]);
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose]);
 
-  if (!isOpen || !product) return null;
-
-  const availableAddons: Addon[] = product.allowed_addons || [];
+  // Adicionais pausados no painel não podem ser pedidos (a API recusaria)
+  const availableAddons: Addon[] = (product.allowed_addons || []).filter(addon => addon.available !== false);
   const defaultIngredients = product.ingredients || [];
 
   function addAddon(addon: Addon) { setSelectedAddons(prev => [...prev, addon]); }
-  function removeAddon(addonId: number) { 
+  function removeAddon(addonId: number) {
      setSelectedAddons(prev => {
         const index = prev.findIndex(a => a.id === addonId);
         if (index === -1) return prev;
@@ -48,24 +63,28 @@ export default function ProductModal({ product, isOpen, onClose }: ProductModalP
     else setRemovedIngredients(prev => [...prev, ingredient]);
   }
   function handleAddToCart() {
-    addToCart(product!, quantity, observation, selectedAddons, meatPoint, removedIngredients);
+    if (isClosed) return;
+    // Ponto da carne só vai para hambúrgueres
+    addToCart(product, quantity, observation, selectedAddons, withMeatPoint ? meatPoint : undefined, removedIngredients);
     onClose();
   }
 
+  const unitPrice = effectivePrice(product);
   const addonsTotal = selectedAddons.reduce((sum, a) => sum + Number(a.price), 0);
-  const finalPrice = (Number(product.price) + addonsTotal) * quantity;
+  const finalPrice = (unitPrice + addonsTotal) * quantity;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      
+
       {/* MODAL CONTAINER DARK MODE */}
-      <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-800 transition-colors">
-        <button onClick={onClose} className="absolute top-4 right-4 z-10 bg-white/90 dark:bg-black/50 p-2 rounded-full text-gray-800 dark:text-white hover:bg-white dark:hover:bg-slate-800 transition-colors"><X size={20} /></button>
-        
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-800 transition-colors">
+        {/* Primeiro controle do diálogo: recebe o foco ao abrir */}
+        <button type="button" onClick={onClose} aria-label="Fechar" autoFocus className="absolute top-4 right-4 z-10 bg-white/90 dark:bg-black/50 p-2 rounded-full text-gray-800 dark:text-white hover:bg-white dark:hover:bg-slate-800 transition-colors"><X size={20} /></button>
+
         <div className="h-48 sm:h-64 bg-gray-100 dark:bg-slate-800 shrink-0">
           {product.image ? (
-            <img src={`http://localhost:3000/uploads/${product.image}`} className="w-full h-full object-cover" />
+            <img src={assetUrl(product.image)} alt={product.name} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-gray-200 dark:bg-slate-800"><ChefHat size={48} className="text-gray-400 dark:text-slate-600"/></div>
           )}
@@ -73,25 +92,29 @@ export default function ProductModal({ product, isOpen, onClose }: ProductModalP
 
         <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-white">{product.name}</h2>
+            <h2 id={titleId} className="text-2xl font-bold text-gray-800 dark:text-white">{product.name}</h2>
             <p className="text-gray-500 dark:text-gray-400 mt-2">{product.description}</p>
-            <p className="text-xl font-bold text-green-700 dark:text-green-400 mt-2">
-              {Number(product.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            <p className="text-xl font-bold text-green-700 dark:text-green-400 mt-2 flex items-baseline gap-2">
+              {hasPromotion(product) && (
+                <span className="text-sm font-medium text-gray-400 line-through">{formatCurrency(product.price)}</span>
+              )}
+              {formatCurrency(unitPrice)}
             </p>
           </div>
 
-          {/* Ponto da Carne */}
-          {product.category === 'hamburgueres' && (
+          {/* Ponto da Carne (só hambúrgueres) */}
+          {withMeatPoint && (
             <div className="bg-orange-50 dark:bg-orange-900/10 p-4 rounded-xl border border-orange-100 dark:border-orange-900/20">
               <h3 className="font-bold text-gray-800 dark:text-orange-100 mb-3 flex items-center gap-2"><ChefHat size={18} className="text-orange-600 dark:text-orange-400"/> Ponto da Carne</h3>
               <div className="flex flex-wrap gap-2">
-                {['Mal Passado', 'Ao Ponto', 'Bem Passado'].map(point => (
-                  <button 
-                    key={point} 
-                    onClick={() => setMeatPoint(point)} 
+                {MEAT_POINTS.map(point => (
+                  <button
+                    key={point}
+                    onClick={() => setMeatPoint(point)}
+                    aria-pressed={meatPoint === point}
                     className={`px-4 py-2 rounded-lg text-sm font-bold border transition-all ${
-                      meatPoint === point 
-                        ? 'bg-orange-600 text-white border-orange-600 shadow-md' 
+                      meatPoint === point
+                        ? 'bg-orange-600 text-white border-orange-600 shadow-md'
                         : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-700 hover:bg-orange-50 dark:hover:bg-slate-700'
                     }`}
                   >
@@ -109,11 +132,11 @@ export default function ProductModal({ product, isOpen, onClose }: ProductModalP
               <div className="grid grid-cols-2 gap-2">
                 {defaultIngredients.map((ing: string) => (
                   <label key={ing} className="flex items-center gap-3 p-3 border border-gray-200 dark:border-slate-700 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
-                    <input 
-                      type="checkbox" 
-                      checked={removedIngredients.includes(ing)} 
-                      onChange={() => toggleIngredient(ing)} 
-                      className="w-5 h-5 rounded text-red-600 bg-gray-100 dark:bg-slate-800 border-gray-300 dark:border-slate-600 focus:ring-red-500" 
+                    <input
+                      type="checkbox"
+                      checked={removedIngredients.includes(ing)}
+                      onChange={() => toggleIngredient(ing)}
+                      className="w-5 h-5 rounded text-red-600 bg-gray-100 dark:bg-slate-800 border-gray-300 dark:border-slate-600 focus:ring-red-500"
                     />
                     <span className={`text-sm ${removedIngredients.includes(ing) ? 'text-red-600 dark:text-red-400 line-through decoration-red-500' : 'text-gray-700 dark:text-gray-300'}`}>{ing}</span>
                   </label>
@@ -133,12 +156,12 @@ export default function ProductModal({ product, isOpen, onClose }: ProductModalP
                     <div key={addon.id} className={`flex items-center justify-between p-3 border rounded-xl transition-all ${qty > 0 ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-100 dark:border-slate-700'}`}>
                       <div>
                         <p className="font-bold text-gray-800 dark:text-gray-200">{addon.name}</p>
-                        <p className="text-xs text-green-700 dark:text-green-400 font-bold">+ {Number(addon.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                        <p className="text-xs text-green-700 dark:text-green-400 font-bold">+ {formatCurrency(addon.price)}</p>
                       </div>
                       <div className="flex items-center gap-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg p-1 shadow-sm">
-                        <button onClick={() => removeAddon(addon.id)} disabled={qty === 0} className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-700 rounded disabled:opacity-30 dark:text-white transition-colors"><Minus size={14} /></button>
+                        <button onClick={() => removeAddon(addon.id)} disabled={qty === 0} aria-label={`Remover ${addon.name}`} className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-700 rounded disabled:opacity-30 dark:text-white transition-colors"><Minus size={14} /></button>
                         <span className="font-bold w-4 text-center dark:text-white">{qty}</span>
-                        <button onClick={() => addAddon(addon)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-700 rounded text-green-600 dark:text-green-400 transition-colors"><Plus size={14} /></button>
+                        <button onClick={() => addAddon(addon)} aria-label={`Adicionar ${addon.name}`} className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-700 rounded text-green-600 dark:text-green-400 transition-colors"><Plus size={14} /></button>
                       </div>
                     </div>
                   )
@@ -149,26 +172,35 @@ export default function ProductModal({ product, isOpen, onClose }: ProductModalP
 
           <div>
             <h3 className="font-bold text-gray-800 dark:text-white mb-2 flex items-center gap-2"><Info size={16} /> Observação</h3>
-            <textarea 
-              value={observation} 
-              onChange={e => setObservation(e.target.value)} 
-              className="w-full p-3 border border-gray-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-orange-500 outline-none transition-all" 
-              rows={3} 
-              placeholder="Ex: Sem sal, capricha no molho..." 
+            <textarea
+              value={observation}
+              onChange={e => setObservation(e.target.value)}
+              maxLength={MAX_OBSERVATION_LENGTH}
+              aria-label="Observação"
+              className="w-full p-3 border border-gray-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+              rows={3}
+              placeholder="Ex: Sem sal, capricha no molho..."
             />
+            <p className="text-[10px] text-gray-400 text-right mt-1">{observation.length}/{MAX_OBSERVATION_LENGTH}</p>
           </div>
         </div>
 
         <div className="p-4 bg-white dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800 flex gap-4">
            <div className="flex items-center gap-3 border border-gray-200 dark:border-slate-700 rounded-lg p-1 bg-white dark:bg-slate-800 shadow-sm">
-             <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2 dark:text-white hover:bg-gray-100 dark:hover:bg-slate-700 rounded transition-colors"><Minus size={18} /></button>
+             <button onClick={() => setQuantity(q => Math.max(1, q - 1))} aria-label="Diminuir quantidade" className="p-2 dark:text-white hover:bg-gray-100 dark:hover:bg-slate-700 rounded transition-colors"><Minus size={18} /></button>
              <span className="font-bold w-6 text-center dark:text-white">{quantity}</span>
-             <button onClick={() => setQuantity(q => q + 1)} className="p-2 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded transition-colors"><Plus size={18} /></button>
+             <button onClick={() => setQuantity(q => Math.min(MAX_ITEM_QUANTITY, q + 1))} disabled={quantity >= MAX_ITEM_QUANTITY} aria-label="Aumentar quantidade" className="p-2 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded transition-colors disabled:opacity-30"><Plus size={18} /></button>
            </div>
-           <button onClick={handleAddToCart} className="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-xl font-bold flex justify-between px-6 transition-all shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40 active:scale-95">
-             <span>Adicionar</span>
-             <span>{finalPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-           </button>
+           {isClosed ? (
+             <button disabled className="flex-1 bg-gray-300 dark:bg-slate-700 text-gray-600 dark:text-gray-300 py-3 rounded-xl font-bold flex justify-center items-center gap-2 px-6 cursor-not-allowed">
+               <Lock size={18} /> Loja fechada
+             </button>
+           ) : (
+             <button onClick={handleAddToCart} className="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-xl font-bold flex justify-between px-6 transition-all shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40 active:scale-95">
+               <span>Adicionar</span>
+               <span>{formatCurrency(finalPrice)}</span>
+             </button>
+           )}
         </div>
       </div>
     </div>

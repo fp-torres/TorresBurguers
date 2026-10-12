@@ -35,6 +35,10 @@ lerna-debug.log*
 !.vscode/launch.json
 !.vscode/extensions.json
 
+# Imagens enviadas pela API (UPLOADS_DIR padrão). As imagens de demonstração que já estão
+# no Git continuam versionadas; os novos uploads (produtos e avatares) ficam de fora.
+/uploads/*
+
 # dotenv environment variable files
 .env
 .env.development.local

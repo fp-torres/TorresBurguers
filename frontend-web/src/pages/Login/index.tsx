@@ -1,54 +1,39 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Mail, Loader2, ArrowLeft } from 'lucide-react';
-import api from '../../services/api';
-import toast from 'react-hot-toast'; 
+import { getApiErrorMessage } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
+import { homePathForRole, isStaffRole } from '../../utils/roles';
+import { BRAND } from '../../config/brand';
+import BrandLogo from '../../components/BrandLogo';
+import toast from 'react-hot-toast';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-
-  function parseJwt(token: string) {
-    try {
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
-      return JSON.parse(jsonPayload);
-    } catch { return null; }
-  }
+  const { signIn, signOut } = useAuth();
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await api.post('/auth/login', { email, password });
-      
-      const token = response.data.access_token || response.data.token;
-      let user = response.data.user;
+      const user = await signIn({ email, password });
 
-      if (!user && token) {
-        const decoded = parseJwt(token);
-        if (decoded) user = { name: decoded.name || 'Usuário', email: decoded.email, role: decoded.role };
+      // Clientes não usam o painel: a sessão é descartada e o cliente volta para a loja
+      if (!isStaffRole(user.role)) {
+        signOut();
+        toast('Esta área é exclusiva da equipe. Para fazer pedidos, entre pelo login da loja.', { icon: '🛍️' });
+        navigate('/', { replace: true });
+        return;
       }
 
-      if (token && user) {
-        localStorage.setItem('torresburgers.token', token);
-        localStorage.setItem('torresburgers.user', JSON.stringify(user));
-        
-        toast.success(`Bem-vindo, ${user.name.split(' ')[0]}!`);
-
-        if (user.role === 'ADMIN') {
-          navigate('/dashboard');
-        } else {
-          navigate('/orders');
-        }
-      } else {
-        toast.error('Erro ao recuperar dados.');
-      }
+      toast.success(`Bem-vindo, ${user.name.split(' ')[0]}!`);
+      // Administrador → Dashboard; Atendente, Cozinha e Entregador → Pedidos
+      navigate(homePathForRole(user.role), { replace: true });
     } catch (error) {
-      toast.error('Credenciais inválidas.');
+      toast.error(getApiErrorMessage(error, 'Não foi possível entrar. Tente novamente.', { 401: 'Credenciais inválidas.' }));
     } finally {
       setLoading(false);
     }
@@ -60,11 +45,10 @@ export default function Login() {
         
         {/* Cabeçalho Laranja */}
         <div className="bg-[#bf3b0b] p-8 text-center">
-          <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-4 border border-white/30">
-             <span className="text-3xl">👨‍🍳</span>
-          </div>
-          <h1 className="text-2xl font-bold text-white">TorresBurgers</h1>
-          <p className="text-orange-100 text-sm mt-1">Acesso Corporativo</p>
+          <h1 className="flex justify-center">
+            <BrandLogo size={52} tone="dark" />
+          </h1>
+          <p className="text-orange-100 text-sm mt-3">Acesso Corporativo</p>
         </div>
 
         <div className="p-8">
@@ -79,7 +63,7 @@ export default function Login() {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-[#bf3b0b] focus:border-[#bf3b0b] outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-                  placeholder="admin@torresburgers.com"
+                  placeholder="nome@empresa.com.br"
                 />
               </div>
             </div>
@@ -98,7 +82,17 @@ export default function Login() {
                 />
               </div>
               <div className="text-right mt-2">
-                <a href="#" onClick={(e) => {e.preventDefault(); toast('Contate o gerente da loja.', { icon: '🔑' })}} className="text-xs font-bold text-[#bf3b0b] hover:underline">Esqueci a senha</a>
+                {/* Não há recuperação automática: um Administrador define uma nova senha na tela Equipe */}
+                <a
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toast(`Peça a um administrador para definir uma nova senha na tela Equipe. Suporte: ${BRAND.supportEmail}`, { icon: '🔑', duration: 7000 });
+                  }}
+                  className="text-xs font-bold text-[#bf3b0b] dark:text-orange-400 hover:underline"
+                >
+                  Esqueci a senha
+                </a>
               </div>
             </div>
 

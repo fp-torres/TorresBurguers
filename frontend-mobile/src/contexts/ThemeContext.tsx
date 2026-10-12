@@ -3,6 +3,9 @@ import { Appearance, useColorScheme as useRNColorScheme } from 'react-native';
 import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { STORAGE_KEYS } from '../config/brand';
+import { migrateLegacyStorage } from '../services/legacyStorage';
+
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 interface ThemeContextData {
@@ -13,24 +16,29 @@ interface ThemeContextData {
 
 export const ThemeContext = createContext<ThemeContextData>({} as ThemeContextData);
 
+const THEME_MODES: ThemeMode[] = ['light', 'dark', 'system'];
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // Hook do NativeWind para forçar o CSS Tailwind
   const { setColorScheme } = useNativeWindColorScheme();
   // Hook nativo do React Native que avisa quando o celular muda de cor sozinho
-  const systemColorScheme = useRNColorScheme(); 
-  
+  const systemColorScheme = useRNColorScheme();
+
   const [themeMode, setThemeMode] = useState<ThemeMode>('system');
   const [activeTheme, setActiveTheme] = useState<'light' | 'dark'>('dark');
 
   // Ao abrir o app, carrega a preferência salva
   useEffect(() => {
     async function loadTheme() {
-      const savedMode = await AsyncStorage.getItem('@TorresBurgers:themeMode') as ThemeMode;
-      if (savedMode) {
-        applyTheme(savedMode);
-      } else {
-        applyTheme('system'); // Padrão: Seguir o sistema
+      // Traz o tema salvo pelas versões antigas do app (e apaga a sessão antiga)
+      await migrateLegacyStorage();
+      let savedMode: string | null = null;
+      try {
+        savedMode = await AsyncStorage.getItem(STORAGE_KEYS.themeMode);
+      } catch {
+        // Sem acesso ao armazenamento: segue o sistema.
       }
+      applyTheme(THEME_MODES.includes(savedMode as ThemeMode) ? (savedMode as ThemeMode) : 'system');
     }
     loadTheme();
   }, []);
@@ -44,9 +52,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [systemColorScheme, themeMode]);
 
-  async function applyTheme(mode: ThemeMode) {
+  function applyTheme(mode: ThemeMode) {
     setThemeMode(mode);
-    await AsyncStorage.setItem('@TorresBurgers:themeMode', mode);
+    AsyncStorage.setItem(STORAGE_KEYS.themeMode, mode).catch(() => undefined);
 
     if (mode === 'system') {
       const currentSystemTheme = Appearance.getColorScheme() === 'light' ? 'light' : 'dark';

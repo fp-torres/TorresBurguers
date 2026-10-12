@@ -1,332 +1,437 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, MoreThanOrEqual, IsNull, Not } from 'typeorm'; 
-import { CreateOrderDto } from './dto/create-order.dto';
-import { UpdateOrderDto } from './dto/update-order.dto'; 
-import { Order, OrderStatus, OrderType, PaymentStatus } from './entities/order.entity';
-import { OrderItem } from './entities/order-item.entity';
-import { Product } from '../products/entities/product.entity';
-import { User, UserRole } from '../users/entities/user.entity'; 
-import { Address } from '../addresses/entities/address.entity';
-import { Addon } from '../products/entities/addon.entity';
-import { StoreService } from '../store/store.service'; 
+import {
+  FindOptionsRelations,
+  In,
+  IsNull,
+  MoreThanOrEqual,
+  Not,
+  Repository,
+} from 'typeorm';
+import { CreateOrderDto, QuoteOrderDto } from './dto/create-order.dto';
+import { Order } from './entities/order.entity';
+import { OrderStatus, OrderType, PaymentStatus } from './order.enums';
+import { User, UserRole } from '../users/entities/user.entity';
+import { PaymentService } from '../payment/payment.service';
+import {
+  OrderPricingService,
+  STORE_CLOSED_MESSAGE,
+  toQuoteResponse,
+} from './order-pricing.service';
+import { presentOrder } from './order-presenter';
+import { buildOrder, toOrderSnapshot } from './order-snapshot';
+import {
+  TERMINAL_STATUSES,
+  activeScopeSince,
+  chartWindowStart,
+  checkAssign,
+  checkCancel,
+  checkStatusChange,
+  dayKeyInZone,
+  fromCents,
+  isStaffRole,
+  lastDayKeys,
+  needsRefundOnCancel,
+  normalizeText,
+  paymentStatusAfterRefund,
+  resolveChangeFor,
+  shouldMarkPaidOnStatus,
+  storeTimeZone,
+  toCents,
+  type OrderActor,
+  type OrdersScope,
+} from './order-rules';
+
+// Relações de um pedido completo. withDeleted: produtos, adicionais, cliente e entregador que foram
+// para a lixeira continuam aparecendo no histórico.
+const ORDER_RELATIONS: FindOptionsRelations<Order> = {
+  items: { product: true, addons: true },
+  user: true,
+  address: true,
+  driver: true,
+};
+
+type OrderChanges = {
+  status: OrderStatus;
+  driver?: { id: number };
+  payment_status?: PaymentStatus;
+};
 
 @Injectable()
 export class OrdersService {
   constructor(
     @InjectRepository(Order)
-    private orderRepository: Repository<Order>,
-    @InjectRepository(Product)
-    private productRepository: Repository<Product>,
-    @InjectRepository(Address)
-    private addressRepository: Repository<Address>,
-    @InjectRepository(Addon)
-    private addonRepository: Repository<Addon>,
+    private readonly orderRepository: Repository<Order>,
     @InjectRepository(User)
-    private userRepository: Repository<User>,
-    private readonly storeService: StoreService,
+    private readonly userRepository: Repository<User>,
+    private readonly pricing: OrderPricingService,
+    private readonly payments: PaymentService,
   ) {}
 
-  // Lógica simples de frete baseada no nome do bairro
-  private calculateDeliveryFee(neighborhood: string): { fee: number, time: string } {
-    const bairro = neighborhood ? neighborhood.toLowerCase() : '';
-    if (bairro.includes('centro') || bairro.includes('lapa')) return { fee: 5.00, time: '30-40 min' };
-    if (bairro.includes('flamengo') || bairro.includes('botafogo')) return { fee: 7.00, time: '40-50 min' };
-    if (bairro.includes('copacabana') || bairro.includes('ipanema')) return { fee: 10.00, time: '50-60 min' };
-    if (bairro.includes('barra')) return { fee: 20.00, time: '60-80 min' };
-    return { fee: 15.00, time: '50-60 min' };
+  // ---------------------------------------------------------------------------
+  // Cliente
+  // ---------------------------------------------------------------------------
+
+  /** POST /orders/quote — valores calculados pelo servidor (loja fechada → store_open:false). */
+  async quote(dto: QuoteOrderDto, actor: OrderActor) {
+    return toQuoteResponse(await this.pricing.price(dto, actor.id));
   }
 
-  async create(createOrderDto: CreateOrderDto, userId: number) {
-    const isOpen = await this.storeService.isOpen();
-    if (!isOpen) throw new BadRequestException('A loja está fechada no momento.');
-
-    const order = new Order();
-    order.user = { id: userId } as any; 
-    order.status = OrderStatus.PENDING;
-    
-    // Tratamento de Pagamento
-    if (createOrderDto.paymentId) {
-      order.payment_status = PaymentStatus.PAID;
-      // @ts-ignore: Propriedade dinâmica se não estiver na entidade tipada
-      order.payment_id = createOrderDto.paymentId; 
-    } else {
-      order.payment_status = PaymentStatus.PENDING;
+  async create(dto: CreateOrderDto, actor: OrderActor) {
+    // Pago online: o servidor cria o pedido quando o pagamento é aprovado (com o pedido e os preços
+    // da hora do pagamento). Aqui só devolvemos esse pedido — idempotente para o mesmo cliente.
+    if (dto.paymentId !== undefined && dto.paymentId !== null) {
+      const orderId = await this.payments.orderIdForPayment(dto, actor);
+      return presentOrder(await this.getOrderOrFail(orderId));
     }
 
-    order.items = [];
-    order.total_price = 0;
-    order.payment_method = createOrderDto.paymentMethod;
-    order.type = createOrderDto.type;
-    order.change_for = (createOrderDto.changeFor || null) as any;
+    const priced = await this.pricing.price(dto, actor.id);
+    if (!priced.store_open) throw new BadRequestException(STORE_CLOSED_MESSAGE);
 
-    // Tratamento de Endereço e Frete
-    if (order.type === OrderType.DELIVERY) {
-      if (!createOrderDto.addressId) throw new BadRequestException('Endereço obrigatório para delivery.');
-      
-      const address = await this.addressRepository.findOne({ where: { id: createOrderDto.addressId } });
-      if (!address) throw new NotFoundException('Endereço não encontrado.');
-      
-      order.address = address;
-      const logistics = this.calculateDeliveryFee(address.neighborhood || '');
-      order.delivery_fee = logistics.fee;
-      order.estimated_delivery_time = logistics.time;
-    } else {
-      // Retirada no balcão
-      order.address = null;
-      order.delivery_fee = 0;
-      order.estimated_delivery_time = '15-20 min';
-    }
+    const change = resolveChangeFor(
+      dto.paymentMethod,
+      dto.changeFor,
+      priced.totalCents,
+    );
+    if (!change.ok) throw new BadRequestException(change.message);
 
-    // Processamento dos Itens
-    const productIds = createOrderDto.items.map(i => i.productId);
-    const products = await this.productRepository.findBy({ id: In(productIds) });
-
-    for (const itemDto of createOrderDto.items) {
-      const product = products.find(p => p.id === itemDto.productId);
-      if (!product) continue;
-
-      const orderItem = new OrderItem();
-      orderItem.product = product;
-      orderItem.quantity = itemDto.quantity;
-      orderItem.observation = itemDto.observation || '';
-      
-      orderItem.meat_point = itemDto.meatPoint || null;
-      orderItem.removed_ingredients = itemDto.removedIngredients || []; 
-      
-      let itemPrice = Number(product.price);
-      
-      // Adicionais
-      if (itemDto.addonIds?.length) {
-        const addons = await this.addonRepository.findBy({ id: In(itemDto.addonIds) });
-        orderItem.addons = addons;
-        itemPrice += addons.reduce((sum, a) => sum + Number(a.price), 0);
-      }
-      
-      // Associa item ao pedido
-      orderItem.order = order; 
-      order.items.push(orderItem);
-      order.total_price += itemPrice * itemDto.quantity;
-    }
-
-    // Adiciona frete ao total
-    order.total_price += order.delivery_fee;
-    
-    // Salva o pedido (cascade vai salvar os itens)
-    const savedOrder = await this.orderRepository.save(order);
-
-    // --- CORREÇÃO DO ERRO CIRCULAR ---
-    // Removemos a referência 'order' de dentro dos itens antes de retornar o JSON
-    if (savedOrder.items) {
-      savedOrder.items.forEach(item => {
-        delete (item as any).order; 
-      });
-    }
-
-    return savedOrder;
+    // Pago na entrega/retirada: pagamento pendente até a entrega
+    const order = this.orderRepository.create(
+      buildOrder(toOrderSnapshot(priced), {
+        userId: actor.id,
+        paymentMethod: dto.paymentMethod,
+        paymentStatus: PaymentStatus.PENDING,
+        paymentId: null,
+        changeFor: change.value,
+      }),
+    );
+    const saved = await this.orderRepository.save(order);
+    return presentOrder(await this.getOrderOrFail(saved.id));
   }
 
-  async findAll() {
-    return this.orderRepository.find({
-      relations: ['items', 'items.product', 'items.addons', 'user', 'address', 'driver'],
-      order: { created_at: 'DESC' } as any,
-    });
-  }
-
+  /** Pedidos do próprio usuário, mais recentes primeiro. */
   async findMyOrders(userId: number) {
-    return this.orderRepository.find({
-      relations: ['items', 'items.product', 'items.addons', 'user', 'address', 'driver'], 
-      where: { user: { id: userId } }, 
-      order: { created_at: 'DESC' } as any,
+    const orders = await this.orderRepository.find({
+      where: { user: { id: userId } },
+      relations: ORDER_RELATIONS,
+      withDeleted: true,
+      order: { created_at: 'DESC', id: 'DESC', items: { id: 'ASC' } },
     });
+    return orders.map(presentOrder);
   }
 
-  findOne(id: number) {
-    return this.orderRepository.findOne({
-      where: { id },
-      relations: ['items', 'items.product', 'items.addons', 'user', 'address', 'driver'],
+  /** Dono do pedido ou equipe; outro cliente → 403; inexistente → 404. */
+  async findOneFor(id: number, actor: OrderActor) {
+    const order = await this.getOrderOrFail(id);
+    if (!isStaffRole(actor.role) && order.user?.id !== actor.id) {
+      throw new ForbiddenException(
+        'Você não tem permissão para ver este pedido.',
+      );
+    }
+    return presentOrder(order);
+  }
+
+  /**
+   * Dono: só enquanto PENDING. ADMIN/EMPLOYEE: enquanto não for final.
+   * Pago online → estorno (REFUNDED; se falhar, REFUND_PENDING para a equipe resolver).
+   */
+  async cancel(id: number, actor: OrderActor) {
+    const order = await this.getOrderOrFail(id);
+    const decision = checkCancel({
+      role: actor.role,
+      isOwner: order.user?.id === actor.id,
+      status: order.status,
     });
+    if (!decision.ok) throw ruleError(decision);
+
+    const changes: OrderChanges = { status: OrderStatus.CANCELED };
+    const refund = needsRefundOnCancel(order);
+    // Marca o estorno como pendente junto com o cancelamento: se algo falhar no meio, a equipe vê
+    if (refund) changes.payment_status = PaymentStatus.REFUND_PENDING;
+    await this.applyChanges(order, changes);
+    if (refund) await this.refundCanceled(order);
+    return presentOrder(await this.getOrderOrFail(id));
   }
 
-  async cancelOrder(orderId: number, user: any) {
-    const order = await this.findOne(orderId);
-    if (!order) throw new NotFoundException('Pedido não encontrado');
+  // ---------------------------------------------------------------------------
+  // Equipe
+  // ---------------------------------------------------------------------------
 
-    // Validação de permissão
-    if (user.role !== 'ADMIN' && order.user.id !== user.id) {
-      throw new ForbiddenException('Você não tem permissão para cancelar este pedido.');
-    }
-
-    // Regra de negócio: Cliente só cancela se ainda estiver PENDING
-    if (user.role !== 'ADMIN' && order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException('O pedido já está em preparo e não pode mais ser cancelado pelo cliente.');
-    }
-
-    order.status = OrderStatus.CANCELED;
-    return this.orderRepository.save(order);
+  /**
+   * Lista da equipe. scope "active" (quadros): pedidos em andamento, os concluídos/cancelados nas
+   * últimas 24 h e os com estorno pendente (de qualquer data), mais novos primeiro. Sem scope: todos.
+   * Mesma regra de isInActiveScope (order-rules.ts).
+   */
+  async findAll(scope: OrdersScope = 'all') {
+    const where =
+      scope === 'active'
+        ? [
+            { status: Not(In([...TERMINAL_STATUSES])) },
+            { updated_at: MoreThanOrEqual(activeScopeSince()) },
+            { payment_status: PaymentStatus.REFUND_PENDING },
+          ]
+        : undefined;
+    const orders = await this.orderRepository.find({
+      where,
+      relations: ORDER_RELATIONS,
+      withDeleted: true,
+      order: { created_at: 'DESC', id: 'DESC', items: { id: 'ASC' } },
+    });
+    return orders.map(presentOrder);
   }
 
-  async update(id: number, updateOrderDto: UpdateOrderDto) {
-    const order = await this.findOne(id);
-    if (!order) throw new NotFoundException(`Pedido ${id} não encontrado`);
-    this.orderRepository.merge(order, updateOrderDto);
-    return this.orderRepository.save(order);
+  /** PATCH /orders/:id {status} — regras de transição por perfil em order-rules.ts. */
+  async updateStatus(id: number, status: OrderStatus, actor: OrderActor) {
+    const order = await this.getOrderOrFail(id);
+    const decision = checkStatusChange({
+      role: actor.role,
+      actorId: actor.id,
+      from: order.status,
+      to: status,
+      type: order.type,
+      driverId: order.driver?.id ?? null,
+    });
+    if (!decision.ok) throw ruleError(decision);
+
+    const changes: OrderChanges = { status };
+    // Entregador que pega um pedido sem responsável passa a ser o responsável
+    if (decision.assignDriverId)
+      changes.driver = { id: decision.assignDriverId };
+    // Pago na entrega/retirada: concluir o pedido quita o pagamento
+    if (shouldMarkPaidOnStatus(status, order.payment_id))
+      changes.payment_status = PaymentStatus.PAID;
+    // Cancelado pelo quadro (ADMIN/EMPLOYEE) e pago online: estorno, como em /cancel
+    const refund =
+      status === OrderStatus.CANCELED && needsRefundOnCancel(order);
+    if (refund) changes.payment_status = PaymentStatus.REFUND_PENDING;
+
+    await this.applyChanges(order, changes, {
+      requireNoDriver: !!decision.assignDriverId,
+    });
+    if (refund) await this.refundCanceled(order);
+    return presentOrder(await this.getOrderOrFail(id));
   }
 
-  // --- MÉTODOS DE DRIVER / LOGÍSTICA ---
+  /** PATCH /orders/:id/assign — atribui um entregador ativo e coloca o pedido em DELIVERING. */
+  async assignDriver(id: number, driverId: number) {
+    const order = await this.getOrderOrFail(id);
+    const decision = checkAssign({ status: order.status, type: order.type });
+    if (!decision.ok) throw ruleError(decision);
 
-  // 1. Atribuir Motoboy e Mudar Status
-  async assignDriver(orderId: number, driverId: number) {
-    const order = await this.findOne(orderId);
-    if (!order) throw new NotFoundException('Pedido não encontrado');
+    // Usuários na lixeira não aparecem (entregador precisa estar ativo)
+    const driver = await this.userRepository.findOne({
+      where: { id: driverId },
+    });
+    if (!driver)
+      throw new NotFoundException('Entregador não encontrado ou inativo.');
+    if (driver.role !== UserRole.COURIER)
+      throw new BadRequestException(
+        'O usuário selecionado não é um entregador.',
+      );
 
-    // Verifica se o usuário é realmente um motoboy
-    const driver = await this.userRepository.findOne({ where: { id: driverId, role: UserRole.COURIER } });
-    if (!driver) throw new NotFoundException('Motoboy não encontrado ou usuário não possui cargo de entregador.');
-
-    order.driver = driver;
-    // Ao atribuir, já muda para 'DELIVERING' para agilizar
-    order.status = OrderStatus.DELIVERING; 
-    
-    return this.orderRepository.save(order);
+    await this.applyChanges(order, {
+      status: OrderStatus.DELIVERING,
+      driver: { id: driver.id },
+    });
+    return presentOrder(await this.getOrderOrFail(id));
   }
 
-  // 2. Listar Motoboys Disponíveis
-  async getAvailableDrivers() {
+  /** Entregadores ativos (dados de contato apenas). */
+  getAvailableDrivers() {
     return this.userRepository.find({
       where: { role: UserRole.COURIER },
-      select: ['id', 'name', 'phone', 'avatar'] // Retorna apenas dados seguros
+      select: { id: true, name: true, phone: true, avatar: true },
+      order: { name: 'ASC' },
     });
   }
 
-  // 3. Sugestão de Pedidos Próximos (Lógica por Bairro COM LOGS)
-  async getNearbyOrders(orderId: number) {
-    console.log(`--- DEBUG LOGÍSTICA: Buscando vizinhos para o Pedido #${orderId} ---`);
+  /** Pedidos prontos, sem entregador, no mesmo bairro do pedido informado (para agrupar entregas). */
+  async getNearbyOrders(id: number) {
+    const target = await this.orderRepository.findOne({
+      where: { id },
+      relations: { address: true },
+    });
+    if (!target) throw new NotFoundException('Pedido não encontrado.');
+    if (target.type !== OrderType.DELIVERY || !target.address) return [];
 
-    const targetOrder = await this.findOne(orderId);
-    
-    // Se não for delivery ou não tiver endereço, não tem vizinhos
-    if (!targetOrder || targetOrder.type !== OrderType.DELIVERY || !targetOrder.address) {
-      console.log('-> Pedido alvo não é delivery ou não tem endereço.');
-      return [];
-    }
-
-    const neighborhood = targetOrder.address.neighborhood;
-    console.log(`-> Bairro Alvo: "${neighborhood}"`);
-    
-    // Busca pedidos que:
-    // 1. Estão prontos para entrega (READY_FOR_PICKUP)
-    // 2. São do tipo Delivery
-    // 3. São do MESMO bairro
-    // 4. Ainda NÃO têm motoboy (driver is null)
-    // 5. NÃO são o próprio pedido alvo
-    const nearbyOrders = await this.orderRepository.find({
+    const neighborhood = normalizeText(target.address.neighborhood);
+    const candidates = await this.orderRepository.find({
       where: {
+        id: Not(id),
         status: OrderStatus.READY_FOR_PICKUP,
         type: OrderType.DELIVERY,
-        address: { neighborhood: neighborhood }, 
-        driver: IsNull(), 
-        id: Not(orderId) 
+        driver: IsNull(),
       },
-      relations: ['address', 'user'],
+      relations: { address: true, user: true },
+      withDeleted: true,
+      order: { created_at: 'ASC' },
     });
 
-    console.log(`-> Encontrados: ${nearbyOrders.length} vizinhos disponíveis.`);
-    if (nearbyOrders.length > 0) {
-       // CORREÇÃO: Usando ?. para evitar erro caso address seja null
-       nearbyOrders.forEach(o => console.log(`   * Pedido #${o.id} - ${o.address?.neighborhood}`));
-    }
-
-    return nearbyOrders;
+    return candidates
+      .filter(
+        (order) =>
+          order.address &&
+          normalizeText(order.address.neighborhood) === neighborhood,
+      )
+      .map(presentOrder);
   }
 
-  // --- DASHBOARD (BI) ---
+  // ---------------------------------------------------------------------------
+  // Dashboard (somente ADMIN) — faturamento conta apenas pedidos PAGOS e não cancelados
+  // ---------------------------------------------------------------------------
+
   async getDashboardSummary() {
-    const totalOrders = await this.orderRepository.count({
-      where: { 
-        status: Not(OrderStatus.CANCELED)
-      }
-    });
-
-    // Soma total de pedidos não cancelados
-    const revenueQuery = await this.orderRepository
-      .createQueryBuilder('order')
-      .select('SUM(order.total_price)', 'total')
-      .where('order.status != :st', { st: OrderStatus.CANCELED })
-      .getRawOne();
-    
-    const revenue = revenueQuery && revenueQuery.total ? parseFloat(revenueQuery.total) : 0;
-
-    const pendingOrders = await this.orderRepository.count({ where: { status: OrderStatus.PENDING } });
-    const preparingOrders = await this.orderRepository.count({ where: { status: OrderStatus.PREPARING } });
-    
-    // Pedidos ativos com pagamento pendente
-    const pendingPayments = await this.orderRepository.count({ 
-      where: { 
-        payment_status: PaymentStatus.PENDING,
-        status: Not(OrderStatus.CANCELED)
-      } 
-    });
+    const activeStatuses = Not(OrderStatus.CANCELED);
+    const [
+      totalOrders,
+      pendingOrders,
+      preparingOrders,
+      pendingPayments,
+      revenueRow,
+    ] = await Promise.all([
+      this.orderRepository.count({ where: { status: activeStatuses } }),
+      this.orderRepository.count({ where: { status: OrderStatus.PENDING } }),
+      this.orderRepository.count({ where: { status: OrderStatus.PREPARING } }),
+      // Pedidos em andamento ainda sem pagamento
+      this.orderRepository
+        .createQueryBuilder('o')
+        .where('o.payment_status = :pending', {
+          pending: PaymentStatus.PENDING,
+        })
+        .andWhere('o.status NOT IN (:...closed)', {
+          closed: [OrderStatus.CANCELED, OrderStatus.DONE],
+        })
+        .getCount(),
+      this.orderRepository
+        .createQueryBuilder('o')
+        .select('COALESCE(SUM(o.total_price), 0)', 'total')
+        .where('o.payment_status = :paid', { paid: PaymentStatus.PAID })
+        .andWhere('o.status != :canceled', { canceled: OrderStatus.CANCELED })
+        .getRawOne<{ total: string }>(),
+    ]);
 
     return {
       totalOrders,
-      revenue,
+      revenue: Number(revenueRow?.total ?? 0),
       pendingOrders,
       preparingOrders,
-      pendingPayments
+      pendingPayments,
     };
   }
 
-  // Gráficos para o Admin
-  async getChartData() {
-    // Últimos 7 dias
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  /**
+   * Faturamento dos últimos 7 dias (pedidos pagos) e os 5 produtos mais vendidos no período.
+   * Os dias são os do calendário da loja (STORE_TIME_ZONE, padrão America/Sao_Paulo), não do servidor.
+   */
+  async getChartData(now: Date = new Date()) {
+    const timeZone = storeTimeZone();
+    const days = lastDayKeys(now, timeZone, 7);
 
+    // Busca com folga e filtra pelo dia no fuso da loja
     const orders = await this.orderRepository.find({
-      where: { 
-        created_at: MoreThanOrEqual(sevenDaysAgo),
-        status: Not(OrderStatus.CANCELED) 
+      where: {
+        created_at: MoreThanOrEqual(chartWindowStart(now, timeZone, 7)),
+        status: Not(OrderStatus.CANCELED),
       },
-      relations: ['items', 'items.product'],
-      order: { created_at: 'ASC' }
+      relations: { items: { product: true } },
+      withDeleted: true,
+      order: { created_at: 'ASC' },
     });
 
-    // Inicializa datas com 0
-    const salesByDate: Record<string, number> = {};
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const key = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-      salesByDate[key] = 0;
+    // Dias com zero também aparecem no gráfico
+    const revenueCents = new Map<string, number>(days.map((day) => [day, 0]));
+
+    const topProducts = new Map<string, number>();
+    for (const order of orders) {
+      const key = dayKeyInZone(new Date(order.created_at), timeZone);
+      if (!revenueCents.has(key)) continue;
+      if (order.payment_status === PaymentStatus.PAID) {
+        revenueCents.set(
+          key,
+          (revenueCents.get(key) ?? 0) + toCents(order.total_price),
+        );
+      }
+      for (const item of order.items ?? []) {
+        const name = item.product_name ?? item.product?.name ?? 'Item removido';
+        topProducts.set(name, (topProducts.get(name) ?? 0) + item.quantity);
+      }
     }
 
-    const topProducts: Record<string, number> = {};
-
-    orders.forEach(order => {
-      const dateKey = new Date(order.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-      
-      // Soma Receita
-      if (salesByDate[dateKey] !== undefined) {
-        salesByDate[dateKey] += Number(order.total_price);
-      }
-
-      // Soma Produtos
-      order.items.forEach(item => {
-        const prodName = item.product?.name || 'Item Removido';
-        topProducts[prodName] = (topProducts[prodName] || 0) + item.quantity;
-      });
-    });
-
-    // Formata para o Front (Recharts, ApexCharts, etc)
-    const revenueChart = Object.entries(salesByDate)
-      .map(([date, total]) => ({ date, total }));
-      
-    const productsChart = Object.entries(topProducts)
+    const revenueChart = [...revenueCents.entries()].map(([date, cents]) => ({
+      date,
+      total: fromCents(cents),
+    }));
+    const productsChart = [...topProducts.entries()]
       .map(([name, quantity]) => ({ name, quantity }))
       .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 5); // Top 5
-      
+      .slice(0, 5);
+
     return { revenueChart, productsChart };
   }
+
+  // ---------------------------------------------------------------------------
+  // Internos
+  // ---------------------------------------------------------------------------
+
+  private async getOrderOrFail(id: number): Promise<Order> {
+    const order = await this.orderRepository.findOne({
+      where: { id },
+      relations: ORDER_RELATIONS,
+      withDeleted: true,
+      order: { items: { id: 'ASC' } },
+    });
+    if (!order) throw new NotFoundException('Pedido não encontrado.');
+    return order;
+  }
+
+  /**
+   * Grava a mudança só se o pedido continua no status que foi lido (e, ao assumir uma entrega, ainda sem
+   * entregador): se outra pessoa mexeu no meio do caminho, responde 409 em vez de sobrescrever.
+   */
+  private async applyChanges(
+    order: Order,
+    changes: OrderChanges,
+    options: { requireNoDriver?: boolean } = {},
+  ) {
+    const query = this.orderRepository
+      .createQueryBuilder()
+      .update(Order)
+      .set(changes)
+      .where('id = :id', { id: order.id })
+      .andWhere('status = :current', { current: order.status });
+    if (options.requireNoDriver) query.andWhere('driver_id IS NULL');
+
+    const result = await query.execute();
+    if (!result.affected) {
+      throw new ConflictException(
+        'O pedido acabou de ser atualizado por outra pessoa. Atualize a lista e tente novamente.',
+      );
+    }
+  }
+
+  /**
+   * Estorna o pagamento online de um pedido que acabou de ser cancelado (já gravado como
+   * REFUND_PENDING): deu certo → REFUNDED; falhou → continua REFUND_PENDING, visível para a equipe.
+   */
+  private async refundCanceled(order: Order): Promise<void> {
+    const refunded = await this.payments.refund(Number(order.payment_id));
+    const status = paymentStatusAfterRefund(refunded);
+    if (status === PaymentStatus.REFUND_PENDING) return;
+    await this.orderRepository.update(
+      { id: order.id, payment_status: PaymentStatus.REFUND_PENDING },
+      { payment_status: status },
+    );
+  }
+}
+
+function ruleError(decision: { status: 400 | 403; message: string }) {
+  return decision.status === 403
+    ? new ForbiddenException(decision.message)
+    : new BadRequestException(decision.message);
 }

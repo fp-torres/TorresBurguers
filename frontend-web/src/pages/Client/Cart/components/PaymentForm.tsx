@@ -1,256 +1,458 @@
-import { useState, useEffect } from 'react';
-import CreditCard from '../../../../components/CreditCard';
-import { maskCardNumber, maskDate, maskCPF } from '../../../../utils/masks';
+import { useEffect, useRef, useState, type ChangeEvent, type FocusEvent, type FormEvent } from 'react';
 import toast from 'react-hot-toast';
-import { CreditCard as CardIcon, Lock } from 'lucide-react';
+import { AlertCircle, CreditCard as CardIcon, Loader2, Lock } from 'lucide-react';
+import CreditCard from '../../../../components/CreditCard';
+import { maskCardNumber, maskCPF, maskDate } from '../../../../utils/masks';
 import api from '../../../../services/api';
-import { useAuth } from '../../../../contexts/AuthContext';
+import {
+  MP_PUBLIC_KEY,
+  PAYMENT_TIMEOUT_MS,
+  attemptKey,
+  cardRejectionMessage,
+  errorMessage,
+  formatBRL,
+  getMercadoPago,
+  isUncertainFailure,
+  lookupCreditMethod,
+  pollPaymentStatus,
+  preloadMercadoPago,
+  type CardPaymentResponse,
+  type MercadoPagoPaymentMethod,
+  type OrderPayload,
+  type PaymentAttempt,
+} from '../checkout';
 
-declare global {
-  interface Window {
-    MercadoPago: any;
-  }
-}
+type FocusField = 'number' | 'name' | 'expiry' | 'cvc' | '';
 
 interface PaymentFormProps {
-  total: number;
-  email: string;
-  onSuccess: (paymentId: number) => void;
-  setLoading: (loading: boolean) => void;
+  /** Total calculado pelo servidor (orçamento). */
+  total: number | null;
+  /** Pedido que será pago — o mesmo corpo do orçamento. */
+  payload: OrderPayload | null;
+  /** Motivo para não pagar agora (loja fechada, sem endereço...). Sem motivo, o clique segue para onBeforePay. */
+  blockedReason?: string | null;
+  /** A página está ocupada (ex.: registrando outro pedido). */
+  busy?: boolean;
+  /** Validações da página (login, endereço, loja aberta). false = não cobra. */
+  onBeforePay: () => boolean;
+  /** Recalcula o total no servidor logo antes de cobrar (pede confirmação se mudou). null = não cobra. */
+  onConfirmTotal: () => Promise<number | null>;
+  onProcessingChange?: (processing: boolean) => void;
+  /** Pagamento aprovado e pedido registrado pelo servidor. */
+  onOrderCreated: (orderId: number) => void;
+  /** Aprovado, mas o pedido ainda não apareceu: o servidor registra sozinho em instantes. */
+  onApprovedPending: (paymentId: number) => void;
 }
 
-export default function PaymentForm({ total, email, onSuccess, setLoading }: PaymentFormProps) {
-  const { user } = useAuth();
-  const [mp, setMp] = useState<any>(null);
-  
-  const [state, setState] = useState({
-    number: '',
-    name: '',
-    expiry: '',
-    cvc: '',
-    focus: '' as any,
-    docNumber: '', 
-  });
+const EMPTY_CARD = { number: '', name: '', expiry: '', cvc: '', docNumber: '' };
+const IS_TEST_KEY = MP_PUBLIC_KEY.startsWith('TEST-');
+const UNKNOWN_BRAND = 'credit_card';
 
-  const TEST_CARD_NUMBER = '5031433215406351';
-  const [installments] = useState(1);
+// Faixas de BIN (6 primeiros dígitos) da Elo. Algumas começam com 4 ou 5: são conferidas antes de Visa/Mastercard.
+const ELO_BIN_RANGES: [number, number][] = [
+  [401178, 401179], [431274, 431274], [438935, 438935], [451416, 451416], [457393, 457393],
+  [457631, 457632], [504175, 504175], [506699, 506778], [509000, 509999], [627780, 627780],
+  [636297, 636297], [636368, 636368], [650031, 650033], [650035, 650051], [650405, 650439],
+  [650485, 650538], [650541, 650598], [650700, 650718], [650720, 650727], [650901, 650978],
+  [651652, 651679], [655000, 655019], [655021, 655058],
+];
+
+function isEloBin(digits: string): boolean {
+  if (digits.length < 6) return false;
+  const bin = Number(digits.slice(0, 6));
+  return ELO_BIN_RANGES.some(([start, end]) => bin >= start && bin <= end);
+}
+
+/** Bandeira pelos primeiros dígitos (sem resposta do Mercado Pago, é a que vale). */
+function detectCardBrand(number: string): string {
+  const clean = number.replace(/\D/g, '');
+  if (clean.startsWith('5031')) return 'master'; // cartão de teste do Mercado Pago
+  if (isEloBin(clean)) return 'elo';
+  if (/^(606282|3841[046]0)/.test(clean)) return 'hipercard';
+  if (/^4/.test(clean)) return 'visa';
+  if (/^5[1-5]/.test(clean) || /^2(22[1-9]|2[3-9][0-9]|[3-6][0-9]{2}|7[01][0-9]|720)/.test(clean)) return 'master';
+  if (/^3[47]/.test(clean)) return 'amex';
+  return UNKNOWN_BRAND;
+}
+
+/** Nome usado pelo desenho do cartão (react-credit-cards). */
+function issuerFor(brand: string): string | undefined {
+  if (brand === UNKNOWN_BRAND) return undefined;
+  if (brand === 'master' || brand === 'debmaster') return 'mastercard';
+  return brand.replace(/^deb/, '');
+}
+
+/** Dígito verificador (Luhn) do número do cartão. */
+function isValidCardNumber(digits: string): boolean {
+  if (!/^\d{13,19}$/.test(digits)) return false;
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    let digit = Number(digits[digits.length - 1 - i]);
+    if (i % 2 === 1) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+  }
+  return sum % 10 === 0;
+}
+
+function isValidCpf(value: string): boolean {
+  const cpf = value.replace(/\D/g, '');
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+  const check = (length: number) => {
+    let sum = 0;
+    for (let i = 0; i < length; i++) sum += Number(cpf[i]) * (length + 1 - i);
+    const rest = (sum * 10) % 11;
+    return rest === 10 ? 0 : rest;
+  };
+  return check(9) === Number(cpf[9]) && check(10) === Number(cpf[10]);
+}
+
+/** MM/AA válido e ainda não vencido. */
+function isValidExpiry(expiry: string): boolean {
+  const match = /^(\d{2})\/(\d{2})$/.exec(expiry);
+  if (!match) return false;
+  const month = Number(match[1]);
+  const year = 2000 + Number(match[2]);
+  if (month < 1 || month > 12) return false;
+  const now = new Date();
+  return year > now.getFullYear() || (year === now.getFullYear() && month >= now.getMonth() + 1);
+}
+
+export default function PaymentForm({
+  total, payload, blockedReason, busy = false, onBeforePay, onConfirmTotal, onProcessingChange, onOrderCreated, onApprovedPending,
+}: PaymentFormProps) {
+  const [card, setCard] = useState(EMPTY_CARD);
+  const [focus, setFocus] = useState<FocusField>('');
+  const [processing, setProcessing] = useState(false);
+  const [statusText, setStatusText] = useState('');
+  const [formError, setFormError] = useState('');
+
+  // Trava contra clique duplo (o estado do React só atualiza no próximo render)
+  const processingRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  // Chave da tentativa: repetida se a resposta não chegar (nunca cobra duas vezes)
+  const attemptRef = useRef<PaymentAttempt | null>(null);
 
   useEffect(() => {
-    if (window.MercadoPago) {
-      const mpInstance = new window.MercadoPago('TEST-6aeab6dc-85c6-4d63-b0e6-8f605114628d', {
-        locale: 'pt-BR'
-      });
-      setMp(mpInstance);
-    } else {
-      console.error("SDK do Mercado Pago não carregou.");
-      toast.error("Erro ao carregar sistema de pagamento.");
-    }
+    preloadMercadoPago();
+    return () => abortRef.current?.abort();
   }, []);
 
-  const detectCardBrand = (number: string) => {
-    const clean = number.replace(/\D/g, '');
-    if (clean.startsWith('5031')) return 'master';
-    if (clean.match(/^4/)) return 'visa';
-    if (clean.match(/^5[1-5]/) || clean.match(/^2(22[1-9]|2[3-9][0-9]|[3-6][0-9]{2}|7[01][0-9]|720)/)) return 'master';
-    if (clean.match(/^3[47]/)) return 'amex';
-    if (clean.match(/^(4011(78|79)|431274|438935|451416|457393|457631|457632|504175|627780|636297|636368|65003[1-3]|6500(3[5-9]|4[0-9]|5[0-1])|65040[5-9]|6504[1-3][0-9]|65048[5-9]|65049[0-9]|6505[0-2][0-9]|65053[0-8]|65054[1-9]|6505[5-8][0-9]|65059[0-8]|65070[0-9]|65071[0-8]|65072[0-7]|65090[1-9]|65091[0-9]|650920|65165[2-9]|6516[6-7][0-9]|65500[0-9]|65501[0-9]|65502[1-9]|6550[3-4][0-9]|65505[0-8])/)) return 'elo';
-    if (clean.match(/^606282|^3841(?:[0|4|6]{1})0/)) return 'hipercard';
-    return 'credit_card';
-  };
+  const brand = detectCardBrand(card.number);
+  const cvcLength = brand === 'amex' ? 4 : 3;
 
-  const handleInputChange = (evt: any) => {
-    const { name, value } = evt.target;
-    let formattedValue = value;
-    if (name === 'number') formattedValue = maskCardNumber(value);
-    if (name === 'expiry') formattedValue = maskDate(value);
-    if (name === 'docNumber') formattedValue = maskCPF(value);
-    if (name === 'cvc') formattedValue = value.replace(/\D/g, '').slice(0, 4);
+  function handleChange(event: ChangeEvent<HTMLInputElement>) {
+    const { name, value } = event.target;
+    let formatted = value;
+    if (name === 'number') formatted = maskCardNumber(value);
+    if (name === 'expiry') formatted = maskDate(value);
+    if (name === 'docNumber') formatted = maskCPF(value);
+    if (name === 'cvc') formatted = value.replace(/\D/g, '').slice(0, 4);
+    if (name === 'name') formatted = value.toUpperCase();
+    setCard((previous) => ({ ...previous, [name]: formatted }));
+    setFormError('');
+  }
 
-    setState((prev) => ({ ...prev, [name]: formattedValue }));
-  };
+  function handleFocus(event: FocusEvent<HTMLInputElement>) {
+    const name = event.target.name;
+    setFocus(name === 'number' || name === 'name' || name === 'expiry' || name === 'cvc' ? name : '');
+  }
 
-  const handleInputFocus = (evt: any) => {
-    setState((prev) => ({ ...prev, focus: evt.target.name }));
-  };
+  /**
+   * Confere o cartão. Bandeira desconhecida no aparelho → pergunta ao Mercado Pago pelo BIN antes de
+   * recusar (cartões Elo e de bancos novos). Devolve o meio do Mercado Pago quando ele respondeu.
+   */
+  async function validateCard(): Promise<{ error: string | null; method: MercadoPagoPaymentMethod | null }> {
+    const digits = card.number.replace(/\D/g, '');
+    if (!isValidCardNumber(digits)) return { error: 'Número do cartão inválido.', method: null };
 
-  async function handleSubmit(e: any) {
-    e.preventDefault();
-    
-    if (user?.role !== 'CLIENT') {
-      toast.error('Administradores não podem realizar pagamentos.');
-      return;
+    let method: MercadoPagoPaymentMethod | null = null;
+    let cvc = cvcLength;
+    if (brand === UNKNOWN_BRAND) {
+      method = await lookupCreditMethod(digits);
+      if (!method) return { error: 'Bandeira não aceita. Use Visa, Mastercard, Elo, Amex ou Hipercard.', method: null };
+      cvc = method.settings?.[0]?.security_code?.length || (method.id === 'amex' ? 4 : 3);
     }
+    if (card.name.trim().length < 2) return { error: 'Informe o nome impresso no cartão.', method };
+    if (!isValidExpiry(card.expiry)) return { error: 'Validade inválida ou cartão vencido.', method };
+    if (card.cvc.length !== cvc) return { error: `O CVV deve ter ${cvc} dígitos.`, method };
+    if (!isValidCpf(card.docNumber)) return { error: 'CPF do titular inválido.', method };
+    return { error: null, method };
+  }
 
-    setLoading(true);
+  function setBusyState(value: boolean) {
+    processingRef.current = value;
+    setProcessing(value);
+    onProcessingChange?.(value);
+  }
 
-    if (!mp) {
-      toast.error('Sistema de pagamento indisponível.');
-      setLoading(false);
-      return;
-    }
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (processingRef.current || busy) return;
+    if (!onBeforePay() || !payload) return;
 
+    setBusyState(true);
+    setFormError('');
+    setStatusText('Conferindo o cartão...');
     try {
-      const cleanNumber = state.number.replace(/\D/g, '');
-      const detectedMethod = detectCardBrand(state.number);
-      
-      let nameToSend = state.name;
-      if (cleanNumber === TEST_CARD_NUMBER) {
-        nameToSend = 'APRO'; 
+      const { error: invalid, method } = await validateCard();
+      if (invalid) {
+        setFormError(invalid);
+        return;
       }
 
-      if (detectedMethod === 'credit_card' && cleanNumber !== TEST_CARD_NUMBER) {
-         toast.error('Cartão não suportado ou número inválido.');
-         setLoading(false);
-         return;
+      // O total pode ter mudado (promoção, taxa): o cliente confirma antes de qualquer cobrança
+      setStatusText('Conferindo o total...');
+      const confirmedTotal = await onConfirmTotal();
+      if (confirmedTotal === null) return;
+
+      setStatusText('Processando pagamento...');
+      const digits = card.number.replace(/\D/g, '');
+      const [month, year] = card.expiry.split('/');
+      const mp = await getMercadoPago();
+
+      let token: { id?: string };
+      try {
+        token = await mp.createCardToken({
+          cardNumber: digits,
+          cardholderName: card.name.trim(),
+          cardExpirationMonth: month,
+          cardExpirationYear: `20${year}`,
+          securityCode: card.cvc,
+          identificationType: 'CPF',
+          identificationNumber: card.docNumber.replace(/\D/g, ''),
+        });
+      } catch {
+        throw new Error('Não foi possível validar o cartão. Confira número, validade, CVV e CPF.');
+      }
+      if (!token?.id) throw new Error('Não foi possível validar o cartão. Confira os dados.');
+
+      const paymentMethodId = (method ?? (await lookupCreditMethod(digits)))?.id ?? brand;
+
+      // Mesma tentativa (mesmo pedido) = mesma chave: repetir depois de uma falha de rede não cobra de novo
+      const attempt = attemptKey(attemptRef.current, JSON.stringify(payload));
+      attemptRef.current = attempt;
+
+      // O valor não é enviado: o servidor calcula a partir do pedido
+      let data: CardPaymentResponse;
+      try {
+        ({ data } = await api.post<CardPaymentResponse>(
+          '/payment/card',
+          {
+            order: payload,
+            token: token.id,
+            paymentMethodId,
+            installments: 1,
+            docType: 'CPF',
+            docNumber: card.docNumber.replace(/\D/g, ''),
+            idempotencyKey: attempt.key,
+          },
+          { timeout: PAYMENT_TIMEOUT_MS },
+        ));
+      } catch (error) {
+        if (isUncertainFailure(error)) {
+          throw new Error(
+            'Não recebemos a confirmação do pagamento a tempo. Confira em Meus Pedidos se o pedido foi registrado; tentar de novo é seguro e não gera cobrança em dobro.',
+          );
+        }
+        attemptRef.current = null; // recusa definitiva: a próxima tentativa é outra
+        throw error;
+      }
+      attemptRef.current = null;
+
+      let status = data.status;
+      let orderId = typeof data.orderId === 'number' ? data.orderId : null;
+      let detail = data.status_detail;
+
+      // Em análise, ou aprovado com o pedido ainda sendo registrado: acompanha pelo status
+      if ((status === 'approved' && orderId === null) || status === 'in_process' || status === 'pending') {
+        setStatusText(status === 'approved' ? 'Registrando seu pedido...' : 'Pagamento em análise pelo banco...');
+        const controller = new AbortController();
+        abortRef.current = controller;
+        const outcome = await pollPaymentStatus(data.id, {
+          intervalMs: 3000,
+          timeoutMs: 60_000,
+          signal: controller.signal,
+          immediate: status === 'approved',
+        });
+        if (outcome.result === 'aborted') return;
+        if (outcome.result === 'approved' || outcome.result === 'approved_pending') {
+          status = 'approved';
+          orderId = outcome.orderId ?? null;
+        } else if (outcome.result === 'failed') {
+          status = outcome.status ?? 'rejected';
+          detail = outcome.statusDetail ?? detail;
+        }
       }
 
-      const tokenObj = await mp.createCardToken({
-        cardNumber: cleanNumber,
-        cardholderName: nameToSend, 
-        cardExpirationMonth: state.expiry.split('/')[0],
-        cardExpirationYear: '20' + state.expiry.split('/')[1],
-        securityCode: state.cvc,
-        identificationType: 'CPF',
-        identificationNumber: state.docNumber.replace(/\D/g, ''),
-      });
-
-      if (!tokenObj || !tokenObj.id) {
-        throw new Error('Dados do cartão inválidos.');
-      }
-
-      const { data } = await api.post('/payment/card', {
-        token: tokenObj.id,
-        amount: total,
-        email: email,
-        paymentMethodId: detectedMethod, 
-        installments: installments,
-        docType: 'CPF',
-        docNumber: state.docNumber.replace(/\D/g, '')
-      });
-
-      console.log('Status Recebido:', data.status);
-
-      // Agora que o backend garante 'approved', podemos confiar nisso
-      if (data.status === 'approved' || data.status === 'in_process') {
-        toast.success('Pagamento Aprovado!');
-        onSuccess(data.id); 
+      if (status === 'approved') {
+        setCard(EMPTY_CARD);
+        toast.success(data.simulation ? 'Pagamento aprovado (simulação de testes).' : 'Pagamento aprovado!');
+        if (orderId !== null) onOrderCreated(orderId);
+        else onApprovedPending(data.id);
+      } else if (status === 'rejected' || status === 'cancelled') {
+        const message = cardRejectionMessage(detail);
+        setFormError(message);
+        toast.error(message);
       } else {
-        toast.error(`Recusado: ${data.status_detail || 'Tente novamente'}`);
+        const message = `O pagamento nº ${data.id} ainda está em análise. Não pague de novo: se ele for aprovado, o pedido aparece em Meus Pedidos automaticamente.`;
+        setFormError(message);
+        toast.error('Pagamento em análise.');
       }
-
-    } catch (error: any) {
-      console.error("Erro Pagamento:", error);
-      toast.error('Erro ao processar. Tente novamente.');
+    } catch (error) {
+      const message = errorMessage(error, 'Não foi possível processar o pagamento. Tente novamente.');
+      setFormError(message);
+      toast.error(message);
     } finally {
-      setLoading(false);
+      abortRef.current = null;
+      setStatusText('');
+      setBusyState(false);
     }
   }
 
-  const cardIssuer = detectCardBrand(state.number);
-  const displayIssuer = cardIssuer === 'master' ? 'mastercard' : cardIssuer;
-  
-  // Define o tamanho máximo do CVV baseado no cartão
-  const cvcMaxLength = cardIssuer === 'amex' ? 4 : 3;
+  const working = processing || busy;
+  const buttonDisabled = working || !!blockedReason;
+  const inputClass =
+    'w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none transition-all dark:text-white disabled:opacity-60';
 
   return (
     <div className="space-y-6">
       <CreditCard
-        number={state.number}
-        name={state.name}
-        expiry={state.expiry}
-        cvc={state.cvc}
-        focus={state.focus}
-        issuer={displayIssuer === 'credit_card' ? undefined : displayIssuer}
+        number={card.number}
+        name={card.name}
+        expiry={card.expiry}
+        cvc={card.cvc}
+        focus={focus}
+        issuer={issuerFor(brand)}
       />
-      
-      <form onSubmit={handleSubmit} className="space-y-4">
-         <div>
-          <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">Número do Cartão</label>
-          <div className="relative">
-            <input
-              type="text"
-              name="number"
-              placeholder="0000 0000 0000 0000"
-              value={state.number}
-              onChange={handleInputChange}
-              onFocus={handleInputFocus}
-              className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 pl-10 focus:ring-2 focus:ring-orange-500 outline-none transition-all font-mono dark:text-white"
-              maxLength={19}
-              required
-            />
-            <CardIcon className="absolute left-3 top-3.5 text-gray-400 dark:text-gray-500" size={18} />
-          </div>
-        </div>
 
-        <div>
-          <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">Nome no Cartão</label>
-          <input
-            type="text"
-            name="name"
-            placeholder="COMO ESTÁ NO CARTÃO"
-            value={state.name}
-            onChange={(e) => setState({ ...state, name: e.target.value.toUpperCase() })}
-            onFocus={handleInputFocus}
-            className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none transition-all dark:text-white"
-            required
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+        <fieldset disabled={working} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">Validade</label>
-            <input
-              type="text"
-              name="expiry"
-              placeholder="MM/AA"
-              value={state.expiry}
-              onChange={handleInputChange}
-              onFocus={handleInputFocus}
-              className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none transition-all font-mono text-center dark:text-white"
-              maxLength={5}
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">CVV</label>
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">Número do Cartão</label>
             <div className="relative">
               <input
-                type="tel"
-                name="cvc"
-                placeholder={cvcMaxLength === 4 ? "1234" : "123"}
-                value={state.cvc}
-                onChange={handleInputChange}
-                onFocus={handleInputFocus}
-                className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 pl-10 focus:ring-2 focus:ring-orange-500 outline-none transition-all font-mono dark:text-white"
-                maxLength={cvcMaxLength}
+                type="text"
+                inputMode="numeric"
+                autoComplete="cc-number"
+                name="number"
+                placeholder="0000 0000 0000 0000"
+                value={card.number}
+                onChange={handleChange}
+                onFocus={handleFocus}
+                className={`${inputClass} pl-10 font-mono`}
+                maxLength={19}
                 required
               />
-              <Lock className="absolute left-3 top-3.5 text-gray-400 dark:text-gray-500" size={18} />
+              <CardIcon className="absolute left-3 top-3.5 text-gray-400 dark:text-gray-500" size={18} />
             </div>
           </div>
-        </div>
 
-        <div>
-          <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">CPF do Titular</label>
-          <input
-            type="tel"
-            name="docNumber"
-            placeholder="000.000.000-00"
-            value={state.docNumber}
-            onChange={handleInputChange}
-            onFocus={handleInputFocus}
-            className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none transition-all font-mono dark:text-white"
-            maxLength={14}
-            required
-          />
-        </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">Nome no Cartão</label>
+            <input
+              type="text"
+              autoComplete="cc-name"
+              name="name"
+              placeholder="COMO ESTÁ NO CARTÃO"
+              value={card.name}
+              onChange={handleChange}
+              onFocus={handleFocus}
+              className={inputClass}
+              maxLength={60}
+              required
+            />
+          </div>
 
-        <button 
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">Validade</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="cc-exp"
+                name="expiry"
+                placeholder="MM/AA"
+                value={card.expiry}
+                onChange={handleChange}
+                onFocus={handleFocus}
+                className={`${inputClass} font-mono text-center`}
+                maxLength={5}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">CVV</label>
+              <div className="relative">
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="cc-csc"
+                  name="cvc"
+                  placeholder={cvcLength === 4 ? '1234' : '123'}
+                  value={card.cvc}
+                  onChange={handleChange}
+                  onFocus={handleFocus}
+                  className={`${inputClass} pl-10 font-mono`}
+                  maxLength={brand === UNKNOWN_BRAND ? 4 : cvcLength}
+                  required
+                />
+                <Lock className="absolute left-3 top-3.5 text-gray-400 dark:text-gray-500" size={18} />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">CPF do Titular</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              name="docNumber"
+              placeholder="000.000.000-00"
+              value={card.docNumber}
+              onChange={handleChange}
+              onFocus={handleFocus}
+              className={`${inputClass} font-mono`}
+              maxLength={14}
+              required
+            />
+          </div>
+        </fieldset>
+
+        {IS_TEST_KEY && (
+          <p className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-800 rounded-lg p-3">
+            Ambiente de testes: use o cartão <b>5031 4332 1540 6351</b>, validade <b>11/30</b>, CVV <b>123</b> e CPF <b>123.456.789-09</b>.
+            Nenhum valor real é cobrado.
+          </p>
+        )}
+
+        {formError && (
+          <div role="alert" className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm flex items-start gap-2">
+            <AlertCircle size={18} className="shrink-0 mt-0.5" />
+            <span>{formError}</span>
+          </div>
+        )}
+
+        <button
           type="submit"
-          className="w-full bg-green-600 text-white font-bold py-4 rounded-xl hover:bg-green-700 transition-all shadow-lg shadow-green-200 dark:shadow-none flex items-center justify-center gap-2 mt-4"
+          disabled={buttonDisabled}
+          className="w-full bg-green-600 text-white font-bold py-4 rounded-xl hover:bg-green-700 transition-all shadow-lg shadow-green-200 dark:shadow-none flex items-center justify-center gap-2 mt-4 disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <Lock size={18} /> Pagar {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          {working ? (
+            <>
+              <Loader2 size={18} className="animate-spin" /> {statusText || 'Aguarde...'}
+            </>
+          ) : (
+            <>
+              <Lock size={18} /> {total !== null ? `Pagar ${formatBRL(total)}` : 'Pagar com cartão'}
+            </>
+          )}
         </button>
+        {blockedReason && !working && (
+          <p className="text-center text-xs text-gray-500 dark:text-gray-400">{blockedReason}</p>
+        )}
       </form>
     </div>
   );

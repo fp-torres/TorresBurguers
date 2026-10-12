@@ -1,31 +1,34 @@
-import React, { useState, useEffect, useMemo, useContext } from 'react';
-import { 
-  View, Text, TouchableOpacity, ScrollView, TextInput, 
-  Image, ActivityIndicator, Alert, Modal, KeyboardAvoidingView, Platform 
+import React, { useState, useEffect, useMemo, useContext, useCallback } from 'react';
+import {
+  View, Text, TouchableOpacity, ScrollView, TextInput,
+  ActivityIndicator, Alert, Modal, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 
-import api from '../../../services/api';
 import { productService, Product } from '../../../services/productService';
 import { ThemeContext } from '../../../contexts/ThemeContext';
+import RemoteImage from '../../../components/RemoteImage';
+import { PRODUCT_CATEGORIES, categoryLabel, FeatherIconName } from '../../../utils/catalog';
+import { formatPrice, parseMoney } from '../../../utils/format';
+import { getErrorMessage, getErrorStatus } from '../../../utils/errors';
 
-const CATEGORIES = [
+const TABS: { id: string; label: string; icon: FeatherIconName }[] = [
   { id: 'todos', label: 'Todos', icon: 'grid' },
-  { id: 'hamburgueres', label: 'Lanches', icon: 'coffee' }, // Adaptando ícones pro Feather
-  { id: 'combos', label: 'Combos', icon: 'box' },
-  { id: 'acompanhamentos', label: 'Acomp.', icon: 'hash' },
-  { id: 'bebidas', label: 'Bebidas', icon: 'droplet' },
-  { id: 'sobremesas', label: 'Sobremesas', icon: 'heart' },
+  ...PRODUCT_CATEGORIES.map(({ id, label, icon }) => ({ id, label, icon })),
   { id: 'lixeira', label: 'Lixeira', icon: 'trash-2' },
 ];
 
+const DEFAULT_CATEGORY = 'hamburgueres';
+
 export default function ProductsView() {
   const { activeTheme } = useContext(ThemeContext);
-  
+  const isDark = activeTheme === 'dark';
+
   const [products, setProducts] = useState<Product[]>([]);
   const [deletedProducts, setDeletedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  
+  const [refreshing, setRefreshing] = useState(false);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('todos');
 
@@ -38,42 +41,43 @@ export default function ProductsView() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
-  const [category, setCategory] = useState('hamburgueres');
+  const [category, setCategory] = useState(DEFAULT_CATEGORY);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  async function loadData() {
-    setLoading(true);
+  const loadData = useCallback(async () => {
     try {
-      const data = await productService.getAll();
-      setProducts(data);
-      
-      const trashRes = await api.get('/products/trash').catch(() => ({ data: [] }));
-      setDeletedProducts(trashRes.data);
+      const [active, trash] = await Promise.all([
+        productService.getAll(),
+        productService.getTrash().catch(() => [] as Product[]),
+      ]);
+      setProducts(active);
+      setDeletedProducts(trash);
     } catch (error) {
-      Alert.alert('Erro', 'Não foi possível carregar os produtos.');
+      Alert.alert('Erro', getErrorMessage(error, 'Não foi possível carregar os produtos.'));
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
   }
 
   // --- AÇÕES DO PRODUTO ---
 
   async function toggleAvailability(product: Product) {
+    const newStatus = !product.available;
+    // Atualização otimista
+    setProducts(prev => prev.map(p => p.id === product.id ? { ...p, available: newStatus } : p));
     try {
-      const newStatus = !product.available;
-      // Atualização otimista
-      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, available: newStatus } : p));
-      
-      // Enviando para API
-      const formData = new FormData();
-      formData.append('available', String(newStatus));
-      await api.patch(`/products/${product.id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
-      
+      await productService.update(product.id, { available: newStatus });
     } catch (error) {
-      Alert.alert('Erro', 'Falha ao atualizar o status.');
+      Alert.alert('Erro', getErrorMessage(error, 'Falha ao atualizar o status.'));
       loadData(); // reverte se falhar
     }
   }
@@ -86,10 +90,12 @@ export default function ProductsView() {
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Mover', style: 'destructive', onPress: async () => {
             try {
-              await api.delete(`/products/${product.id}`);
+              await productService.remove(product.id);
               loadData();
-            } catch { Alert.alert('Erro', 'Não foi possível mover para a lixeira.'); }
-          } 
+            } catch (error) {
+              Alert.alert('Erro', getErrorMessage(error, 'Não foi possível mover para a lixeira.'));
+            }
+          }
         }
       ]
     );
@@ -103,10 +109,12 @@ export default function ProductsView() {
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Restaurar', onPress: async () => {
             try {
-              await api.patch(`/products/${product.id}/restore`);
+              await productService.restore(product.id);
               loadData();
-            } catch { Alert.alert('Erro', 'Não foi possível restaurar.'); }
-          } 
+            } catch (error) {
+              Alert.alert('Erro', getErrorMessage(error, 'Não foi possível restaurar.'));
+            }
+          }
         }
       ]
     );
@@ -120,10 +128,20 @@ export default function ProductsView() {
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Apagar', style: 'destructive', onPress: async () => {
             try {
-              await api.delete(`/products/${product.id}/permanent`);
+              await productService.removePermanently(product.id);
               loadData();
-            } catch { Alert.alert('Erro', 'Não foi possível excluir.'); }
-          } 
+            } catch (error) {
+              if (getErrorStatus(error) === 409) {
+                // Produto já vendido: o histórico dos pedidos depende dele
+                Alert.alert(
+                  'Produto com pedidos',
+                  `"${product.name}" aparece em pedidos já realizados e não pode ser excluído definitivamente. Ele continua na lixeira, fora do cardápio.`
+                );
+              } else {
+                Alert.alert('Erro', getErrorMessage(error, 'Não foi possível excluir.'));
+              }
+            }
+          }
         }
       ]
     );
@@ -133,43 +151,56 @@ export default function ProductsView() {
 
   function openCreateModal() {
     setProductToEdit(null);
-    setName(''); setDescription(''); setPrice(''); setCategory('hamburgueres');
+    setName(''); setDescription(''); setPrice('');
+    setCategory(activeTab !== 'todos' && activeTab !== 'lixeira' ? activeTab : DEFAULT_CATEGORY);
     setIsModalOpen(true);
   }
 
   function openEditModal(product: Product) {
     setProductToEdit(product);
     setName(product.name);
-    setDescription(product.description);
-    setPrice(String(product.price));
-    setCategory(product.category);
+    setDescription(product.description ?? '');
+    setPrice(String(product.price ?? '').replace('.', ','));
+    setCategory(PRODUCT_CATEGORIES.some((c) => c.id === product.category) ? product.category : DEFAULT_CATEGORY);
     setIsModalOpen(true);
   }
 
+  function closeModal() {
+    if (!saving) setIsModalOpen(false);
+  }
+
   async function handleSave() {
-    if (!name || !price || !category) {
-      Alert.alert('Atenção', 'Preencha os campos obrigatórios.');
+    // Aceita "29,90", "29.90" ou "R$ 29,90"
+    const numericPrice = parseMoney(price);
+
+    if (!name.trim() || !price.trim()) {
+      Alert.alert('Atenção', 'Preencha o nome e o preço do produto.');
+      return;
+    }
+    if (!/\d/.test(price) || numericPrice < 0) {
+      Alert.alert('Preço inválido', 'Informe um valor como 29,90.');
       return;
     }
 
     setSaving(true);
     try {
-      const formData = new FormData();
-      formData.append('name', name);
-      formData.append('description', description);
-      formData.append('price', price.replace(',', '.')); // Formata preço
-      formData.append('category', category);
+      const payload = {
+        name: name.trim(),
+        description: description.trim(),
+        price: numericPrice.toFixed(2),
+        category,
+      };
 
       if (productToEdit) {
-        await api.patch(`/products/${productToEdit.id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+        await productService.update(productToEdit.id, payload);
       } else {
-        await api.post('/products', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+        await productService.create(payload);
       }
-      
+
       setIsModalOpen(false);
       loadData();
     } catch (error) {
-      Alert.alert('Erro', 'Não foi possível salvar o produto.');
+      Alert.alert('Erro', getErrorMessage(error, 'Não foi possível salvar o produto.'));
     } finally {
       setSaving(false);
     }
@@ -180,27 +211,27 @@ export default function ProductsView() {
   const currentList = activeTab === 'lixeira' ? deletedProducts : products;
 
   const filteredList = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
     return currentList.filter(p => {
-      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = p.name.toLowerCase().includes(term);
       if (activeTab === 'lixeira') return matchesSearch;
       const matchesCategory = activeTab === 'todos' || p.category === activeTab;
       return matchesSearch && matchesCategory;
     });
   }, [currentList, searchTerm, activeTab]);
 
-  const getImageUrl = (imagePath: string | null | undefined) => {
-    if (!imagePath) return 'https://via.placeholder.com/100?text=Sem+Foto';
-    let cleanPath = imagePath.replace(/^\//, ''); 
-    if (!cleanPath.startsWith('uploads/')) cleanPath = `uploads/${cleanPath}`;
-    const base = api.defaults.baseURL?.replace(/\/$/, '') || '';
-    return `${base}/${cleanPath}`;
+  const countFor = (tabId: string) => {
+    if (tabId === 'lixeira') return deletedProducts.length;
+    if (tabId === 'todos') return products.length;
+    return products.filter((p) => p.category === tabId).length;
   };
 
-  const formatPrice = (p: number | string) => Number(p).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const inputClass = 'bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-gray-800 dark:text-white';
+  const placeholderColor = isDark ? '#64748b' : '#9ca3af';
 
   return (
     <View className="flex-1">
-      
+
       {/* HEADER E BUSCA FIXOS */}
       <View className="px-4 py-4 bg-white dark:bg-slate-800 border-b border-gray-100 dark:border-slate-700">
         <View className="flex-row justify-between items-center mb-4">
@@ -217,10 +248,10 @@ export default function ProductsView() {
         </View>
 
         <View className="flex-row items-center bg-gray-50 dark:bg-slate-900 rounded-xl px-3 py-2 border border-gray-100 dark:border-slate-700">
-          <Feather name="search" size={18} color={activeTheme === 'dark' ? '#64748b' : '#9ca3af'} />
-          <TextInput 
-            placeholder={activeTab === 'lixeira' ? "Buscar na lixeira..." : "Buscar produto..."} 
-            placeholderTextColor={activeTheme === 'dark' ? '#64748b' : '#9ca3af'}
+          <Feather name="search" size={18} color={placeholderColor} />
+          <TextInput
+            placeholder={activeTab === 'lixeira' ? "Buscar na lixeira..." : "Buscar produto..."}
+            placeholderTextColor={placeholderColor}
             className="flex-1 ml-2 text-gray-800 dark:text-white text-sm py-1"
             value={searchTerm}
             onChangeText={setSearchTerm}
@@ -231,19 +262,19 @@ export default function ProductsView() {
       {/* CATEGORIAS HORIZONTAIS */}
       <View className="border-b border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800">
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12 }}>
-          {CATEGORIES.map((cat) => (
+          {TABS.map((tab) => (
             <TouchableOpacity
-              key={cat.id}
-              onPress={() => setActiveTab(cat.id)}
+              key={tab.id}
+              onPress={() => setActiveTab(tab.id)}
               className={`flex-row items-center px-4 py-2 rounded-xl mr-2 border ${
-                activeTab === cat.id 
-                  ? 'bg-orange-50 dark:bg-orange-900/30 border-orange-200 dark:border-orange-800' 
+                activeTab === tab.id
+                  ? 'bg-orange-50 dark:bg-orange-900/30 border-orange-200 dark:border-orange-800'
                   : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700'
               }`}
             >
-              <Feather name={cat.icon as any} size={14} color={activeTab === cat.id ? '#ea580c' : (activeTheme === 'dark' ? '#94a3b8' : '#64748b')} />
-              <Text className={`ml-2 text-sm font-bold ${activeTab === cat.id ? 'text-orange-600 dark:text-orange-500' : 'text-gray-500 dark:text-gray-400'}`}>
-                {cat.label}
+              <Feather name={tab.icon} size={14} color={activeTab === tab.id ? '#ea580c' : (isDark ? '#94a3b8' : '#64748b')} />
+              <Text className={`ml-2 text-sm font-bold ${activeTab === tab.id ? 'text-orange-600 dark:text-orange-500' : 'text-gray-500 dark:text-gray-400'}`}>
+                {tab.label} ({countFor(tab.id)})
               </Text>
             </TouchableOpacity>
           ))}
@@ -251,17 +282,23 @@ export default function ProductsView() {
       </View>
 
       {/* LISTA DE PRODUTOS */}
-      <ScrollView className="flex-1 px-4 pt-4" showsVerticalScrollIndicator={false}>
+      <ScrollView
+        className="flex-1 px-4 pt-4"
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#f97316" colors={['#f97316']} />}
+      >
         {loading ? (
           <ActivityIndicator size="large" color="#ea580c" className="mt-10" />
         ) : filteredList.length === 0 ? (
-          <Text className="text-center text-gray-500 dark:text-gray-400 mt-10">Nenhum produto encontrado.</Text>
+          <Text className="text-center text-gray-500 dark:text-gray-400 mt-10">
+            {activeTab === 'lixeira' ? 'A lixeira está vazia.' : 'Nenhum produto encontrado.'}
+          </Text>
         ) : (
           filteredList.map(product => (
             <View key={product.id} className={`bg-white dark:bg-slate-800 rounded-2xl p-3 mb-4 flex-row border border-gray-100 dark:border-slate-700 shadow-sm ${(!product.available || activeTab === 'lixeira') ? 'opacity-70' : ''}`}>
-              
+
               <View className="w-20 h-20 rounded-xl bg-gray-100 dark:bg-slate-900 overflow-hidden mr-3">
-                <Image source={{ uri: getImageUrl(product.image) }} className={`w-full h-full ${(!product.available || activeTab === 'lixeira') ? 'grayscale' : ''}`} resizeMode="cover" />
+                <RemoteImage path={product.image} className="w-full h-full" />
               </View>
 
               <View className="flex-1 justify-center">
@@ -274,27 +311,37 @@ export default function ProductsView() {
 
                 {activeTab !== 'lixeira' && (
                   <Text className="text-[10px] font-bold text-blue-500 bg-blue-50 dark:bg-blue-900/30 self-start px-2 py-0.5 rounded uppercase mt-1">
-                    {product.category}
+                    {categoryLabel(product.category)}
                   </Text>
                 )}
-                
+
                 <View className="flex-row justify-between items-center mt-auto pt-2">
                   {/* BOTÕES DE STATUS E AÇÕES */}
                   {activeTab === 'lixeira' ? (
                     <View className="flex-row items-center w-full justify-between">
                       <Text className="font-bold text-gray-500">{formatPrice(product.price)}</Text>
                       <View className="flex-row">
-                        <TouchableOpacity onPress={() => requestRestore(product)} className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg mr-2">
+                        <TouchableOpacity
+                          onPress={() => requestRestore(product)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Restaurar ${product.name}`}
+                          className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg mr-2"
+                        >
                           <Feather name="rotate-ccw" size={16} color="#16a34a" />
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => requestPermanentDelete(product)} className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                        <TouchableOpacity
+                          onPress={() => requestPermanentDelete(product)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Excluir ${product.name} permanentemente`}
+                          className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg"
+                        >
                           <Feather name="x-circle" size={16} color="#ef4444" />
                         </TouchableOpacity>
                       </View>
                     </View>
                   ) : (
                     <>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         onPress={() => toggleAvailability(product)}
                         className={`flex-row items-center px-2 py-1 rounded-lg border ${product.available ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}
                       >
@@ -304,11 +351,21 @@ export default function ProductsView() {
                         </Text>
                       </TouchableOpacity>
 
-                      <View className="flex-row items-center gap-2">
-                        <TouchableOpacity onPress={() => openEditModal(product)} className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                      <View className="flex-row items-center">
+                        <TouchableOpacity
+                          onPress={() => openEditModal(product)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Editar ${product.name}`}
+                          className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg mr-2"
+                        >
                           <Feather name="edit-2" size={14} color="#3b82f6" />
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => requestDelete(product)} className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                        <TouchableOpacity
+                          onPress={() => requestDelete(product)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Mover ${product.name} para a lixeira`}
+                          className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg"
+                        >
                           <Feather name="trash-2" size={14} color="#ef4444" />
                         </TouchableOpacity>
                       </View>
@@ -323,39 +380,58 @@ export default function ProductsView() {
         <View className="h-20" />
       </ScrollView>
 
-      {/* MODAL DE CRIAR/EDITAR (Simplificado para Mobile) */}
-      <Modal visible={isModalOpen} animationType="slide" transparent>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1 justify-end bg-black/50">
-          <View className="bg-white dark:bg-slate-900 rounded-t-3xl p-6 h-[80%]">
+      {/* MODAL DE CRIAR/EDITAR (o botão voltar do Android fecha via onRequestClose) */}
+      <Modal visible={isModalOpen} animationType="slide" transparent onRequestClose={closeModal}>
+        {/* "padding" nas duas plataformas: o "height" não encolhe o flex-1 do NativeWind (ver KeyboardAwareScreen) */}
+        <KeyboardAvoidingView behavior="padding" className="flex-1 justify-end bg-black/50">
+          <View className="bg-white dark:bg-slate-900 rounded-t-3xl p-6 h-[85%]">
             <View className="flex-row justify-between items-center mb-6">
               <Text className="text-xl font-bold text-gray-800 dark:text-white">{productToEdit ? 'Editar Produto' : 'Novo Produto'}</Text>
-              <TouchableOpacity onPress={() => setIsModalOpen(false)}>
-                <Feather name="x" size={24} color={activeTheme === 'dark' ? '#94a3b8' : '#64748b'} />
+              <TouchableOpacity onPress={closeModal} accessibilityRole="button" accessibilityLabel="Fechar">
+                <Feather name="x" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} className="space-y-4">
-              <View>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <View className="mb-4">
                 <Text className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Nome do Produto</Text>
-                <TextInput value={name} onChangeText={setName} className="bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-gray-800 dark:text-white" placeholder="Ex: X-Bacon" />
+                <TextInput value={name} onChangeText={setName} maxLength={100} className={inputClass} placeholder="Ex: X-Bacon da Casa" placeholderTextColor={placeholderColor} />
               </View>
 
-              <View>
+              <View className="mb-4">
                 <Text className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Preço (R$)</Text>
-                <TextInput value={price} onChangeText={setPrice} keyboardType="numeric" className="bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-gray-800 dark:text-white" placeholder="0.00" />
+                <TextInput value={price} onChangeText={setPrice} keyboardType="decimal-pad" className={inputClass} placeholder="29,90" placeholderTextColor={placeholderColor} />
               </View>
 
-              <View>
-                <Text className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Categoria (ID)</Text>
-                <TextInput value={category} onChangeText={setCategory} className="bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-gray-800 dark:text-white" placeholder="hamburgueres, bebidas..." autoCapitalize="none" />
+              <View className="mb-4">
+                <Text className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2">Categoria</Text>
+                <View className="flex-row flex-wrap">
+                  {PRODUCT_CATEGORIES.map((option) => {
+                    const selected = category === option.id;
+                    return (
+                      <TouchableOpacity
+                        key={option.id}
+                        onPress={() => setCategory(option.id)}
+                        className={`flex-row items-center px-3 py-2 rounded-xl mr-2 mb-2 border ${selected ? 'bg-orange-50 dark:bg-orange-900/30 border-orange-300 dark:border-orange-700' : 'bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700'}`}
+                      >
+                        <Text className="mr-1">{option.emoji}</Text>
+                        <Text className={`text-sm font-bold ${selected ? 'text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-gray-300'}`}>{option.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
 
               <View className="mb-8">
                 <Text className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Descrição</Text>
-                <TextInput value={description} onChangeText={setDescription} multiline numberOfLines={3} className="bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-gray-800 dark:text-white h-24 text-top" placeholder="Ingredientes..." style={{ textAlignVertical: 'top' }} />
+                <TextInput value={description} onChangeText={setDescription} multiline numberOfLines={3} className={`${inputClass} h-24`} placeholder="Ingredientes..." placeholderTextColor={placeholderColor} style={{ textAlignVertical: 'top' }} />
               </View>
 
-              <TouchableOpacity onPress={handleSave} disabled={saving} className="bg-orange-600 py-4 rounded-xl items-center shadow-sm shadow-orange-600/30">
+              <Text className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+                Foto, ingredientes e adicionais permitidos são editados pelo painel web.
+              </Text>
+
+              <TouchableOpacity onPress={handleSave} disabled={saving} className="bg-orange-600 py-4 rounded-xl items-center shadow-sm shadow-orange-600/30 mb-8">
                 {saving ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold text-lg">Salvar Produto</Text>}
               </TouchableOpacity>
             </ScrollView>

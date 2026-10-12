@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
-import { 
-  X, User, MapPin, Bike, CheckCircle2, 
-  Navigation, AlertCircle, Loader2, Map as MapIcon 
+import { useState, useEffect, useCallback } from 'react';
+import {
+  X, User, MapPin, Bike, CheckCircle2,
+  Navigation, AlertCircle, Loader2, Map as MapIcon
 } from 'lucide-react';
 import { orderService, type Order, type Driver } from '../../services/orderService';
+import { assetUrl, getApiErrorMessage } from '../../services/api';
+import { addressAreaLine, addressStreetLine, orderAddress } from '../../utils/orders';
 import toast from 'react-hot-toast';
 
 interface DriverModalProps {
@@ -24,39 +26,40 @@ export default function DriverModal({ isOpen, onClose, targetOrder, onSuccess }:
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (isOpen && targetOrder) {
-      console.log("Modal Aberto. Pedido Alvo:", targetOrder.id);
-      loadData();
-      // Sempre começa selecionando o pedido principal automaticamente
-      setSelectedOrders([targetOrder.id]);
+  const loadData = useCallback(async (orderId: number) => {
+    // Motoboys disponíveis e sugestões de rota (pedidos vizinhos do mesmo bairro) em paralelo.
+    // Sem as sugestões ainda dá para despachar; sem a lista de motoboys, não.
+    const [driversResult, nearbyResult] = await Promise.allSettled([
+      orderService.getDrivers(),
+      orderService.getNearbyOrders(orderId),
+    ]);
+
+    if (driversResult.status === 'fulfilled') {
+      setDrivers(driversResult.value || []);
+    } else {
+      toast.error(getApiErrorMessage(driversResult.reason, 'Erro ao carregar dados de logística'));
+    }
+    setNearbyOrders(nearbyResult.status === 'fulfilled' ? nearbyResult.value || [] : []);
+    setLoading(false);
+  }, []);
+
+  // Cada abertura começa do zero, com o pedido principal já selecionado
+  const [openedFor, setOpenedFor] = useState<number | null>(null);
+  const targetId = isOpen && targetOrder ? targetOrder.id : null;
+  if (targetId !== openedFor) {
+    setOpenedFor(targetId);
+    if (targetId !== null) {
+      setLoading(true);
+      setDrivers([]);
+      setNearbyOrders([]);
+      setSelectedOrders([targetId]);
       setSelectedDriver(null);
     }
-  }, [isOpen, targetOrder]);
-
-  async function loadData() {
-    setLoading(true);
-    try {
-      // 1. Busca Motoboys Disponíveis
-      console.log("Buscando motoboys...");
-      const driversData = await orderService.getDrivers();
-      console.log("Motoboys encontrados:", driversData);
-      setDrivers(driversData || []);
-
-      // 2. Busca Sugestões de Rota (Pedidos Vizinhos do mesmo bairro)
-      if (targetOrder) {
-        console.log("Buscando vizinhos...");
-        const nearbyData = await orderService.getNearbyOrders(targetOrder.id);
-        console.log("Vizinhos encontrados:", nearbyData);
-        setNearbyOrders(nearbyData || []);
-      }
-    } catch (error) {
-      console.error("Erro ao carregar dados:", error);
-      toast.error('Erro ao carregar dados de logística');
-    } finally {
-      setLoading(false);
-    }
   }
+
+  useEffect(() => {
+    if (targetId !== null) loadData(targetId);
+  }, [targetId, loadData]);
 
   // Adiciona ou remove pedidos da seleção de rota
   function toggleOrderSelection(orderId: number) {
@@ -89,8 +92,7 @@ export default function DriverModal({ isOpen, onClose, targetOrder, onSuccess }:
       onSuccess(); // Recarrega a tela pai (Orders)
       onClose();
     } catch (error) {
-      console.error(error);
-      toast.error('Erro ao atribuir entregas.');
+      toast.error(getApiErrorMessage(error, 'Erro ao atribuir entregas.'));
     } finally {
       setSubmitting(false);
     }
@@ -98,21 +100,24 @@ export default function DriverModal({ isOpen, onClose, targetOrder, onSuccess }:
 
   if (!isOpen || !targetOrder) return null;
 
+  // Endereço salvo no pedido (retrato); pedidos antigos usam o endereço cadastrado
+  const targetAddress = orderAddress(targetOrder);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        
+      <div role="dialog" aria-modal="true" aria-labelledby="driver-modal-title" className="bg-white dark:bg-slate-900 w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-900/50">
           <div>
-            <h2 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
+            <h2 id="driver-modal-title" className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
               <Bike className="text-orange-600" /> Logística de Entrega
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
                Pedido Principal: <span className="font-mono font-bold bg-gray-200 dark:bg-slate-700 px-1.5 rounded">#{targetOrder.id}</span>
             </p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full transition-colors">
+          <button type="button" onClick={onClose} aria-label="Fechar" autoFocus className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full transition-colors">
             <X size={24} className="text-gray-500 dark:text-gray-400" />
           </button>
         </div>
@@ -149,13 +154,18 @@ export default function DriverModal({ isOpen, onClose, targetOrder, onSuccess }:
                     </div>
                     <div>
                       <p className="font-bold text-gray-800 dark:text-white text-base">
-                        {targetOrder.address?.street}, {targetOrder.address?.number}
+                        {targetAddress ? addressStreetLine(targetAddress) : 'Endereço não informado'}
                       </p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {targetOrder.address?.neighborhood} - {targetOrder.address?.city}
-                      </p>
+                      {targetAddress && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {addressAreaLine(targetAddress)}
+                        </p>
+                      )}
+                      {targetAddress?.complement && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Ref: {targetAddress.complement}</p>
+                      )}
                       <p className="text-xs font-bold text-gray-400 mt-1 flex items-center gap-1">
-                        <User size={10}/> {targetOrder.user.name}
+                        <User size={10}/> {targetOrder.user?.name || 'Cliente'}
                       </p>
                     </div>
                   </div>
@@ -171,37 +181,41 @@ export default function DriverModal({ isOpen, onClose, targetOrder, onSuccess }:
                   <div className="animate-in slide-in-from-bottom-2 duration-300">
                     <div className="flex items-center justify-between mb-3 bg-green-50 dark:bg-green-900/20 p-2 rounded-lg border border-green-100 dark:border-green-900/30">
                       <span className="text-xs font-bold text-green-700 dark:text-green-400 flex items-center gap-1">
-                        <AlertCircle size={14}/> Sugestão: Mesmo Bairro ({targetOrder.address?.neighborhood})
+                        <AlertCircle size={14}/> Sugestão: Mesmo Bairro ({targetAddress?.neighborhood})
                       </span>
                     </div>
 
+                    {/* Cada vizinho é um botão de alternar (teclado e leitores de tela) */}
                     <div className="space-y-3">
                       {nearbyOrders.map(order => {
                         const isSelected = selectedOrders.includes(order.id);
+                        const nearbyAddress = orderAddress(order);
                         return (
-                          <div 
+                          <button
+                            type="button"
                             key={order.id}
                             onClick={() => toggleOrderSelection(order.id)}
-                            className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex items-center gap-3 relative hover:shadow-md
-                              ${isSelected 
-                                ? 'bg-green-50 dark:bg-green-900/10 border-green-500 dark:border-green-500/50' 
+                            aria-pressed={isSelected}
+                            className={`w-full text-left p-4 rounded-xl border-2 cursor-pointer transition-all flex items-center gap-3 relative hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500
+                              ${isSelected
+                                ? 'bg-green-50 dark:bg-green-900/10 border-green-500 dark:border-green-500/50'
                                 : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 hover:border-gray-300'}
                             `}
                           >
-                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors flex-shrink-0 ${isSelected ? 'border-green-500 bg-green-500 text-white' : 'border-gray-300 dark:border-slate-600'}`}>
+                            <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors flex-shrink-0 ${isSelected ? 'border-green-500 bg-green-500 text-white' : 'border-gray-300 dark:border-slate-600'}`}>
                               {isSelected && <CheckCircle2 size={14} />}
-                            </div>
-                            
-                            <div className="flex-1 min-w-0">
-                              <div className="flex justify-between items-center mb-1">
-                                <span className="font-bold text-sm text-gray-800 dark:text-gray-200">#{order.id} - {order.user.name.split(' ')[0]}</span>
+                            </span>
+
+                            <span className="flex-1 min-w-0">
+                              <span className="flex justify-between items-center mb-1">
+                                <span className="font-bold text-sm text-gray-800 dark:text-gray-200">#{order.id} - {order.user?.name?.split(' ')[0] || 'Cliente'}</span>
                                 <span className="text-[10px] font-mono font-bold text-gray-500 bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">Vizinho</span>
-                              </div>
-                              <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
-                                {order.address?.street}, {order.address?.number}
-                              </p>
-                            </div>
-                          </div>
+                              </span>
+                              <span className="block text-xs text-gray-600 dark:text-gray-400 truncate">
+                                {nearbyAddress ? addressStreetLine(nearbyAddress) : 'Endereço não informado'}
+                              </span>
+                            </span>
+                          </button>
                         );
                       })}
                     </div>
@@ -234,7 +248,7 @@ export default function DriverModal({ isOpen, onClose, targetOrder, onSuccess }:
                   >
                     <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden flex-shrink-0 border border-gray-200 dark:border-slate-600">
                       {driver.avatar ? (
-                         <img src={driver.avatar.startsWith('http') ? driver.avatar : `http://localhost:3000${driver.avatar}`} className="w-full h-full object-cover" alt={driver.name}/>
+                         <img src={assetUrl(driver.avatar)} className="w-full h-full object-cover" alt={driver.name}/>
                       ) : (
                          <User className="w-full h-full p-3 text-gray-400"/>
                       )}
@@ -257,7 +271,7 @@ export default function DriverModal({ isOpen, onClose, targetOrder, onSuccess }:
                   <div className="text-center py-10 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30 p-4">
                     <p className="text-red-600 dark:text-red-400 font-bold text-sm mb-1">Nenhum Motoboy Disponível</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Verifique se há usuários com o cargo 'COURIER' no sistema.
+                        Cadastre um usuário com o perfil Entregador na tela Equipe.
                     </p>
                   </div>
                 )}

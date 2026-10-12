@@ -1,12 +1,13 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm'; // <--- Importante
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AddressesService } from './addresses.service';
 import { AddressesController } from './addresses.controller';
-import { Address } from './entities/address.entity'; // <--- Importante
+import { Address } from './entities/address.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Address])], // <--- Registra a tabela
+  imports: [TypeOrmModule.forFeature([Address])],
   controllers: [AddressesController],
   providers: [AddressesService],
+  exports: [AddressesService],
 })
 export class AddressesModule {}

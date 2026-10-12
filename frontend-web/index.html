@@ -1,13 +1,25 @@
 <!doctype html>
-<html lang="pt-br">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TorresBurgers</title>
-    <script src="https://sdk.mercadopago.com/js/v2"></script>
+    <meta name="theme-color" content="#ea580c" />
+    <meta name="description" content="Cardápio digital, pedidos online e gestão da cozinha, do balcão e das entregas em um só lugar." />
+    <!-- Título neutro até o app carregar; depois ele vira "Nome — slogan" (src/config/brand.ts) -->
+    <title>Cardápio e pedidos online</title>
+    <!-- SDK do Mercado Pago (pagamento com cartão). async: não trava a abertura do site, nem sem internet.
+         data-status avisa o app quando o script terminou (src/services/mercadoPago.ts). -->
+    <script
+      id="mercadopago-sdk"
+      src="https://sdk.mercadopago.com/js/v2"
+      async
+      onload="this.dataset.status='loaded'"
+      onerror="this.dataset.status='error'"
+    ></script>
   </head>
   <body>
+    <noscript>Ative o JavaScript do navegador para ver o cardápio e fazer pedidos.</noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

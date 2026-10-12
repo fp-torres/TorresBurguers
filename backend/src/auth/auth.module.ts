@@ -1,24 +1,23 @@
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-import { UsersModule } from '../users/users.module'; 
-import { JwtModule } from '@nestjs/jwt';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { JwtStrategy } from './jwt.strategy'; 
+import { UsersModule } from '../users/users.module';
+import { JwtStrategy } from './jwt.strategy';
+import { jwtExpiresIn, jwtSecret } from '../config/jwt';
 
 @Module({
   imports: [
-    UsersModule, 
+    UsersModule,
+    // Assinatura dos tokens: mesmo segredo da verificação (JwtStrategy). Validade: JWT_EXPIRES_IN (padrão 7d)
     JwtModule.registerAsync({
-      imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        secret: configService.get('JWT_SECRET'),
-        signOptions: { expiresIn: '1d' },
+      useFactory: () => ({
+        secret: jwtSecret(),
+        signOptions: { expiresIn: jwtExpiresIn() },
       }),
-      inject: [ConfigService],
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy], 
+  providers: [AuthService, JwtStrategy],
 })
 export class AuthModule {}

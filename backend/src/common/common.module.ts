@@ -8,10 +8,10 @@ import { User } from '../users/entities/user.entity';
 @Module({
   imports: [
     // Isso permite que o MaintenanceService use this.productRepository e this.userRepository
-    TypeOrmModule.forFeature([Product, User]) 
+    TypeOrmModule.forFeature([Product, User]),
   ],
   controllers: [MaintenanceController],
   providers: [MaintenanceService],
-  exports: [MaintenanceService]
+  exports: [MaintenanceService],
 })
 export class CommonModule {}

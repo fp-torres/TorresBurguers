@@ -3,21 +3,19 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
 import { Order } from './entities/order.entity';
-import { OrderItem } from './entities/order-item.entity'; // Importante para integridade
-import { Product } from '../products/entities/product.entity';
-import { Address } from '../addresses/entities/address.entity';
-import { Addon } from '../products/entities/addon.entity';
-import { User } from '../users/entities/user.entity'; // <--- O QUE FALTAVA
-import { StoreModule } from '../store/store.module';
+import { OrderItem } from './entities/order-item.entity';
+import { User } from '../users/entities/user.entity';
+import { OrderPricingModule } from './order-pricing.module';
+import { PaymentModule } from '../payment/payment.module';
 
 @Module({
   imports: [
-    // Adicionei 'User' e 'OrderItem' na lista abaixo
-    TypeOrmModule.forFeature([Order, OrderItem, Product, Address, Addon, User]),
-    StoreModule 
+    TypeOrmModule.forFeature([Order, OrderItem, User]),
+    OrderPricingModule, // orçamento / valores do pedido
+    PaymentModule, // conferência do pagamento online na criação do pedido
   ],
   controllers: [OrdersController],
   providers: [OrdersService],
-  exports: [OrdersService], // Boa prática exportar o serviço
+  exports: [OrdersService],
 })
 export class OrdersModule {}

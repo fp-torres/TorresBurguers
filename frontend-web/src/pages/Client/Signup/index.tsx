@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Mail, User, Loader2, ArrowLeft, Phone, Check, X, ShieldCheck, MailCheck } from 'lucide-react';
-import api from '../../../services/api';
-import toast from 'react-hot-toast'; 
+import api, { getApiErrorMessage } from '../../../services/api';
+import toast from 'react-hot-toast';
 import { maskPhone } from '../../../utils/masks';
+import { PASSWORD_TOO_LONG_MESSAGE, checkPassword, isPasswordTooLong, passwordScore } from '../../../utils/password';
+import BrandLogo from '../../../components/BrandLogo';
 
 export default function ClientSignup() {
   const [name, setName] = useState('');
@@ -17,42 +19,22 @@ export default function ClientSignup() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   
-  // Estados de Validação
   const [loading, setLoading] = useState(false);
-  const [strength, setStrength] = useState(0);
-  const [checks, setChecks] = useState({
-    length: false,
-    upper: false,
-    special: false
-  });
-
   const navigate = useNavigate();
 
-  // Função para calcular força da senha
-  useEffect(() => {
-    const newChecks = {
-      length: password.length >= 9,
-      upper: /[A-Z]/.test(password),
-      special: /[!@#$%^&*(),.?":{}|<>]/.test(password) || /[0-9]/.test(password)
-    };
-    setChecks(newChecks);
-
-    let score = 0;
-    if (newChecks.length) score++;
-    if (newChecks.upper) score++;
-    if (newChecks.special) score++;
-    setStrength(score);
-
-  }, [password]);
+  // Força da senha calculada a cada digitação (mesmas regras da API, inclusive o limite de 72 bytes)
+  const checks = useMemo(() => checkPassword(password), [password]);
+  const strength = useMemo(() => passwordScore(password), [password]);
+  const passwordTooLong = useMemo(() => isPasswordTooLong(password), [password]);
 
   // Validações Lógicas
   const passwordsMatch = password === confirmPassword && password.length > 0;
   
   // Regex simples de email
-  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  const emailsMatch = isEmailValid && email === confirmEmail;
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const emailsMatch = isEmailValid && email.trim().toLowerCase() === confirmEmail.trim().toLowerCase();
 
-  const isFormValid = strength === 3 && passwordsMatch && emailsMatch && name && phone.length >= 14;
+  const isFormValid = strength === 3 && !passwordTooLong && passwordsMatch && emailsMatch && !!name.trim() && phone.length >= 14;
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setPhone(maskPhone(e.target.value));
@@ -60,7 +42,11 @@ export default function ClientSignup() {
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
-    
+
+    if (passwordTooLong) {
+      toast.error(PASSWORD_TOO_LONG_MESSAGE);
+      return;
+    }
     if (!isFormValid) {
       toast.error('Preencha todos os campos corretamente.');
       return;
@@ -68,12 +54,13 @@ export default function ClientSignup() {
 
     setLoading(true);
     try {
-      await api.post('/users', { name, email, password, phone, role: 'CLIENT' });
+      // Cadastro público: a API sempre cria um Cliente (o perfil não é enviado)
+      await api.post('/users', { name: name.trim(), email: email.trim(), password, phone });
       toast.success('Conta criada com sucesso! Faça login.');
       navigate('/signin');
-    } catch (error: any) {
-      const msg = error.response?.data?.message || 'Erro ao criar conta.';
-      toast.error(msg);
+    } catch (error) {
+      // Ex.: 409 "E-mail já cadastrado" ou as regras de senha (400)
+      toast.error(getApiErrorMessage(error, 'Erro ao criar conta.'));
     } finally {
       setLoading(false);
     }
@@ -101,6 +88,9 @@ export default function ClientSignup() {
         </Link>
         
         <div className="text-center">
+          <Link to="/" className="inline-flex mb-6 hover:opacity-90 transition-opacity" aria-label="Página inicial">
+            <BrandLogo size={48} />
+          </Link>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Crie sua conta 🚀</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-2">Para acompanhar seus pedidos em tempo real.</p>
         </div>
@@ -227,9 +217,14 @@ export default function ClientSignup() {
               <p className={`flex items-center gap-1 ${checks.upper ? 'text-green-600 dark:text-green-400 font-bold' : ''}`}>
                 {checks.upper ? <Check size={12}/> : <span className="w-3 h-3 block rounded-full bg-gray-300 dark:bg-slate-600"></span>} Letra Maiúscula
               </p>
-              <p className={`flex items-center gap-1 ${checks.special ? 'text-green-600 dark:text-green-400 font-bold' : ''}`}>
-                {checks.special ? <Check size={12}/> : <span className="w-3 h-3 block rounded-full bg-gray-300 dark:bg-slate-600"></span>} Número ou Símbolo
+              <p className={`flex items-center gap-1 ${checks.numberOrSymbol ? 'text-green-600 dark:text-green-400 font-bold' : ''}`}>
+                {checks.numberOrSymbol ? <Check size={12}/> : <span className="w-3 h-3 block rounded-full bg-gray-300 dark:bg-slate-600"></span>} Número ou Símbolo
               </p>
+              {passwordTooLong && (
+                <p role="alert" className="flex items-start gap-1 text-red-500 font-bold">
+                  <X size={12} className="mt-0.5 shrink-0"/> {PASSWORD_TOO_LONG_MESSAGE}
+                </p>
+              )}
             </div>
 
             {/* Confirmar Senha */}

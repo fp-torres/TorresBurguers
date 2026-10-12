@@ -1,0 +1,1287 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Guia Completo do Comestra</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 16mm 14mm 18mm;
+    }
+
+    :root {
+      --ink: #172033;
+      --muted: #5f6b7a;
+      --soft: #eef2f6;
+      --line: #d8e0ea;
+      --brand: #ea580c;
+      --brand-dark: #9a3412;
+      --code: #111827;
+      --code-bg: #f5f7fa;
+      --ok: #126c43;
+      --warn: #9a4e00;
+      --danger: #9d1c1c;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: white;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.45;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    h1, h2, h3, h4 {
+      margin: 0 0 8px;
+      line-height: 1.18;
+      color: #101827;
+    }
+
+    h1 {
+      font-size: 32pt;
+      letter-spacing: -0.02em;
+    }
+
+    h2 {
+      margin-top: 26px;
+      padding-top: 10px;
+      border-top: 2px solid var(--line);
+      font-size: 17pt;
+      break-after: avoid;
+    }
+
+    h3 {
+      margin-top: 18px;
+      font-size: 12.5pt;
+      break-after: avoid;
+    }
+
+    h4 {
+      margin-top: 14px;
+      font-size: 10.5pt;
+      color: #263348;
+      break-after: avoid;
+    }
+
+    p {
+      margin: 0 0 9px;
+    }
+
+    a {
+      color: var(--brand-dark);
+      text-decoration: none;
+    }
+
+    ul, ol {
+      margin: 6px 0 12px 20px;
+      padding: 0;
+    }
+
+    li {
+      margin: 3px 0;
+    }
+
+    code {
+      padding: 1px 4px;
+      border-radius: 4px;
+      background: var(--code-bg);
+      color: var(--code);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 9.3pt;
+    }
+
+    pre {
+      margin: 8px 0 13px;
+      padding: 10px 12px;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--code-bg);
+      color: var(--code);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 8.8pt;
+      line-height: 1.42;
+      break-inside: avoid;
+    }
+
+    pre code {
+      padding: 0;
+      background: none;
+      font-size: inherit;
+    }
+
+    table {
+      width: 100%;
+      margin: 8px 0 14px;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 9.1pt;
+    }
+
+    tr {
+      break-inside: avoid;
+    }
+
+    th, td {
+      padding: 7px 8px;
+      vertical-align: top;
+      border: 1px solid var(--line);
+      overflow-wrap: anywhere;
+    }
+
+    th {
+      background: #f0f4f8;
+      color: #1e293b;
+      font-weight: 700;
+      text-align: left;
+    }
+
+    .cover {
+      display: flex;
+      min-height: 250mm;
+      flex-direction: column;
+      justify-content: center;
+      page-break-after: always;
+      border-left: 8px solid var(--brand);
+      padding-left: 24px;
+    }
+
+    .cover .mark {
+      width: 84px;
+      height: 84px;
+      margin-bottom: 18px;
+    }
+
+    .tagline {
+      margin-top: 6px;
+      color: var(--brand-dark);
+      font-size: 14pt;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13pt;
+      max-width: 600px;
+    }
+
+    .meta {
+      margin-top: 32px;
+      color: var(--muted);
+      font-size: 10pt;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 18px 0 0;
+    }
+
+    .badge {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: #fbfcfe;
+      font-size: 9pt;
+      font-weight: 700;
+      color: #2b3748;
+    }
+
+    .note, .warning, .success, .danger {
+      margin: 10px 0 13px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid;
+      break-inside: avoid;
+    }
+
+    .note {
+      border-color: #bed4ef;
+      background: #f2f7fd;
+    }
+
+    .warning {
+      border-color: #f0c47a;
+      background: #fff8e8;
+      color: #513307;
+    }
+
+    .success {
+      border-color: #9bd5b7;
+      background: #effaf4;
+      color: #123b29;
+    }
+
+    .danger {
+      border-color: #efb3b3;
+      background: #fff1f1;
+      color: #571717;
+    }
+
+    .toc {
+      page-break-after: always;
+    }
+
+    .toc ol {
+      columns: 2;
+      column-gap: 28px;
+      margin-left: 18px;
+    }
+
+    .toc li {
+      break-inside: avoid;
+      margin-bottom: 5px;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 9pt;
+    }
+
+    .nowrap {
+      white-space: nowrap;
+    }
+
+    .center {
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Marca Comestra"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fb923c"/><stop offset="1" stop-color="#ea580c"/></linearGradient></defs><rect width="1024" height="1024" rx="230" fill="url(#g)"/><path d="M359.68,248.8 H664.32 Q713.6,248.8 713.6,298.08 V775.2 L680,737.12 L646.4,775.2 L612.8,737.12 L579.2,775.2 L545.6,737.12 L512,775.2 L478.4,737.12 L444.8,775.2 L411.2,737.12 L377.6,775.2 L344,737.12 L310.4,775.2 V298.08 Q310.4,248.8 359.68,248.8 Z" fill="#ffffff"/><rect x="379.84" y="351.84" width="264.32" height="33.6" rx="16.8" fill="#ea580c"/><rect x="379.84" y="430.24" width="197.12" height="33.6" rx="16.8" fill="#ea580c"/><rect x="379.84" y="508.64" width="134.4" height="33.6" rx="16.8" fill="#ea580c"/><path d="M498.56,618.4 l49.28,49.28 l103.04,-112" fill="none" stroke="#ea580c" stroke-width="38.08" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <h1>Comestra</h1>
+    <p class="tagline">Cozinha, balcão e entrega no mesmo compasso.</p>
+    <p class="subtitle">Guia completo para instalar, configurar, operar e manter o SaaS de delivery e gestão para restaurantes: API, loja online, back office e app mobile.</p>
+    <div class="badge-row">
+      <span class="badge">API NestJS 11</span>
+      <span class="badge">PostgreSQL + TypeORM</span>
+      <span class="badge">Web React 19 + Vite 7</span>
+      <span class="badge">App Expo SDK 54</span>
+      <span class="badge">Mercado Pago (cartão e PIX)</span>
+      <span class="badge">Testes Jest + Playwright</span>
+    </div>
+    <p class="meta">
+      Atualizado em 11/10/2026 · versão da API 0.0.1<br />
+      Caminhos relativos à raiz do repositório (<code>backend/</code>, <code>frontend-web/</code>, <code>frontend-mobile/</code>, <code>e2e/</code>, <code>docs/</code>).<br />
+      Público: desenvolvedores e equipe de implantação. Visão comercial e resumo no <code>README.md</code> da raiz.
+    </p>
+  </section>
+
+  <section class="toc">
+    <h2>Sumário</h2>
+    <ol>
+      <li>Visão geral</li>
+      <li>Checklist de execução rápida</li>
+      <li>Estrutura do repositório</li>
+      <li>Pré-requisitos</li>
+      <li>Variáveis de ambiente</li>
+      <li>Banco de dados PostgreSQL</li>
+      <li>API (backend NestJS)</li>
+      <li>Loja e back office (frontend web)</li>
+      <li>App mobile (Expo)</li>
+      <li>Perfis, usuários padrão e permissões</li>
+      <li>Mapa de endpoints da API</li>
+      <li>Pedidos: regras e transições</li>
+      <li>Modelagem do banco</li>
+      <li>Pagamentos (sandbox e produção)</li>
+      <li>Integrações externas</li>
+      <li>Fluxos principais</li>
+      <li>Uploads e imagens</li>
+      <li>Testes</li>
+      <li>Produção</li>
+      <li>Personalização por instalação</li>
+      <li>Migração a partir do TorresBurgers</li>
+      <li>Limitações conhecidas e roadmap</li>
+      <li>Troubleshooting</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>1. Visão geral</h2>
+    <p>
+      O <strong>Comestra</strong> é um SaaS de delivery e gestão para restaurantes. Ele cobre o pedido de ponta a ponta, do cardápio online até a entrega, com três aplicações ligadas a uma única API REST:
+      a <strong>loja online</strong> e o <strong>back office</strong> (o mesmo app web, em React) e o <strong>app mobile</strong> (Expo), que serve tanto a clientes quanto à equipe.
+      Cada instalação atende uma loja.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 16%">Camada</th>
+          <th style="width: 38%">Tecnologias</th>
+          <th>Responsabilidade</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>API (<code>backend/</code>)</td>
+          <td>NestJS 11, TypeScript, TypeORM 0.3, PostgreSQL, Passport JWT, bcrypt, class-validator, Swagger, Sharp, SDK do Mercado Pago</td>
+          <td>Regras de negócio, autenticação e perfis, preço calculado no servidor, pagamentos, imagens e integrações externas.</td>
+        </tr>
+        <tr>
+          <td>Web (<code>frontend-web/</code>)</td>
+          <td>React 19, Vite 7, TailwindCSS 4, React Router 7, Axios, Recharts, Lucide/Iconify, SDK JS v2 do Mercado Pago</td>
+          <td>Loja (cardápio, carrinho, checkout, Meus Pedidos, Meus Dados) e back office (Dashboard, Pedidos, Cardápio, Equipe, Lixeira).</td>
+        </tr>
+        <tr>
+          <td>Mobile (<code>frontend-mobile/</code>)</td>
+          <td>React Native 0.81, Expo SDK 54, NativeWind 2, React Navigation 7, Axios, AsyncStorage</td>
+          <td>Loja do cliente e painel da equipe por perfil, no mesmo app.</td>
+        </tr>
+        <tr>
+          <td>Testes (<code>e2e/</code>)</td>
+          <td>Playwright (API + Google Chrome)</td>
+          <td>Testes ponta a ponta em ambiente isolado (API :3001, web :5174, banco <code>comestra_e2e</code>).</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Perfis de acesso</h3>
+    <table>
+      <thead><tr><th style="width: 22%">Perfil</th><th>Resumo</th></tr></thead>
+      <tbody>
+        <tr><td><code>ADMIN</code> (Administrador)</td><td>Acesso total: Dashboard, pedidos, cardápio, equipe, lixeira, loja aberta/fechada e manutenção.</td></tr>
+        <tr><td><code>EMPLOYEE</code> (Atendente)</td><td>Conduz todo o fluxo dos pedidos, despacha entregas, cancela e abre/fecha a loja. Não acessa financeiro, cardápio nem equipe.</td></tr>
+        <tr><td><code>KITCHEN</code> (Cozinha)</td><td>Inicia o preparo e marca o pedido como pronto.</td></tr>
+        <tr><td><code>COURIER</code> (Entregador)</td><td>Pega pedidos prontos para entrega e conclui as próprias entregas.</td></tr>
+        <tr><td><code>CLIENT</code> (Cliente)</td><td>Compra pela loja: carrinho, checkout, pagamentos, endereços e acompanhamento dos pedidos.</td></tr>
+      </tbody>
+    </table>
+    <div class="note">
+      As permissões são aplicadas pela API (guards por perfil e regras de transição), e não apenas escondidas nas telas. A identidade do produto (nome, slug <code>comestra</code>, domínio <code>comestra.com.br</code>) fica em <code>src/config/brand.ts</code> de cada app.
+    </div>
+  </section>
+
+  <section>
+    <h2>2. Checklist de execução rápida</h2>
+    <p>Caminho curto para subir tudo localmente. Os comandos de terminal valem para Linux e para o PowerShell do Windows, exceto onde indicado.</p>
+
+    <h3>1. Clonar o projeto</h3>
+    <pre>git clone &lt;URL_DO_REPOSITORIO&gt; comestra
+cd comestra</pre>
+
+    <h3>2. Criar o banco</h3>
+    <pre># Windows (PowerShell) — troque 18 pela versão instalada do PostgreSQL
+&amp; "C:\Program Files\PostgreSQL\18\bin\createdb.exe" -U postgres comestra
+
+# Linux
+sudo -u postgres createdb comestra</pre>
+
+    <h3>3. Configurar e subir a API</h3>
+    <pre>cd backend
+cp .env.example .env        # Windows: Copy-Item .env.example .env
+# edite o .env: DB_PASSWORD = senha do usuário postgres
+npm install
+npm run start:dev</pre>
+    <p>
+      A API cria as tabelas, a configuração da loja (aberta) e os cinco usuários padrão. Para conferir:
+      <code>http://localhost:3000/health</code> deve responder <code>{"status":"ok","name":"Comestra","version":"0.0.1"}</code>, e o Swagger fica em <code>http://localhost:3000/api</code>.
+    </p>
+
+    <h3>4. Subir a loja e o back office</h3>
+    <pre>cd ../frontend-web
+npm install
+npm run dev</pre>
+    <p>Loja em <code>http://localhost:5173</code>, login do cliente em <code>/signin</code> e da equipe em <code>/login</code>.</p>
+
+    <h3>5. Rodar o app mobile</h3>
+    <pre>cd ../frontend-mobile
+npm install
+npm run start:lan</pre>
+    <p>Escaneie o QR Code com o Expo Go (SDK 54), com o celular no mesmo Wi-Fi do computador. Outras formas de conexão estão na seção 9.</p>
+
+    <h3>6. Entrar com os usuários padrão</h3>
+    <table>
+      <thead><tr><th>Perfil</th><th>E-mail</th><th>Senha</th><th>Onde entrar</th></tr></thead>
+      <tbody>
+        <tr><td>Administrador</td><td><code>admin@comestra.com.br</code></td><td><code>Admin@123</code></td><td>Web <code>/login</code> · App: Entrar → Acesso de Funcionário</td></tr>
+        <tr><td>Atendente</td><td><code>atendente@comestra.com.br</code></td><td><code>Atendente@123</code></td><td>Web <code>/login</code> · App: Entrar → Acesso de Funcionário</td></tr>
+        <tr><td>Cozinha</td><td><code>cozinha@comestra.com.br</code></td><td><code>Cozinha@123</code></td><td>Web <code>/login</code> · App: Entrar → Acesso de Funcionário</td></tr>
+        <tr><td>Entregador</td><td><code>entregador@comestra.com.br</code></td><td><code>Entregador@123</code></td><td>Web <code>/login</code> · App: Entrar → Acesso de Funcionário</td></tr>
+        <tr><td>Cliente</td><td><code>cliente@comestra.com.br</code></td><td><code>Cliente@123</code></td><td>Web <code>/signin</code> · App: Entrar → Entrar como Cliente</td></tr>
+      </tbody>
+    </table>
+
+    <h3>7. Cadastrar o cardápio</h3>
+    <p>Em um banco novo, o cardápio começa vazio. Entre como Administrador e cadastre produtos e adicionais em <strong>Cardápio</strong> (web).</p>
+  </section>
+
+  <section>
+    <h2>3. Estrutura do repositório</h2>
+    <pre>comestra/
+├── backend/                      API REST (NestJS)
+│   ├── src/auth/                 login, JWT, RolesGuard, autenticação opcional
+│   ├── src/users/                usuários, perfis, avatar e regras de acesso (users.policy.ts)
+│   ├── src/products/             produtos, categorias e adicionais
+│   ├── src/orders/               orçamento/preço (order-pricing.service.ts), regras puras (order-rules.ts),
+│   │                             transições, dashboard e logística
+│   ├── src/payment/              Mercado Pago (cartão e PIX), modo sandbox (payment-rules.ts)
+│   ├── src/addresses/            endereços e busca de CEP
+│   ├── src/store/                loja aberta/fechada
+│   ├── src/promotions/           banner do dia
+│   ├── src/common/               upload/otimização de imagens, manutenção, validadores
+│   ├── src/config/               brand.ts, env.ts, jwt.ts, app-setup.ts (CORS e validação), paths.ts
+│   ├── src/database/             seed dos usuários padrão
+│   ├── test/                     teste E2E da API (Jest + Supertest)
+│   ├── uploads/                  imagens servidas em /uploads
+│   └── .env.example
+├── frontend-web/                 loja + back office (React + Vite)
+│   ├── public/favicon.svg        marca
+│   └── src/                      pages/ (Client/ e painel), components/, contexts/, layouts/,
+│                                 routes/, services/, utils/, config/brand.ts
+├── frontend-mobile/              app do cliente e da equipe (Expo)
+│   ├── assets/                   ícone, splash e favicon
+│   ├── src/                      screens/, components/, contexts/, routes/, services/, utils/, config/brand.ts
+│   └── start-tunnel.js           npm run tunnel (Serveo → EXPO_PUBLIC_API_URL no .env.local)
+├── e2e/                          testes ponta a ponta (Playwright)
+│   ├── support/  scripts/
+│   └── tests/                    global.setup.ts, api/identity, api/commerce, web/client, web/admin
+└── docs/                         este guia (HTML e PDF)</pre>
+    <div class="note">
+      Cada app tem um <code>.env.example</code> comentado. O <code>.env</code> real é ignorado pelo Git. O repositório não traz <code>Dockerfile</code> nem <code>docker-compose.yml</code>: o setup documentado aqui usa PostgreSQL instalado localmente e <code>npm</code>.
+    </div>
+  </section>
+
+  <section>
+    <h2>4. Pré-requisitos</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 22%">Ferramenta</th>
+          <th style="width: 22%">Versão</th>
+          <th>Observações</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Node.js e npm</td><td>22+ (LTS)</td><td>Necessário para os três apps e para a suíte E2E. Cada app usa o próprio <code>package-lock.json</code>.</td></tr>
+        <tr><td>PostgreSQL</td><td>14+</td><td>Banco padrão: <code>comestra</code>. As tabelas são criadas pela API.</td></tr>
+        <tr><td>Expo Go</td><td>Compatível com o SDK 54</td><td>Para testar no celular. No emulador Android, o Expo CLI instala a versão compatível.</td></tr>
+        <tr><td>OpenSSH (<code>ssh</code>)</td><td>Qualquer recente</td><td>Só para o <code>npm run tunnel</code> (Serveo).</td></tr>
+        <tr><td>Google Chrome</td><td>Atual</td><td>Só para a suíte E2E (o Playwright usa o Chrome instalado).</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="page-break">
+    <h2>5. Variáveis de ambiente</h2>
+    <h3>API: <code>backend/.env</code></h3>
+    <p>Variáveis definidas no próprio ambiente (servidor, Docker, CI) têm prioridade sobre o <code>.env</code>. Valores vazios usam o padrão.</p>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 27%">Variável</th>
+          <th style="width: 20%">Padrão</th>
+          <th>Descrição</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>NODE_ENV</code></td><td><code>development</code></td><td><code>production</code> exige <code>JWT_SECRET</code>, desliga o seed dos usuários padrão e o sandbox automático de pagamentos.</td></tr>
+        <tr><td><code>PORT</code></td><td><code>3000</code></td><td>Porta HTTP. A API escuta em <code>0.0.0.0</code> (acessível pela rede local).</td></tr>
+        <tr><td><code>DB_HOST</code> / <code>DB_PORT</code></td><td><code>localhost</code> / <code>5432</code></td><td>Servidor PostgreSQL.</td></tr>
+        <tr><td><code>DB_USERNAME</code> / <code>DB_PASSWORD</code></td><td><code>postgres</code> / vazio</td><td>Credenciais do banco.</td></tr>
+        <tr><td><code>DB_DATABASE</code></td><td><code>comestra</code></td><td>Nome do banco (vazio = slug da marca).</td></tr>
+        <tr><td><code>DB_SYNCHRONIZE</code></td><td><code>true</code></td><td>Cria/ajusta as tabelas a partir das entidades. Produção: <code>false</code> + migrations.</td></tr>
+        <tr><td><code>JWT_SECRET</code></td><td>segredo fixo de desenvolvimento</td><td>Assina e verifica os tokens. Obrigatório em produção (sem ele, a API não sobe). Sugestão: 48+ bytes aleatórios.</td></tr>
+        <tr><td><code>JWT_EXPIRES_IN</code></td><td><code>7d</code></td><td><code>7d</code>, <code>12h</code>, <code>30m</code> ou segundos. Valor inválido cai no padrão, com aviso.</td></tr>
+        <tr><td><code>APP_NAME</code></td><td><code>Comestra</code></td><td>Nome no Swagger, em <code>/health</code> e na descrição dos pagamentos.</td></tr>
+        <tr><td><code>UPLOADS_DIR</code></td><td><code>./uploads</code></td><td>Pasta das imagens (servidas em <code>/uploads</code>). Produção: volume persistente.</td></tr>
+        <tr><td><code>CORS_ORIGINS</code></td><td>vazio = qualquer origem</td><td>Origens liberadas, separadas por vírgula. O app mobile não envia <code>Origin</code> e não é afetado.</td></tr>
+        <tr><td><code>SEED_DEMO_USERS</code></td><td>ligado fora de produção</td><td>Cria os usuários padrão na subida (só os que faltam).</td></tr>
+        <tr><td><code>MP_ACCESS_TOKEN</code></td><td>vazio</td><td>Access token do Mercado Pago. Credenciais de teste começam com <code>TEST-</code>.</td></tr>
+        <tr><td><code>PAYMENT_SANDBOX</code></td><td>automático</td><td><code>true</code>/<code>false</code>. Vazio = sandbox quando não há token ou ele é <code>TEST-</code>, nunca com <code>NODE_ENV=production</code>.</td></tr>
+        <tr><td><code>PIX_SANDBOX_APPROVAL_SECONDS</code></td><td><code>5</code></td><td>No sandbox, segundos até o PIX ser considerado pago.</td></tr>
+        <tr><td><code>FOOTBALL_DATA_TOKEN</code></td><td>vazio</td><td>Token gratuito de football-data.org para o banner de jogos. Sem ele, vale a promoção do dia.</td></tr>
+      </tbody>
+    </table>
+    <p class="small">Booleanos aceitam <code>true/false</code>, <code>1/0</code>, <code>yes/no</code>, <code>sim/não</code> e <code>on/off</code>.</p>
+
+    <h3>Web: <code>frontend-web/.env</code></h3>
+    <table>
+      <thead><tr><th style="width: 27%">Variável</th><th style="width: 20%">Padrão</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td><code>VITE_API_URL</code></td><td><code>http://localhost:3000</code></td><td>Endereço da API, sem barra no final (IP da rede ou URL do túnel para outro aparelho).</td></tr>
+        <tr><td><code>VITE_APP_NAME</code></td><td><code>Comestra</code></td><td>Nome exibido (logo, título da aba, rodapé).</td></tr>
+        <tr><td><code>VITE_MP_PUBLIC_KEY</code></td><td>chave de teste</td><td>Chave pública do Mercado Pago para tokenizar o cartão. O access token fica só na API.</td></tr>
+      </tbody>
+    </table>
+    <div class="warning">Variáveis <code>VITE_*</code> entram no JavaScript público do site. Nunca coloque segredos nelas. Depois de mudar o <code>.env</code>, reinicie o <code>npm run dev</code> (ou gere o build de novo).</div>
+
+    <h3>Mobile: <code>frontend-mobile/.env.local</code></h3>
+    <table>
+      <thead><tr><th style="width: 27%">Variável</th><th style="width: 20%">Padrão</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td><code>EXPO_PUBLIC_API_URL</code></td><td>automático</td><td>Força o endereço da API. Vazio usa o IP da máquina do Expo na porta 3000. O <code>npm run tunnel</code> preenche esta variável.</td></tr>
+        <tr><td><code>EXPO_PUBLIC_APP_NAME</code></td><td><code>Comestra</code></td><td>Nome exibido no app.</td></tr>
+        <tr><td><code>EXPO_PUBLIC_MP_PUBLIC_KEY</code></td><td>chave de teste</td><td>Chave pública do Mercado Pago (produção: <code>APP_USR-...</code>).</td></tr>
+      </tbody>
+    </table>
+    <p class="small">Variáveis <code>EXPO_PUBLIC_*</code> entram no bundle. Depois de mudar, reinicie com <code>npx expo start --clear</code>.</p>
+
+    <h3>Testes E2E (<code>e2e/</code>)</h3>
+    <table>
+      <thead><tr><th style="width: 32%">Variável</th><th style="width: 22%">Padrão</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td><code>E2E_API_PORT</code> / <code>E2E_WEB_PORT</code></td><td><code>3001</code> / <code>5174</code></td><td>Portas do ambiente de teste.</td></tr>
+        <tr><td><code>E2E_DB_DATABASE</code></td><td><code>comestra_e2e</code></td><td>Banco de teste (precisa terminar em <code>_e2e</code>).</td></tr>
+        <tr><td><code>DB_HOST</code>, <code>DB_PORT</code>, <code>DB_USERNAME</code>, <code>DB_PASSWORD</code></td><td><code>localhost</code>, <code>5432</code>, <code>postgres</code>, vazio</td><td>Conexão usada para recriar o banco de teste. Informe <code>DB_PASSWORD</code> no ambiente se o <code>postgres</code> tiver senha.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>6. Banco de dados PostgreSQL</h2>
+    <h3>Configuração TypeORM</h3>
+    <p>A conexão é configurada em <code>backend/src/app.module.ts</code>:</p>
+    <pre>TypeOrmModule.forRootAsync({
+  useFactory: () =&gt; ({
+    type: 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    port: Number(process.env.DB_PORT) || 5432,
+    username: process.env.DB_USERNAME || 'postgres',
+    password: process.env.DB_PASSWORD ?? '',
+    database: process.env.DB_DATABASE || BRAND.slug,      // 'comestra'
+    entities: [User, Product, Order, OrderItem, Address, Addon, StoreConfig],
+    autoLoadEntities: true,
+    synchronize: envFlag('DB_SYNCHRONIZE', true),
+  }),
+})</pre>
+    <div class="danger">
+      <strong>Produção:</strong> o <code>synchronize</code> é prático em desenvolvimento, mas pode apagar colunas. Em produção, use <code>DB_SYNCHRONIZE=false</code> e versione o schema com migrations. O repositório ainda não traz migrations nem um data source para o CLI do TypeORM: crie-os antes da primeira subida em produção.
+    </div>
+
+    <h3>Criar um banco limpo</h3>
+    <pre># Windows (PowerShell)
+&amp; "C:\Program Files\PostgreSQL\18\bin\createdb.exe" -U postgres comestra
+
+# Linux (se o usuário postgres ainda não tiver senha, defina uma: a API conecta via TCP)
+sudo -u postgres createdb comestra
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'sua_senha';"</pre>
+    <p>
+      Na primeira subida, a API cria as tabelas, a linha única de <code>store_config</code> (loja <strong>aberta</strong>) e os usuários padrão.
+      O cardápio começa vazio.
+    </p>
+
+    <h3>Backup e restauração</h3>
+    <pre>pg_dump -U postgres -Fc comestra &gt; comestra.dump        # backup
+createdb -U postgres comestra_restaurado
+pg_restore -U postgres -d comestra_restaurado comestra.dump   # restauração</pre>
+    <p>Inclua também a pasta de imagens (<code>UPLOADS_DIR</code>) no backup.</p>
+
+    <h3>Instalações antigas (TorresBurgers)</h3>
+    <p>
+      Para continuar usando o banco antigo, defina <code>DB_DATABASE=torresburgers</code> (e <code>DB_PASSWORD=0000</code>, se a instalação dependia da senha padrão do código antigo).
+      Para copiar os dados para o nome novo: <code>createdb -U postgres -T torresburgers comestra</code>, sem conexões abertas no banco antigo.
+      Com <code>DB_SYNCHRONIZE=true</code>, a API acrescenta as colunas novas, como o retrato de preços dos itens.
+    </p>
+  </section>
+
+  <section class="page-break">
+    <h2>7. API (backend NestJS)</h2>
+    <h3>Comandos</h3>
+    <table>
+      <thead><tr><th style="width: 32%">Comando</th><th>Finalidade</th></tr></thead>
+      <tbody>
+        <tr><td><code>npm run start:dev</code></td><td>Desenvolvimento com recarga automática (porta <code>PORT</code>, padrão 3000).</td></tr>
+        <tr><td><code>npm run start:debug</code></td><td>Desenvolvimento com o inspetor do Node.</td></tr>
+        <tr><td><code>npm run build</code></td><td>Compila para <code>dist/</code>.</td></tr>
+        <tr><td><code>npm run start:prod</code></td><td>Executa o build (<code>node dist/main</code>).</td></tr>
+        <tr><td><code>npm run seed</code></td><td>Cria/restaura os usuários padrão e redefine nome, perfil e senha.</td></tr>
+        <tr><td><code>npx jest</code> / <code>npm test</code></td><td>Testes unitários (sem banco).</td></tr>
+        <tr><td><code>npm run test:cov</code></td><td>Testes unitários com cobertura (<code>coverage/</code>).</td></tr>
+        <tr><td><code>npm run test:e2e</code></td><td>Teste E2E da API com Jest + Supertest (precisa de PostgreSQL; use um banco de teste em <code>DB_DATABASE</code>).</td></tr>
+        <tr><td><code>npm run lint</code> / <code>npm run format</code></td><td>ESLint (com correção) e Prettier.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>URLs importantes</h3>
+    <table>
+      <thead><tr><th style="width: 40%">URL</th><th>Uso</th></tr></thead>
+      <tbody>
+        <tr><td><code>http://localhost:3000</code></td><td>Base da API.</td></tr>
+        <tr><td><code>http://localhost:3000/health</code></td><td>Saúde: <code>{ status, name, version }</code> (para monitoramento e balanceadores).</td></tr>
+        <tr><td><code>http://localhost:3000/api</code></td><td>Swagger/OpenAPI. Use o botão <strong>Authorize</strong> com o token de <code>POST /auth/login</code>.</td></tr>
+        <tr><td><code>http://localhost:3000/uploads/&lt;arquivo&gt;</code></td><td>Imagens enviadas (pasta <code>UPLOADS_DIR</code>).</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Comportamento global</h3>
+    <ul>
+      <li><strong>Validação:</strong> <code>ValidationPipe</code> com <code>whitelist</code>, <code>forbidNonWhitelisted</code> (campos desconhecidos → <code>400</code>) e <code>transform</code>. A mesma configuração (<code>src/config/app-setup.ts</code>) é usada nos testes.</li>
+      <li><strong>CORS:</strong> <code>CORS_ORIGINS</code> vazio reflete qualquer origem (desenvolvimento). Com a lista preenchida, libera só essas origens.</li>
+      <li><strong>JWT:</strong> segredo único para assinar e verificar (<code>src/config/jwt.ts</code>). Em produção sem <code>JWT_SECRET</code>, a API não sobe.</li>
+      <li><strong>Usuário a cada requisição:</strong> a <code>JwtStrategy</code> recarrega o usuário do banco. Conta na lixeira → <code>401</code>. O perfil usado é sempre o atual.</li>
+      <li><strong>Subida:</strong> cria a configuração da loja (se não existir) e os usuários padrão (se <code>SEED_DEMO_USERS</code>). Uma falha no seed não derruba a API.</li>
+    </ul>
+
+    <h3>Módulos</h3>
+    <table>
+      <thead><tr><th style="width: 22%">Módulo</th><th>Responsabilidade</th></tr></thead>
+      <tbody>
+        <tr><td><code>AuthModule</code></td><td>Login, JWT (Passport), <code>RolesGuard</code>, <code>@Roles()</code> e autenticação opcional (cadastro público).</td></tr>
+        <tr><td><code>UsersModule</code></td><td>Cadastro de clientes e equipe, edição, avatar, exclusão lógica/definitiva e regras de acesso.</td></tr>
+        <tr><td><code>ProductsModule</code></td><td>Produtos, categorias, adicionais, disponibilidade e lixeira.</td></tr>
+        <tr><td><code>OrdersModule</code></td><td>Orçamento e criação (preço no servidor), transições por perfil, cancelamento, despacho, dashboard e logística.</td></tr>
+        <tr><td><code>PaymentModule</code></td><td>Cartão e PIX (Mercado Pago), sandbox e verificação do pagamento na criação do pedido.</td></tr>
+        <tr><td><code>AddressesModule</code></td><td>Endereços do cliente e busca de CEP (ViaCEP → BrasilAPI).</td></tr>
+        <tr><td><code>StoreModule</code></td><td>Loja aberta/fechada e mensagens da vitrine.</td></tr>
+        <tr><td><code>PromotionsModule</code></td><td>Banner do dia (jogo de futebol ou promoção da semana), com cache em memória.</td></tr>
+        <tr><td><code>CommonModule</code></td><td>Upload e otimização de imagens e manutenção (conversão em massa para WebP).</td></tr>
+        <tr><td><code>DatabaseModule</code></td><td>Seed dos usuários padrão na subida.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>8. Loja e back office (frontend web)</h2>
+    <h3>Comandos</h3>
+    <pre>cd frontend-web
+npm install
+npm run dev        # http://localhost:5173
+npm run build      # verificação de tipos + build em dist/
+npm run preview    # serve o build localmente
+npm run lint</pre>
+
+    <h3>Rotas</h3>
+    <table>
+      <thead><tr><th style="width: 22%">Rota</th><th style="width: 26%">Acesso</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td><code>/</code></td><td>Público</td><td>Cardápio (busca, categorias, combos, ofertas, banner do dia).</td></tr>
+        <tr><td><code>/cart</code></td><td>Público (checkout exige login)</td><td>Carrinho e checkout.</td></tr>
+        <tr><td><code>/order-success</code></td><td>Público</td><td>Confirmação do pedido.</td></tr>
+        <tr><td><code>/my-orders</code></td><td>Logado</td><td>Meus Pedidos.</td></tr>
+        <tr><td><code>/profile</code></td><td>Logado</td><td>Meus Dados.</td></tr>
+        <tr><td><code>/signin</code> / <code>/signup</code></td><td>Público</td><td>Login e cadastro do cliente.</td></tr>
+        <tr><td><code>/login</code></td><td>Público</td><td>Login da equipe ("Acessar Sistema").</td></tr>
+        <tr><td><code>/dashboard</code></td><td><code>ADMIN</code></td><td>Indicadores, gráficos e botão de abrir/fechar a loja.</td></tr>
+        <tr><td><code>/orders</code></td><td>Equipe</td><td>Quadro de pedidos por perfil.</td></tr>
+        <tr><td><code>/products</code></td><td><code>ADMIN</code></td><td>Cardápio (produtos, adicionais, disponibilidade, lixeira).</td></tr>
+        <tr><td><code>/users</code></td><td><code>ADMIN</code></td><td>Equipe e usuários.</td></tr>
+        <tr><td><code>/trash</code></td><td><code>ADMIN</code></td><td>Lixeira de produtos e usuários.</td></tr>
+        <tr><td><code>/admin</code></td><td>—</td><td>Redireciona para <code>/dashboard</code>.</td></tr>
+        <tr><td>outras</td><td>Público</td><td>Página 404 com o layout da loja.</td></tr>
+      </tbody>
+    </table>
+    <p>
+      O Administrador cai em <code>/dashboard</code> após o login, e os demais perfis da equipe caem em <code>/orders</code>. Uma página fora do perfil redireciona para a página inicial dele.
+      Uma conta da equipe que entra por <code>/signin</code> vai para o painel. Um cliente que tenta <code>/login</code> fica sem sessão e volta para a loja.
+    </p>
+
+    <h3>Sessão e estado</h3>
+    <ul>
+      <li><code>localStorage</code>: <code>comestra.token</code>, <code>comestra.user</code>, <code>comestra.cart</code> e <code>comestra.theme</code> (<code>STORAGE_KEYS</code> em <code>src/config/brand.ts</code>).</li>
+      <li>O Axios envia <code>Authorization: Bearer &lt;token&gt;</code>. Um <code>401</code> numa chamada autenticada encerra a sessão e abre o login certo (equipe ou loja).</li>
+      <li>Sair remove só a sessão: carrinho e tema continuam salvos.</li>
+      <li>Status da loja: consultado a cada 30 s e ao voltar para a aba. Quadro de pedidos: a cada 5 s. Meus Pedidos: a cada 10 s.</li>
+      <li>O SDK do Mercado Pago é carregado de forma assíncrona (<code>src/services/mercadoPago.ts</code>), sem travar a abertura do site.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>9. App mobile (Expo)</h2>
+    <h3>Comandos</h3>
+    <pre>cd frontend-mobile
+npm install
+npm run start:lan     # Expo em modo LAN (mesmo Wi-Fi)
+npm run android       # abre no emulador Android
+npm run tunnel        # túnel Serveo para a API (grava EXPO_PUBLIC_API_URL no .env.local)
+npx tsc --noEmit      # verificação de tipos</pre>
+    <p>Outros scripts: <code>npm start</code>, <code>npm run ios</code> e <code>npm run web</code>.</p>
+
+    <h3>Como o app encontra a API</h3>
+    <p>Ordem de prioridade (<code>src/services/api.ts</code>):</p>
+    <ol>
+      <li><code>EXPO_PUBLIC_API_URL</code> (<code>.env</code>/<code>.env.local</code>), preenchida pelo <code>npm run tunnel</code>.</li>
+      <li>O IP da máquina que roda o Expo (tirado do endereço do Metro), na porta 3000.</li>
+      <li><code>http://localhost:3000</code> (navegador e simulador iOS).</li>
+    </ol>
+    <table>
+      <thead><tr><th style="width: 26%">Situação</th><th>Como fazer</th></tr></thead>
+      <tbody>
+        <tr><td>Celular no mesmo Wi-Fi</td><td><code>npm run start:lan</code>. Automático. Libere a porta 3000 no firewall. No Windows, como administrador: <code>New-NetFirewallRule -DisplayName "Comestra API" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow</code>. No Linux com ufw: <code>sudo ufw allow 3000/tcp</code>.</td></tr>
+        <tr><td>Emulador Android</td><td><code>npm run android</code> (o modo LAN funciona). Se necessário, use <code>EXPO_PUBLIC_API_URL=http://10.0.2.2:3000</code> no <code>.env.local</code>, ou <code>adb reverse tcp:3000 tcp:3000</code> com <code>http://127.0.0.1:3000</code>.</td></tr>
+        <tr><td>Rede corporativa, 4G ou celular fora da rede</td><td>Terminal 1: <code>npm run tunnel</code> (deixe aberto). Terminal 2: <code>npx expo start --clear</code> (mesma rede) ou <code>npx expo start --tunnel --clear</code> (fora da rede). Ao encerrar o túnel (Ctrl+C), o <code>.env.local</code> volta ao valor anterior.</td></tr>
+      </tbody>
+    </table>
+    <div class="note">Com o Expo em <code>--tunnel</code> e sem <code>EXPO_PUBLIC_API_URL</code>, o app avisa no log ("Expo em modo túnel: defina EXPO_PUBLIC_API_URL") e cai em <code>localhost</code>, que não funciona no celular. Rode o <code>npm run tunnel</code> antes.</div>
+
+    <h3>Navegação por perfil</h3>
+    <ul>
+      <li>Uma única pilha cujas telas dependem da sessão: a equipe vê só o painel (<code>AdminDashboard</code>), e clientes e visitantes veem a loja.</li>
+      <li>Visitante: na loja, toque em <strong>Entrar</strong> → <strong>Entrar como Cliente</strong> ou <strong>Acesso de Funcionário</strong>. O destino depende do perfil da conta.</li>
+      <li>Painel: Administrador com Dashboard, Pedidos, Produtos e Usuários. Atendente com Pedidos ("Gestão de Pedidos"). Cozinha com "Monitor da Cozinha" (Novos e Em preparo). Entregador com "Minhas Entregas" (Prontos para entrega e Minhas entregas, com <strong>Abrir no GPS</strong> e <strong>Ligar</strong>).</li>
+      <li>Telas da loja: Home, ProductDetails, Cart, Checkout, AddAddress, PaymentPix, PaymentCard, MyOrders, OrderDetails, Profile ("Minha Conta"), Welcome, SignIn, SignUp e ForgotPassword.</li>
+    </ul>
+
+    <h3>Sessão</h3>
+    <p>
+      O AsyncStorage guarda <code>@comestra:token</code>, <code>@comestra:user</code> e <code>@comestra:themeMode</code>. Um <code>401</code> encerra a sessão e abre o login certo, avisando que a sessão expirou.
+      Sair remove só a sessão. O cartão é tokenizado direto na API REST do Mercado Pago com a chave pública: o número não passa pela API do Comestra.
+    </p>
+  </section>
+
+  <section class="page-break">
+    <h2>10. Perfis, usuários padrão e permissões</h2>
+    <h3>Usuários padrão (um por perfil)</h3>
+    <table>
+      <thead><tr><th style="width: 15%">Perfil</th><th style="width: 25%">E-mail</th><th style="width: 14%">Senha</th><th>O que pode fazer</th></tr></thead>
+      <tbody>
+        <tr><td><code>ADMIN</code></td><td><code>admin@comestra.com.br</code></td><td><code>Admin@123</code></td><td>Tudo: Dashboard, quadro completo, despacho, cancelamento, loja, Cardápio, Equipe e Lixeira.</td></tr>
+        <tr><td><code>EMPLOYEE</code></td><td><code>atendente@comestra.com.br</code></td><td><code>Atendente@123</code></td><td>Quadro completo (aceitar, pronto, despachar, balcão, entrega, cancelar) e abrir/fechar a loja.</td></tr>
+        <tr><td><code>KITCHEN</code></td><td><code>cozinha@comestra.com.br</code></td><td><code>Cozinha@123</code></td><td>Novos e Preparando: aceitar e marcar como pronto.</td></tr>
+        <tr><td><code>COURIER</code></td><td><code>entregador@comestra.com.br</code></td><td><code>Entregador@123</code></td><td>Pegar entregas prontas e concluir as próprias entregas.</td></tr>
+        <tr><td><code>CLIENT</code></td><td><code>cliente@comestra.com.br</code></td><td><code>Cliente@123</code></td><td>Comprar: carrinho, checkout, Meus Pedidos e dados da conta.</td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li><strong>Na subida da API</strong> (<code>SEED_DEMO_USERS</code>, ligado fora de produção): cria só os que faltam e nunca altera contas existentes.</li>
+      <li><strong><code>npm run seed</code></strong> (pasta <code>backend</code>): recria os que faltam, restaura da lixeira e redefine nome, perfil e senha. No fim, mostra uma tabela com perfil, e-mail e senha.</li>
+      <li>Fonte: <code>backend/src/database/seeds/default-users.ts</code>. Os e-mails usam <code>BRAND.domain</code>.</li>
+    </ul>
+    <div class="danger"><strong>Produção:</strong> use <code>SEED_DEMO_USERS=false</code> (padrão com <code>NODE_ENV=production</code>). Essas senhas são públicas. Se as contas já existirem, exclua-as ou troque as senhas.</div>
+
+    <h3>Regras de conta</h3>
+    <ul>
+      <li><strong>Login</strong> (<code>POST /auth/login</code>): devolve <code>{ access_token, user }</code>. O token traz <code>sub</code>, <code>email</code>, <code>role</code> e <code>name</code> e vale 7 dias por padrão.</li>
+      <li><strong>E-mail</strong> gravado sem espaços e em minúsculas. O login não diferencia maiúsculas.</li>
+      <li><strong>Senha:</strong> no mínimo 9 caracteres, com uma letra maiúscula e um número ou símbolo. É guardada com bcrypt (10 rounds) e nunca sai nas respostas.</li>
+      <li><strong>Cadastro</strong> (<code>POST /users</code>): sem token, cria <code>CLIENT</code>. Outros perfis exigem token de <code>ADMIN</code>. Só o <code>ADMIN</code> altera o perfil de alguém.</li>
+      <li><strong>Exclusão:</strong> a própria conta ou um <code>ADMIN</code> (que não exclui a si mesmo). A exclusão definitiva é só do <code>ADMIN</code> e é bloqueada (<code>409</code>) para contas com pedidos.</li>
+      <li><strong>Recuperação de senha:</strong> não é automática. Um Administrador define uma nova senha (web: <strong>Equipe</strong>; app: <strong>Usuários → editar</strong>).</li>
+      <li><strong>Compras:</strong> pedidos e pagamentos online são exclusivos de <code>CLIENT</code>. A equipe recebe <code>403</code> ("Somente clientes fazem pedidos e pagamentos...").</li>
+    </ul>
+  </section>
+
+  <section class="page-break">
+    <h2>11. Mapa de endpoints da API</h2>
+    <p>Base local: <code>http://localhost:3000</code>. "Equipe" = <code>ADMIN</code>, <code>EMPLOYEE</code>, <code>KITCHEN</code>, <code>COURIER</code>. "Gestão" = <code>ADMIN</code>, <code>EMPLOYEE</code>.</p>
+
+    <h3>Saúde e autenticação</h3>
+    <table>
+      <thead><tr><th style="width: 11%">Método</th><th style="width: 27%">Rota</th><th style="width: 20%">Acesso</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/health</code></td><td>Público</td><td>Status, nome e versão.</td></tr>
+        <tr><td>POST</td><td><code>/auth/login</code></td><td>Público</td><td>Login por e-mail e senha.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Usuários</h3>
+    <table>
+      <thead><tr><th style="width: 11%">Método</th><th style="width: 27%">Rota</th><th style="width: 20%">Acesso</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/users</code></td><td>Público (<code>CLIENT</code>) · <code>ADMIN</code></td><td>Cadastro. JSON ou multipart com o avatar no campo <code>file</code>.</td></tr>
+        <tr><td>GET</td><td><code>/users</code></td><td><code>ADMIN</code></td><td>Usuários ativos.</td></tr>
+        <tr><td>GET</td><td><code>/users/trash</code></td><td><code>ADMIN</code></td><td>Usuários na lixeira.</td></tr>
+        <tr><td>GET</td><td><code>/users/:id</code></td><td>Próprio ou <code>ADMIN</code></td><td>Detalhe.</td></tr>
+        <tr><td>PATCH</td><td><code>/users/:id</code></td><td>Próprio ou <code>ADMIN</code></td><td>Edição (só o <code>ADMIN</code> muda <code>role</code>), com avatar opcional.</td></tr>
+        <tr><td>PATCH</td><td><code>/users/:id/restore</code></td><td><code>ADMIN</code></td><td>Restaura da lixeira.</td></tr>
+        <tr><td>DELETE</td><td><code>/users/:id</code></td><td>Própria conta ou <code>ADMIN</code></td><td>Exclusão lógica.</td></tr>
+        <tr><td>DELETE</td><td><code>/users/:id/permanent</code></td><td><code>ADMIN</code></td><td>Exclusão definitiva (<code>409</code> se houver pedidos).</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Cardápio</h3>
+    <table>
+      <thead><tr><th style="width: 11%">Método</th><th style="width: 27%">Rota</th><th style="width: 20%">Acesso</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/products</code></td><td>Público</td><td>Produtos fora da lixeira (inclusive indisponíveis), com adicionais permitidos.</td></tr>
+        <tr><td>GET</td><td><code>/products/:id</code></td><td>Público</td><td>Detalhe.</td></tr>
+        <tr><td>GET</td><td><code>/products/trash</code></td><td><code>ADMIN</code></td><td>Produtos na lixeira.</td></tr>
+        <tr><td>POST</td><td><code>/products</code></td><td><code>ADMIN</code></td><td>Cadastro (multipart com a foto em <code>file</code>, ou JSON).</td></tr>
+        <tr><td>PATCH</td><td><code>/products/:id</code></td><td><code>ADMIN</code></td><td>Edição (foto opcional).</td></tr>
+        <tr><td>PATCH</td><td><code>/products/:id/restore</code></td><td><code>ADMIN</code></td><td>Restaura da lixeira.</td></tr>
+        <tr><td>DELETE</td><td><code>/products/:id</code></td><td><code>ADMIN</code></td><td>Move para a lixeira.</td></tr>
+        <tr><td>DELETE</td><td><code>/products/:id/permanent</code></td><td><code>ADMIN</code></td><td>Exclusão definitiva (<code>409</code> se o produto aparece em pedidos).</td></tr>
+        <tr><td>GET</td><td><code>/addons</code></td><td>Público</td><td>Adicionais fora da lixeira.</td></tr>
+        <tr><td>POST/PATCH/DELETE</td><td><code>/addons</code>, <code>/addons/:id</code></td><td><code>ADMIN</code></td><td>Cadastro, edição e exclusão lógica de adicionais.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Pedidos (todas exigem login)</h3>
+    <table>
+      <thead><tr><th style="width: 11%">Método</th><th style="width: 27%">Rota</th><th style="width: 20%">Acesso</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/orders/quote</code></td><td><code>CLIENT</code></td><td>Orçamento: itens, subtotal, <code>delivery_fee</code>, total, tempo estimado e <code>store_open</code>.</td></tr>
+        <tr><td>POST</td><td><code>/orders</code></td><td><code>CLIENT</code></td><td>Cria o pedido (com <code>paymentId</code> quando pago online).</td></tr>
+        <tr><td>GET</td><td><code>/orders/my-orders</code></td><td>Logado</td><td>Pedidos do próprio usuário.</td></tr>
+        <tr><td>GET</td><td><code>/orders/:id</code></td><td>Dono ou equipe</td><td>Detalhe (outro cliente → <code>403</code>).</td></tr>
+        <tr><td>PATCH</td><td><code>/orders/:id/cancel</code></td><td>Dono (<code>PENDING</code>) ou gestão</td><td>Cancela.</td></tr>
+        <tr><td>GET</td><td><code>/orders</code></td><td>Equipe</td><td>Todos os pedidos.</td></tr>
+        <tr><td>PATCH</td><td><code>/orders/:id</code></td><td>Equipe</td><td>Muda o status (<code>{ status }</code>), conforme o perfil.</td></tr>
+        <tr><td>PATCH</td><td><code>/orders/:id/assign</code></td><td>Gestão</td><td>Atribui o entregador (<code>{ driverId }</code>) e leva para <code>DELIVERING</code>.</td></tr>
+        <tr><td>GET</td><td><code>/orders/:id/nearby</code></td><td>Gestão</td><td>Pedidos prontos, sem entregador, do mesmo bairro.</td></tr>
+        <tr><td>GET</td><td><code>/orders/drivers/list</code></td><td>Gestão</td><td>Entregadores ativos.</td></tr>
+        <tr><td>GET</td><td><code>/orders/summary</code></td><td><code>ADMIN</code></td><td>Resumo do dashboard.</td></tr>
+        <tr><td>GET</td><td><code>/orders/charts</code></td><td><code>ADMIN</code></td><td>Faturamento dos últimos 7 dias e os 5 produtos mais vendidos.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Pagamentos, endereços, loja, banner e imagens</h3>
+    <table>
+      <thead><tr><th style="width: 11%">Método</th><th style="width: 27%">Rota</th><th style="width: 20%">Acesso</th><th>Descrição</th></tr></thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/payment/card</code></td><td><code>CLIENT</code></td><td>Cobra o cartão (token do Mercado Pago). O valor é calculado a partir de <code>order</code>.</td></tr>
+        <tr><td>POST</td><td><code>/payment/pix</code></td><td><code>CLIENT</code></td><td>Gera o PIX (QR Code e copia e cola).</td></tr>
+        <tr><td>GET</td><td><code>/payment/status/:id</code></td><td>Pagador ou equipe</td><td>Status do pagamento (consultado pelas telas de PIX e cartão).</td></tr>
+        <tr><td>POST</td><td><code>/payment/webhook</code></td><td>Público</td><td>Só confirma o recebimento (<code>{ "status": "ok" }</code>).</td></tr>
+        <tr><td>GET</td><td><code>/addresses/cep/:cep</code></td><td>Público</td><td>Busca de CEP (ViaCEP, com BrasilAPI como reserva).</td></tr>
+        <tr><td>POST/GET</td><td><code>/addresses</code></td><td>Logado</td><td>Cria / lista os endereços do próprio usuário.</td></tr>
+        <tr><td>GET/PATCH/DELETE</td><td><code>/addresses/:id</code></td><td>Logado (dono)</td><td>Detalhe, edição e exclusão lógica (endereço de outra pessoa → <code>404</code>).</td></tr>
+        <tr><td>GET</td><td><code>/store/status</code></td><td>Público</td><td><code>{ id, is_open, opening_message, closing_message }</code>.</td></tr>
+        <tr><td>PATCH</td><td><code>/store/status</code></td><td><code>ADMIN</code>, <code>EMPLOYEE</code></td><td>Abre/fecha a loja e edita as mensagens (até 200 caracteres).</td></tr>
+        <tr><td>GET</td><td><code>/promotions/banner</code></td><td>Público</td><td>Banner do dia (<code>/promotions/football</code> é um alias antigo).</td></tr>
+        <tr><td>POST</td><td><code>/uploads</code></td><td><code>ADMIN</code></td><td>Imagem avulsa (campo <code>file</code>) → <code>{ filename }</code>.</td></tr>
+        <tr><td>POST</td><td><code>/maintenance/optimize-images</code></td><td><code>ADMIN</code></td><td>Converte para WebP as imagens antigas de produtos e avatares.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="page-break">
+    <h2>12. Pedidos: regras e transições</h2>
+    <p>As regras ficam em funções puras em <code>backend/src/orders/order-rules.ts</code>, cobertas por testes unitários.</p>
+
+    <h3>Preço calculado no servidor</h3>
+    <pre>POST /orders
+{
+  "type": "DELIVERY",
+  "addressId": 3,
+  "items": [
+    { "productId": 1, "quantity": 2, "addonIds": [4, 4], "meatPoint": "Ao Ponto",
+      "removedIngredients": ["Cebola"], "observation": "Capricha no molho" }
+  ],
+  "paymentMethod": "MONEY",
+  "changeFor": "R$ 100,00"
+}</pre>
+    <ul>
+      <li>O cliente nunca envia preços. O preço unitário é o promocional quando ele existe e é menor que o normal. Os cálculos são feitos em centavos.</li>
+      <li><code>addonIds</code> repetidos indicam a quantidade (<code>[4, 4]</code> = 2×). Se o produto define adicionais permitidos, só eles são aceitos.</li>
+      <li>Produtos e adicionais indisponíveis ou na lixeira são recusados com a mensagem do motivo.</li>
+      <li>Limites: 50 linhas por pedido, 50 unidades por item, 50 adicionais por item e observação de até 300 caracteres.</li>
+      <li><code>DELIVERY</code> exige um endereço ativo do próprio cliente ("Endereço obrigatório para delivery.").</li>
+      <li><strong>Retrato do preço:</strong> cada item grava <code>unit_price</code> e <code>addons_snapshot</code> (nome, preço e quantidade cobrados). Pedidos antigos sem retrato continuam legíveis.</li>
+      <li><strong>Loja fechada:</strong> o orçamento devolve <code>store_open: false</code>, e o pedido e os pagamentos respondem <code>400</code> ("A loja está fechada no momento.").</li>
+    </ul>
+
+    <h3>Entrega por bairro</h3>
+    <p>Vale a primeira faixa cujo termo aparece no nome do bairro, sem diferenciar acentos e maiúsculas. Por exemplo, "Barra da Tijuca" entra na faixa da Barra.</p>
+    <table>
+      <thead><tr><th>Bairro contém</th><th style="width: 18%">Taxa</th><th style="width: 22%">Tempo</th></tr></thead>
+      <tbody>
+        <tr><td>centro, lapa, santa teresa</td><td>R$ 5</td><td>30-40 min</td></tr>
+        <tr><td>flamengo, botafogo, laranjeiras</td><td>R$ 7</td><td>40-50 min</td></tr>
+        <tr><td>copacabana, ipanema, leblon</td><td>R$ 10</td><td>50-60 min</td></tr>
+        <tr><td>barra, recreio</td><td>R$ 20</td><td>60-80 min</td></tr>
+        <tr><td>tijuca, maracana</td><td>R$ 12</td><td>50-60 min</td></tr>
+        <tr><td>demais bairros</td><td>R$ 15</td><td>50-60 min</td></tr>
+        <tr><td>retirada (<code>TAKEOUT</code>)</td><td>grátis</td><td>15-20 min</td></tr>
+      </tbody>
+    </table>
+    <p class="small">A tabela vem de uma instalação no Rio de Janeiro. Ajuste <code>DELIVERY_ZONES</code> por instalação.</p>
+
+    <h3>Pagamento e troco</h3>
+    <ul>
+      <li>Formas: <code>PIX</code>, <code>CREDIT_CARD</code>, <code>DEBIT_CARD</code> e <code>MONEY</code>. Com <code>paymentId</code>, o pedido foi pago online. Sem ele, o pagamento é feito na entrega ou na retirada (cartão = maquininha).</li>
+      <li>O troco só vale para <code>MONEY</code>. É gravado como <code>"R$ 50,00"</code> e precisa ser maior ou igual ao total.</li>
+      <li>Ao concluir (<code>DONE</code>) um pedido pago na entrega ou na retirada, <code>payment_status</code> vira <code>PAID</code>.</li>
+    </ul>
+
+    <h3>Transições de status por perfil</h3>
+    <table>
+      <thead><tr><th>Ação</th><th style="width: 17%" class="center">Gestão</th><th style="width: 13%" class="center">Cozinha</th><th style="width: 22%" class="center">Entregador</th></tr></thead>
+      <tbody>
+        <tr><td>Aceitar: <code>PENDING → PREPARING</code></td><td class="center">sim</td><td class="center">sim</td><td class="center">—</td></tr>
+        <tr><td>Pronto: <code>PREPARING → READY_FOR_PICKUP</code></td><td class="center">sim</td><td class="center">sim</td><td class="center">—</td></tr>
+        <tr><td>Despachar com entregador escolhido (<code>/assign</code>)</td><td class="center">sim</td><td class="center">—</td><td class="center">—</td></tr>
+        <tr><td>Pegar para entrega: <code>READY_FOR_PICKUP → DELIVERING</code></td><td class="center">sim</td><td class="center">—</td><td class="center">sim (assume se sem responsável)</td></tr>
+        <tr><td>Confirmar entrega: <code>DELIVERING → DONE</code></td><td class="center">sim</td><td class="center">—</td><td class="center">só as próprias</td></tr>
+        <tr><td>Balcão (retirada): <code>READY_FOR_PICKUP → DONE</code></td><td class="center">sim</td><td class="center">—</td><td class="center">—</td></tr>
+        <tr><td>Cancelar</td><td class="center">até concluir</td><td class="center">—</td><td class="center">—</td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li>A gestão (<code>ADMIN</code>, <code>EMPLOYEE</code>) pode fazer qualquer transição válida. <code>DONE</code> e <code>CANCELED</code> são finais, o mesmo status é inválido e <code>TAKEOUT</code> nunca entra em <code>DELIVERING</code>.</li>
+      <li>Transição impossível → <code>400</code> "Transição inválida: X → Y". Transição possível, mas não permitida ao perfil → <code>403</code>.</li>
+      <li>O <strong>cliente</strong> cancela o próprio pedido enquanto ele está <code>PENDING</code> (<code>PATCH /orders/:id/cancel</code>).</li>
+      <li><strong>Despacho</strong> (<code>/assign</code>): só para <code>DELIVERY</code> em <code>PREPARING</code>, <code>READY_FOR_PICKUP</code> ou <code>DELIVERING</code> (troca de entregador), com um <code>COURIER</code> ativo.</li>
+      <li><strong>Concorrência:</strong> a gravação só acontece se o pedido ainda estiver no status lido (e, ao assumir uma entrega, sem entregador). Caso contrário, a resposta é <code>409</code>, e só um de dois entregadores simultâneos assume o pedido.</li>
+      <li><strong>Dashboard:</strong> o faturamento conta apenas pedidos <code>PAID</code> e não cancelados.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>13. Modelagem do banco</h2>
+    <h3>Enums</h3>
+    <table>
+      <thead><tr><th style="width: 24%">Enum</th><th>Valores</th></tr></thead>
+      <tbody>
+        <tr><td><code>UserRole</code></td><td><code>CLIENT</code>, <code>ADMIN</code>, <code>KITCHEN</code>, <code>COURIER</code>, <code>EMPLOYEE</code></td></tr>
+        <tr><td><code>ProductCategory</code></td><td><code>hamburgueres</code>, <code>entradas</code>, <code>acompanhamentos</code>, <code>bebidas</code>, <code>sobremesas</code>, <code>molhos</code>, <code>adicionais</code>, <code>combos</code></td></tr>
+        <tr><td><code>OrderStatus</code></td><td><code>PENDING</code>, <code>PREPARING</code>, <code>READY_FOR_PICKUP</code>, <code>DELIVERING</code>, <code>DONE</code>, <code>CANCELED</code></td></tr>
+        <tr><td><code>OrderType</code></td><td><code>DELIVERY</code>, <code>TAKEOUT</code></td></tr>
+        <tr><td><code>PaymentStatus</code></td><td><code>PENDING</code>, <code>PAID</code>, <code>FAILED</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3>Tabelas</h3>
+    <table>
+      <thead><tr><th style="width: 16%">Tabela</th><th>Campos principais</th><th style="width: 30%">Relações</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>users</code></td>
+          <td><code>id</code>, <code>name</code>, <code>email</code> (único, gravado em minúsculas), <code>password_hash</code> (nunca selecionado por padrão), <code>phone</code>, <code>avatar</code>, <code>role</code>, timestamps, <code>deleted_at</code></td>
+          <td>1:N com <code>orders</code> e <code>addresses</code>. Também é o entregador (<code>driver_id</code>) em pedidos.</td>
+        </tr>
+        <tr>
+          <td><code>products</code></td>
+          <td><code>id</code>, <code>name</code>, <code>description</code>, <code>price</code>, <code>promotion_price</code>, <code>is_highlight</code>, <code>image</code>, <code>category</code>, <code>ingredients</code>, <code>available</code>, timestamps, <code>deleted_at</code></td>
+          <td>N:N com <code>addons</code> via <code>product_allowed_addons</code>. 1:N com <code>order_items</code>.</td>
+        </tr>
+        <tr>
+          <td><code>addons</code></td>
+          <td><code>id</code>, <code>name</code>, <code>description</code>, <code>price</code>, <code>image</code>, <code>available</code>, <code>category</code> (padrão <code>geral</code>), <code>deleted_at</code></td>
+          <td>N:N com produtos e com itens de pedido (<code>order_item_addons</code>).</td>
+        </tr>
+        <tr>
+          <td><code>orders</code></td>
+          <td><code>id</code>, <code>status</code>, <code>payment_status</code>, <code>type</code>, <code>total_price</code>, <code>delivery_fee</code>, <code>payment_method</code>, <code>change_for</code>, <code>payment_id</code> (único), <code>estimated_delivery_time</code>, timestamps</td>
+          <td>N:1 com <code>users</code> (cliente e entregador) e <code>addresses</code>. 1:N com <code>order_items</code>.</td>
+        </tr>
+        <tr>
+          <td><code>order_items</code></td>
+          <td><code>id</code>, <code>quantity</code>, <code>observation</code>, <code>meat_point</code>, <code>removed_ingredients</code>, <code>unit_price</code>, <code>addons_snapshot</code> (jsonb)</td>
+          <td>N:1 com <code>orders</code> (cascade) e <code>products</code>. N:N com <code>addons</code>.</td>
+        </tr>
+        <tr>
+          <td><code>addresses</code></td>
+          <td><code>id</code>, <code>zipCode</code> (8 dígitos), <code>street</code>, <code>number</code>, <code>complement</code>, <code>neighborhood</code>, <code>city</code>, <code>state</code> (UF), <code>nickname</code>, <code>latitude</code>, <code>longitude</code>, <code>created_at</code>, <code>deleted_at</code> (exclusão lógica)</td>
+          <td>N:1 com <code>users</code>. Pedidos antigos continuam exibindo o endereço excluído.</td>
+        </tr>
+        <tr>
+          <td><code>store_config</code></td>
+          <td><code>id</code>, <code>is_open</code>, <code>opening_message</code>, <code>closing_message</code></td>
+          <td>Linha única (a de menor id), criada na subida com a loja aberta.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="page-break">
+    <h2>14. Pagamentos (sandbox e produção)</h2>
+    <h3>Como o modo é decidido</h3>
+    <p>
+      <code>resolvePaymentMode</code> (<code>backend/src/payment/payment-rules.ts</code>): <code>PAYMENT_SANDBOX=true/false</code> decide.
+      Vazio = sandbox quando não há <code>MP_ACCESS_TOKEN</code> ou quando ele começa com <code>TEST-</code>, exceto com <code>NODE_ENV=production</code> (nesse caso, só com <code>PAYMENT_SANDBOX=true</code> explícito).
+      O modo aparece no log da API na subida.
+    </p>
+    <table>
+      <thead><tr><th style="width: 16%"></th><th>Sandbox sem <code>MP_ACCESS_TOKEN</code></th><th>Sandbox com token <code>TEST-</code></th><th>Produção</th></tr></thead>
+      <tbody>
+        <tr><td>Cartão</td><td>Aprovação simulada.</td><td>Enviado ao Mercado Pago. Recusa ou falha → aprovação simulada.</td><td>Resultado real. Recusas e falhas chegam ao cliente.</td></tr>
+        <tr><td>PIX</td><td>QR de teste (não pode ser pago), aprovado após <code>PIX_SANDBOX_APPROVAL_SECONDS</code>.</td><td>QR do Mercado Pago, aprovado automaticamente após o prazo. Falha → QR de teste.</td><td>Aprovado só quando o Mercado Pago confirma.</td></tr>
+        <tr><td>Sem token</td><td colspan="2">Tudo simulado.</td><td><code>503</code> "Pagamento online indisponível..." (pagar na entrega continua funcionando).</td></tr>
+      </tbody>
+    </table>
+    <p>Respostas simuladas trazem <code>simulation: true</code>. O log registra "APROVADO POR SIMULAÇÃO" (cartão) ou "SIMULADO"/"SIMULAÇÃO de sandbox" (PIX).</p>
+
+    <h3>Dados de teste</h3>
+    <table>
+      <thead><tr><th>Número</th><th>Validade</th><th>CVV</th><th>Titular</th><th>CPF</th></tr></thead>
+      <tbody>
+        <tr><td><code>5031 4332 1540 6351</code></td><td><code>11/30</code></td><td><code>123</code></td><td><code>APRO</code></td><td><code>123.456.789-09</code></td></tr>
+      </tbody>
+    </table>
+    <p>
+      PIX: gere o QR e aguarde cerca de 5 s. A web consulta o status a cada 3 s e o app a cada 4 s, e o pedido é registrado sozinho após a aprovação.
+      O código PIX expira na tela depois de 10 minutos (é preciso gerar outro).
+    </p>
+
+    <h3>Fluxo e verificações</h3>
+    <ol>
+      <li>O front envia <code>order</code> (o mesmo corpo do orçamento) para <code>/payment/card</code> (com o token do cartão, bandeira e CPF/CNPJ) ou <code>/payment/pix</code>. O valor é sempre calculado pela API.</li>
+      <li>Com o pagamento aprovado, o front cria o pedido em <code>POST /orders</code> com <code>paymentId</code> e a forma de pagamento.</li>
+      <li>Antes de gravar, a API confere: pagamento criado por ela para o mesmo cliente, forma compatível (PIX ↔ PIX, cartão ↔ crédito/débito), aprovado (pagamentos reais são consultados de novo no Mercado Pago), valor ≥ total − R$ 0,01 e não usado em outro pedido (<code>payment_id</code> único). Qualquer falha → <code>400</code>, e nada é gravado.</li>
+      <li>Se a criação do pedido falhar depois de um pagamento aprovado, a web guarda o pagamento na aba para tentar de novo sem cobrar outra vez.</li>
+    </ol>
+    <div class="warning">
+      <strong>Limitação atual:</strong> o registro dos pagamentos fica em memória na API (validade de 24 h). Um reinício entre o pagamento e a criação do pedido faz a criação falhar ("Pagamento não encontrado ou expirado..."), e o pagamento precisa ser conferido no painel do Mercado Pago.
+      O webhook (<code>POST /payment/webhook</code>) só confirma o recebimento. Rode uma única instância da API, ou use afinidade de sessão. A confirmação por webhook está no roadmap.
+    </div>
+  </section>
+
+  <section>
+    <h2>15. Integrações externas</h2>
+    <table>
+      <thead><tr><th style="width: 16%">Integração</th><th style="width: 34%">Onde está</th><th style="width: 16%">Necessária?</th><th>Observações</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Mercado Pago</td>
+          <td>API: <code>src/payment/</code>. Web: <code>src/services/mercadoPago.ts</code> e checkout. App: <code>screens/PaymentCard</code> (API REST de tokenização).</td>
+          <td>Para pagamento online real</td>
+          <td>Access token só na API (<code>MP_ACCESS_TOKEN</code>). Chaves públicas no web/app (padrão: chave de teste). Sem token, o sandbox simula.</td>
+        </tr>
+        <tr>
+          <td>football-data.org</td>
+          <td><code>backend/src/promotions/promotions.service.ts</code></td>
+          <td>Opcional</td>
+          <td><code>FOOTBALL_DATA_TOKEN</code>. Prioriza o Brasileirão e usa cache. Qualquer falha cai na promoção do dia.</td>
+        </tr>
+        <tr>
+          <td>ViaCEP</td>
+          <td><code>backend/src/addresses/addresses.service.ts</code></td>
+          <td>Opcional</td>
+          <td>Primeira tentativa de busca de CEP (timeout de 5 s).</td>
+        </tr>
+        <tr>
+          <td>BrasilAPI (CEP)</td>
+          <td><code>backend/src/addresses/addresses.service.ts</code></td>
+          <td>Opcional</td>
+          <td>Reserva quando o ViaCEP falha. Sem os dois, o endereço é preenchido manualmente.</td>
+        </tr>
+        <tr>
+          <td>Serveo</td>
+          <td><code>frontend-mobile/start-tunnel.js</code></td>
+          <td>Só para o app fora da rede</td>
+          <td>Requer <code>ssh</code> e internet. Grava a URL em <code>.env.local</code>.</td>
+        </tr>
+        <tr>
+          <td>Google Maps</td>
+          <td>Quadro de pedidos (web e app), retirada no checkout (web)</td>
+          <td>Não</td>
+          <td>Apenas links de busca de endereço (sem chave de API).</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>16. Fluxos principais</h2>
+    <h3>Cadastro e login</h3>
+    <ol>
+      <li>O cliente se cadastra em <code>/signup</code> (web) ou em "Crie sua conta" (app), via <code>POST /users</code>, e vira <code>CLIENT</code>.</li>
+      <li>Contas da equipe são criadas pelo Administrador (web: <strong>Equipe</strong>; app: <strong>Usuários</strong>).</li>
+      <li>Login via <code>POST /auth/login</code>. O front guarda o token e o usuário e envia <code>Bearer</code> nas próximas chamadas.</li>
+    </ol>
+
+    <h3>Pedido com entrega</h3>
+    <ol>
+      <li>O cliente vê o cardápio (<code>GET /products</code>), o status da loja e o banner.</li>
+      <li>Monta o carrinho: quantidade, adicionais, ponto da carne, ingredientes removidos e observação.</li>
+      <li>No checkout, escolhe ou cadastra um endereço (com busca de CEP). A tela mostra o orçamento de <code>POST /orders/quote</code>.</li>
+      <li>Paga online (PIX ou cartão, e o pedido nasce <code>PAID</code>) ou escolhe pagar na entrega (dinheiro com troco ou maquininha).</li>
+      <li>O pedido entra como <code>PENDING</code> no quadro. Cozinha (ou gestão) aceita e marca como pronto.</li>
+      <li>A gestão despacha para um entregador, ou o entregador pega o pedido. O status vai para <code>DELIVERING</code>.</li>
+      <li>O entregador confirma a entrega (<code>DONE</code>). Se era pagamento na entrega, vira <code>PAID</code>.</li>
+    </ol>
+
+    <h3>Pedido para retirada</h3>
+    <p><code>TAKEOUT</code> não exige endereço, não tem taxa e tem tempo estimado de 15-20 min. Depois de pronto, aparece em "Retirar no Balcão", e a gestão marca "Entregue ao Cliente" (<code>READY_FOR_PICKUP → DONE</code>).</p>
+
+    <h3>Logística</h3>
+    <ol>
+      <li>No pedido pronto, a gestão clica em <strong>Despachar</strong>. A API lista os entregadores (<code>/orders/drivers/list</code>) e sugere pedidos do mesmo bairro (<code>/orders/:id/nearby</code>).</li>
+      <li><code>PATCH /orders/:id/assign</code> atribui o entregador e coloca o pedido em <code>DELIVERING</code>.</li>
+      <li>O entregador vê endereço, mapa, troco a levar e, no app, o botão de ligar para o cliente.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>17. Uploads e imagens</h2>
+    <ul>
+      <li>Produtos (<code>POST/PATCH /products</code>), avatares (<code>POST/PATCH /users</code>) e <code>POST /uploads</code> aceitam <strong>JPG, PNG ou WebP de até 5 MB</strong> no campo <code>file</code> (um arquivo por envio).</li>
+      <li>O tipo é conferido pelo conteúdo (assinatura do arquivo), e não pela extensão. A imagem é rotacionada conforme o EXIF, limitada a 800 px de largura e convertida para WebP (qualidade 80) com Sharp.</li>
+      <li>Os arquivos ficam em <code>UPLOADS_DIR</code> e são servidos em <code>/uploads/&lt;arquivo&gt;</code>. Produtos guardam só o nome do arquivo, e avatares guardam <code>/uploads/&lt;arquivo&gt;</code>.</li>
+      <li>Um formulário inválido não deixa imagem órfã, e se a operação falhar o arquivo recém-gravado é apagado.</li>
+      <li><code>POST /maintenance/optimize-images</code> converte imagens antigas (não WebP) de produtos e avatares, mantendo os originais em disco.</li>
+    </ul>
+    <pre>POST /uploads            (Authorization: Bearer &lt;token de ADMIN&gt;)
+Content-Type: multipart/form-data
+Campo do arquivo: file
+Resposta: { "filename": "compressed-&lt;data&gt;-&lt;código&gt;.webp" }</pre>
+  </section>
+
+  <section class="page-break">
+    <h2>18. Testes</h2>
+    <h3>Unitários da API (Jest)</h3>
+    <pre>cd backend
+npx jest            # ou npm test
+npm run test:cov    # cobertura</pre>
+    <p>Não precisam de banco. Cobrem regras de pedidos (dinheiro, preço, entrega, troco, perfis, transições, cancelamento e despacho), serviço de pedidos, pagamentos (sandbox e produção), autenticação, permissões de usuários, cardápio, uploads, loja, promoções, endereços e configuração.</p>
+
+    <h3>E2E da API com Jest</h3>
+    <pre>DB_DATABASE=comestra_test npm run test:e2e                  # Linux (banco de teste já criado)
+$env:DB_DATABASE="comestra_test"; npm run test:e2e          # Windows (PowerShell)</pre>
+
+    <h3>Suíte ponta a ponta (Playwright)</h3>
+    <pre>cd e2e
+npm install
+npm test            # recria o banco comestra_e2e, compila a API e roda tudo
+npm run test:api    # só a API
+npm run test:web    # só o navegador
+npm run report      # relatório HTML</pre>
+    <ul>
+      <li>Ambiente isolado: API de teste em <code>:3001</code> (banco <code>comestra_e2e</code>, imagens em <code>e2e/.uploads</code>, sandbox ligado) e web de teste em <code>:5174</code>. O Playwright sobe os servidores ou reaproveita os que já estão no ar.</li>
+      <li>Se a API de teste já estiver rodando, o banco não é recriado e a API não é recompilada.</li>
+      <li>Se o <code>postgres</code> tiver senha, informe <code>DB_PASSWORD</code> no ambiente. Requer Google Chrome e dependências instaladas em <code>backend/</code> e <code>frontend-web/</code>.</li>
+      <li>Estrutura: <code>tests/global.setup.ts</code> (login de todos os perfis e loja aberta), <code>tests/api/identity</code> (saúde, login, usuários, senhas fora das respostas, endereços, loja, uploads, banner), <code>tests/api/commerce</code> (catálogo, orçamento, acesso e fluxo dos pedidos, pagamentos), <code>tests/web/client</code> (loja) e <code>tests/web/admin</code> (painel).</li>
+    </ul>
+
+    <h3>Verificações executadas para este guia (11/10/2026)</h3>
+    <table>
+      <thead><tr><th style="width: 42%">Verificação</th><th style="width: 12%">Resultado</th><th>Observação</th></tr></thead>
+      <tbody>
+        <tr><td><code>backend: npx jest</code></td><td class="nowrap">OK</td><td>15 suítes, 157 testes passando.</td></tr>
+        <tr><td><code>GET /health</code> (API de teste, :3001)</td><td class="nowrap">OK</td><td><code>{"status":"ok","name":"Comestra","version":"0.0.1"}</code></td></tr>
+        <tr><td><code>GET /api</code> (Swagger)</td><td class="nowrap">OK</td><td>HTTP 200.</td></tr>
+        <tr><td><code>POST /auth/login</code> com os 5 usuários padrão</td><td class="nowrap">OK</td><td>Cada conta entrou com o perfil esperado (<code>ADMIN</code>, <code>EMPLOYEE</code>, <code>KITCHEN</code>, <code>COURIER</code>, <code>CLIENT</code>).</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>19. Produção</h2>
+    <ol>
+      <li><code>NODE_ENV=production</code> e <code>JWT_SECRET</code> forte: <code>node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"</code>.</li>
+      <li><code>SEED_DEMO_USERS=false</code> (padrão em produção), com as senhas de demonstração trocadas ou as contas excluídas.</li>
+      <li><code>PAYMENT_SANDBOX=false</code>, <code>MP_ACCESS_TOKEN</code> de produção e chaves públicas reais (<code>VITE_MP_PUBLIC_KEY</code>, <code>EXPO_PUBLIC_MP_PUBLIC_KEY</code>).</li>
+      <li><code>DB_SYNCHRONIZE=false</code> com migrations (crie-as antes, já que o repositório ainda não as traz).</li>
+      <li><code>CORS_ORIGINS</code> com os domínios reais da loja e do painel.</li>
+      <li>HTTPS na frente da API e do site, com <code>VITE_API_URL</code> e <code>EXPO_PUBLIC_API_URL</code> em <code>https://</code>.</li>
+      <li><code>UPLOADS_DIR</code> em volume persistente, com backup do banco e das imagens.</li>
+      <li>Uma única instância da API (ou afinidade de sessão) enquanto o registro de pagamentos estiver em memória.</li>
+      <li>Build: API com <code>npm run build</code> e <code>npm run start:prod</code>. Web com <code>npm run build</code>, servindo <code>dist/</code> com fallback para <code>index.html</code> (rotas do React Router).</li>
+      <li>Dados da loja revisados (seção 20) e marca verificada (seção 22).</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>20. Personalização por instalação</h2>
+    <table>
+      <thead><tr><th style="width: 34%">O quê</th><th>Onde</th></tr></thead>
+      <tbody>
+        <tr><td>Nome exibido</td><td><code>APP_NAME</code> (API), <code>VITE_APP_NAME</code> (web), <code>EXPO_PUBLIC_APP_NAME</code> (app).</td></tr>
+        <tr><td>Marca (nome padrão, slug, domínio, slogan, e-mail de suporte)</td><td><code>src/config/brand.ts</code> em cada app. O slug também prefixa as chaves de armazenamento e define o banco padrão.</td></tr>
+        <tr><td>Logo e ícones</td><td>Web: <code>public/favicon.svg</code> e <code>src/components/BrandLogo</code> (mesma arte). App: <code>assets/</code> e <code>app.json</code>.</td></tr>
+        <tr><td>Endereço, telefone e horários (dados de demonstração)</td><td>Web: <code>STORE_INFO</code> em <code>src/config/brand.ts</code> e o endereço de retirada em <code>src/pages/Client/Cart/index.tsx</code>. App: <code>src/components/Footer</code>.</td></tr>
+        <tr><td>Taxas e tempos de entrega</td><td><code>DELIVERY_ZONES</code> em <code>backend/src/orders/order-rules.ts</code>.</td></tr>
+        <tr><td>Promoções do dia da semana</td><td><code>WEEKLY_PROMOTIONS</code> em <code>backend/src/promotions/promotions.service.ts</code>.</td></tr>
+        <tr><td>Mensagens de loja aberta/fechada</td><td><code>PATCH /store/status</code> (<code>opening_message</code>, <code>closing_message</code>).</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>21. Migração a partir do TorresBurgers</h2>
+    <ul>
+      <li><strong>Banco:</strong> o padrão agora é <code>comestra</code>. Para manter os dados, use <code>DB_DATABASE=torresburgers</code> (e <code>DB_PASSWORD=0000</code>, se a instalação dependia da senha padrão antiga) ou copie o banco com <code>createdb -T torresburgers comestra</code>.</li>
+      <li><strong>Sessões:</strong> as chaves mudaram (web <code>torresburgers.*</code> → <code>comestra.*</code>; app <code>@TorresBurgers:*</code> → <code>@comestra:*</code>). Todos precisam entrar de novo, e o carrinho e o tema salvos voltam ao padrão.</li>
+      <li><strong>Equipe:</strong> <code>POST /users</code> sem token de <code>ADMIN</code> cria só clientes. Para recuperar o acesso de administrador, use <code>npm run seed</code>.</li>
+      <li><strong>.env antigo:</strong> <code>PORT</code>, <code>JWT_EXPIRES_IN</code> (antes fixo em 1 dia) e <code>MP_ACCESS_TOKEN</code> (antes fixo no código) passaram a valer. Rotas antes públicas (<code>/addons</code> de escrita, <code>/uploads</code>, <code>/payment/*</code>) agora exigem o perfil adequado.</li>
+      <li><strong>App:</strong> o <code>npm run tunnel</code> não altera mais <code>src/services/api.ts</code>. A URL vai para <code>.env.local</code>.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>22. Limitações conhecidas e roadmap</h2>
+    <h3>Limitações atuais</h3>
+    <ul>
+      <li>Sem recuperação de senha por e-mail: um Administrador define uma nova senha.</li>
+      <li>Atualização por consulta periódica, sem WebSockets (quadro a cada 5 s, Meus Pedidos na web a cada 10 s, status da loja a cada 30 s na web e 60 s no app).</li>
+      <li>Banner de promoções e cupons apenas informativos: não há desconto no checkout.</li>
+      <li>Uma loja por instalação.</li>
+      <li>Registro de pagamentos em memória, e o webhook do Mercado Pago só confirma o recebimento.</li>
+      <li>Sem migrations versionadas.</li>
+      <li>Dados da loja, taxas de entrega e promoções definidos no código.</li>
+      <li>App: sem envio de fotos de produto ou de perfil (feito pela web).</li>
+    </ul>
+    <h3>Roadmap</h3>
+    <ul>
+      <li>Recuperação de senha por e-mail.</li>
+      <li>Status do pedido em tempo real via WebSockets.</li>
+      <li>Notificações push.</li>
+      <li>Cupons e promoções aplicados no checkout.</li>
+      <li>Multi-loja / multi-tenant.</li>
+      <li>Confirmação do pedido pelo webhook do Mercado Pago.</li>
+    </ul>
+    <div class="note">
+      <strong>Marca:</strong> antes do lançamento comercial, faça a busca no INPI (pePI) e o pedido de registro pelo e-Marcas nas classes 9, 35, 42 e 43. Registre também o domínio <code>comestra.com.br</code>.
+    </div>
+  </section>
+
+  <section>
+    <h2>23. Troubleshooting</h2>
+    <h3>A API não conecta no banco</h3>
+    <ul>
+      <li>Confirme que o PostgreSQL está rodando. Windows: serviço <code>postgresql-x64-&lt;versão&gt;</code> em <code>services.msc</code>. Linux: <code>systemctl status postgresql</code>.</li>
+      <li>Confirme que o banco existe (<code>psql -U postgres -l</code>) e revise <code>DB_HOST</code>, <code>DB_PORT</code>, <code>DB_USERNAME</code>, <code>DB_PASSWORD</code> e <code>DB_DATABASE</code>.</li>
+      <li>No Linux, a conexão é TCP: o usuário precisa de senha (ou de uma regra <code>trust</code> no <code>pg_hba.conf</code>).</li>
+    </ul>
+
+    <h3>A API não sobe em produção</h3>
+    <p>"JWT_SECRET não definido...": defina <code>JWT_SECRET</code> no ambiente. Com <code>NODE_ENV=production</code>, ele é obrigatório.</p>
+
+    <h3>Os usuários padrão não entram</h3>
+    <ul>
+      <li>Rode <code>cd backend &amp;&amp; npm run seed</code> para recriar as contas e redefinir as senhas.</li>
+      <li>Confira se <code>SEED_DEMO_USERS</code> não está <code>false</code> e se a API aponta para o banco certo.</li>
+    </ul>
+
+    <h3>A web não acessa a API</h3>
+    <ul>
+      <li>Abra <code>http://localhost:3000/health</code>. Confira <code>VITE_API_URL</code> e reinicie o <code>npm run dev</code> depois de mudá-la.</li>
+      <li>Com <code>CORS_ORIGINS</code> preenchido, inclua a origem do site (ex.: <code>http://localhost:5173</code>).</li>
+    </ul>
+
+    <h3>O app não acessa a API</h3>
+    <ul>
+      <li>Celular e computador no mesmo Wi-Fi, porta 3000 liberada no firewall e API rodando.</li>
+      <li>Emulador Android: use <code>EXPO_PUBLIC_API_URL=http://10.0.2.2:3000</code> se o IP da rede não funcionar.</li>
+      <li>Fora da rede: <code>npm run tunnel</code> (precisa de <code>ssh</code>) e depois <code>npx expo start --tunnel --clear</code>. Se o Serveo cair, reinicie o túnel e o Expo.</li>
+      <li>Depois de mudar qualquer <code>EXPO_PUBLIC_*</code>: <code>npx expo start --clear</code>.</li>
+    </ul>
+
+    <h3>Pedido recusado</h3>
+    <ul>
+      <li>"A loja está fechada no momento.": abra a loja no painel (Dashboard ou Pedidos) ou via <code>PATCH /store/status</code> com <code>{ "is_open": true }</code>.</li>
+      <li>"Somente clientes fazem pedidos e pagamentos...": entre com uma conta <code>CLIENT</code>.</li>
+      <li>"Endereço obrigatório para delivery." / "Endereço não encontrado.": cadastre ou selecione um endereço do próprio cliente.</li>
+      <li>Produto "indisponível" ou "não está mais no cardápio": reative o produto ou tire-o da lixeira.</li>
+    </ul>
+
+    <h3>Pagamento online</h3>
+    <ul>
+      <li><code>503</code> "Pagamento online indisponível...": configure <code>MP_ACCESS_TOKEN</code> ou ligue o sandbox (desenvolvimento).</li>
+      <li>"Pagamento não encontrado ou expirado...": a API reiniciou entre o pagamento e o pedido. Gere um novo pagamento (no sandbox) ou confira no painel do Mercado Pago.</li>
+      <li>Cartão não carrega na web: o SDK do Mercado Pago precisa de internet. Use PIX ou o pagamento na entrega.</li>
+    </ul>
+
+    <h3>Upload falha</h3>
+    <ul>
+      <li>Envie um único arquivo no campo <code>file</code>, em JPG, PNG ou WebP de até 5 MB.</li>
+      <li>Verifique a permissão de escrita em <code>UPLOADS_DIR</code> (padrão <code>backend/uploads</code>).</li>
+    </ul>
+
+    <h3>Testes E2E não sobem</h3>
+    <ul>
+      <li>Informe <code>DB_PASSWORD</code> no ambiente (o reset do banco não lê o <code>backend/.env</code>) e confira se o Google Chrome está instalado.</li>
+      <li>Portas 3001/5174 ocupadas por outra aplicação: libere-as ou use <code>E2E_API_PORT</code>/<code>E2E_WEB_PORT</code>.</li>
+    </ul>
+
+    <h3>Build web ou Expo reclama do Node</h3>
+    <p>Instale o Node.js 22 LTS ou mais recente.</p>
+  </section>
+</body>
+</html>

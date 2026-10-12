@@ -1,18 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Product } from '../products/entities/product.entity';
-import { User } from '../users/entities/user.entity';
-import * as fs from 'fs';
+import { promises as fs } from 'fs';
 import * as path from 'path';
 import sharp from 'sharp';
+import { Repository } from 'typeorm';
+import { uploadsDir } from '../config/paths';
+import { Product } from '../products/entities/product.entity';
+import { User } from '../users/entities/user.entity';
+
+const isExternalUrl = (value: string) => /^https?:\/\//i.test(value);
 
 @Injectable()
 export class MaintenanceService {
   private readonly logger = new Logger(MaintenanceService.name);
-  
-  // Caminho absoluto para a pasta uploads na raiz do projeto
-  private readonly uploadPath = path.resolve(process.cwd(), 'uploads');
 
   constructor(
     @InjectRepository(Product)
@@ -21,73 +21,87 @@ export class MaintenanceService {
     private readonly userRepository: Repository<User>,
   ) {}
 
+  /**
+   * Converte para WebP as imagens de produtos e avatares que ainda não foram otimizadas
+   * (inclusive itens na lixeira). Os arquivos originais são mantidos em disco.
+   */
   async optimizeEverything() {
-    this.logger.log('--- Iniciando otimização em massa ---');
-    this.logger.log(`Pasta alvo: ${this.uploadPath}`);
-
+    const dir = uploadsDir();
+    this.logger.log(`Otimizando imagens em ${dir}`);
     let count = 0;
 
-    // 1. Otimizar Imagens de Produtos
-    const products = await this.productRepository.find(); // CORRIGIDO: Adicionado 'this.'
+    // 1. Imagens de produtos (o banco guarda só o nome do arquivo)
+    const products = await this.productRepository.find({
+      withDeleted: true,
+      select: { id: true, name: true, image: true },
+    });
     for (const product of products) {
-      if (product.image && !product.image.endsWith('.webp')) {
-        const newFilename = await this.compressFile(product.image);
-        if (newFilename) {
-          product.image = newFilename;
-          await this.productRepository.save(product); // Já estava correto
-          this.logger.log(`Produto ${product.id} [${product.name}] -> WebP`);
-          count++;
-        }
-      }
+      const image = product.image;
+      if (!image || image.endsWith('.webp') || isExternalUrl(image)) continue;
+
+      const newFilename = await this.compressFile(dir, image);
+      if (!newFilename) continue;
+
+      await this.productRepository.update(product.id, { image: newFilename });
+      this.logger.log(`Produto ${product.id} [${product.name}] → WebP`);
+      count++;
     }
 
-    // 2. Otimizar Avatares de Usuários
-    const users = await this.userRepository.find(); // CORRIGIDO: Adicionado 'this.'
+    // 2. Avatares de usuários (o banco guarda "/uploads/<arquivo>" ou uma URL externa)
+    const users = await this.userRepository.find({
+      withDeleted: true,
+      select: { id: true, avatar: true },
+    });
     for (const user of users) {
-      // Remove o prefixo /uploads/ se existir para processar apenas o nome do arquivo
-      const avatarName = user.avatar?.replace('/uploads/', '');
-      
-      if (avatarName && !avatarName.endsWith('.webp') && !avatarName.startsWith('http')) {
-        const newFilename = await this.compressFile(avatarName);
-        if (newFilename) {
-          user.avatar = `/uploads/${newFilename}`;
-          await this.userRepository.save(user); // Já estava correto
-          this.logger.log(`Avatar Usuário ${user.id} [${user.name}] -> WebP`);
-          count++;
-        }
-      }
+      const avatar = user.avatar?.replace(/^\/?uploads\//, '');
+      if (!avatar || avatar.endsWith('.webp') || isExternalUrl(avatar))
+        continue;
+
+      const newFilename = await this.compressFile(dir, avatar);
+      if (!newFilename) continue;
+
+      await this.userRepository.update(user.id, {
+        avatar: `/uploads/${newFilename}`,
+      });
+      this.logger.log(`Avatar do usuário ${user.id} → WebP`);
+      count++;
     }
 
-    return { 
+    return {
       message: 'Otimização concluída!',
-      itemsProcessed: count 
+      itemsProcessed: count,
     };
   }
 
-  private async compressFile(filename: string): Promise<string | null> {
-    const oldPath = path.join(this.uploadPath, filename);
-    
-    // Gera novo nome: original-123456789.webp
-    const newFilename = `${path.parse(filename).name}-${Date.now()}.webp`;
-    const newPath = path.join(this.uploadPath, newFilename);
+  private async compressFile(
+    dir: string,
+    filename: string,
+  ): Promise<string | null> {
+    // basename impede caminhos fora da pasta de uploads (ex.: "../arquivo")
+    const safeName = path.basename(filename);
+    const source = path.join(dir, safeName);
 
-    if (!fs.existsSync(oldPath)) {
-      this.logger.warn(`Arquivo não encontrado no disco: ${filename}`);
+    try {
+      await fs.access(source);
+    } catch {
+      this.logger.warn(`Arquivo não encontrado no disco: ${safeName}`);
       return null;
     }
 
+    // Novo nome: <original>-<timestamp>.webp
+    const newFilename = `${path.parse(safeName).name}-${Date.now()}.webp`;
+
     try {
-      await sharp(oldPath)
+      await sharp(source)
+        .rotate()
         .resize({ width: 800, withoutEnlargement: true })
         .webp({ quality: 80 })
-        .toFile(newPath);
-
-      // Opcional: Descomente a linha abaixo se quiser deletar o arquivo pesado original
-      // fs.unlinkSync(oldPath); 
-
+        .toFile(path.join(dir, newFilename));
       return newFilename;
-    } catch (err) {
-      this.logger.error(`Erro ao processar ${filename}: ${err.message}`);
+    } catch (error) {
+      this.logger.error(
+        `Erro ao processar ${safeName}: ${(error as Error).message}`,
+      );
       return null;
     }
   }

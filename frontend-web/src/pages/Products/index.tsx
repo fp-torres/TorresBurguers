@@ -1,10 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Plus, Edit2, Trash2, Search, PackageX, CheckCircle2, AlertTriangle, Utensils, Coffee, IceCream, Box, Grid, RotateCcw, XCircle } from 'lucide-react';
 import { productService, type Product } from '../../services/productService';
+import { assetUrl, getApiErrorMessage } from '../../services/api';
 import CreateProductModal from '../../components/CreateProductModal';
 import ConfirmModal from '../../components/ConfirmModal';
-import toast from 'react-hot-toast'; 
-import api from '../../services/api';
+import toast from 'react-hot-toast';
+import { categoryLabel, effectivePrice, hasPromotion } from '../../utils/catalog';
+import { formatCurrency } from '../../utils/format';
 
 const CATEGORIES = [
   { id: 'todos', label: 'Todos', icon: Grid },
@@ -28,24 +30,18 @@ export default function Products() {
   const [actionToConfirm, setActionToConfirm] = useState<() => void>(() => {});
   const [confirmMessage, setConfirmMessage] = useState({ title: '', desc: '', confirmLabel: 'Sim, confirmar', isDestructive: true });
 
+  const loadProducts = useCallback(() => productService.getAll()
+    .then(setProducts)
+    .catch(error => { toast.error(getApiErrorMessage(error, 'Erro ao carregar produtos')); }), []);
+
+  const loadDeletedProducts = useCallback(() => productService.getTrash()
+    .then(setDeletedProducts)
+    .catch(error => { toast.error(getApiErrorMessage(error, 'Erro ao carregar a lixeira de produtos')); }), []);
+
   useEffect(() => {
     loadProducts();
     loadDeletedProducts();
-  }, []);
-
-  async function loadProducts() {
-    try {
-      const data = await productService.getAll();
-      setProducts(data);
-    } catch { toast.error("Erro ao carregar produtos"); }
-  }
-
-  async function loadDeletedProducts() {
-    try {
-      const { data } = await api.get('/products/trash'); 
-      setDeletedProducts(data);
-    } catch { console.log("Erro ao carregar lixeira"); }
-  }
+  }, [loadProducts, loadDeletedProducts]);
 
   function handleOpenCreate() {
     setProductToEdit(null);
@@ -61,17 +57,17 @@ export default function Products() {
     try {
       const newStatus = !product.available;
 
-      setProducts(prevProducts => 
+      setProducts(prevProducts =>
         prevProducts.map(p => p.id === product.id ? { ...p, available: newStatus } : p)
       );
 
       const formData = new FormData();
       formData.append('available', String(newStatus));
       await productService.update(product.id, formData);
-      
+
       toast.success(newStatus ? 'Produto Ativado!' : 'Produto Pausado!');
-    } catch { 
-      toast.error('Erro ao atualizar.');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Erro ao atualizar.'));
       loadProducts();
     }
   }
@@ -85,29 +81,32 @@ export default function Products() {
     });
     setActionToConfirm(() => async () => {
       try {
-        await api.delete(`/products/${product.id}`);
+        await productService.remove(product.id);
         toast.success('Produto movido para a lixeira.');
         loadProducts();
         loadDeletedProducts();
-      } catch { toast.error('Erro ao excluir.'); }
+      } catch (error) { toast.error(getApiErrorMessage(error, 'Erro ao excluir.')); }
     });
     setConfirmOpen(true);
   }
 
   function requestRestore(product: Product) {
+    // A restauração mantém a disponibilidade que o produto tinha antes de ir para a lixeira
     setConfirmMessage({
       title: 'Restaurar Produto?',
-      desc: `O produto "${product.name}" voltará para o cardápio (como Indisponível).`,
+      desc: product.available
+        ? `O produto "${product.name}" voltará para o cardápio como Disponível.`
+        : `O produto "${product.name}" voltará para o cardápio, mas continuará Esgotado até você ativá-lo.`,
       confirmLabel: 'Sim, Restaurar',
       isDestructive: false
     });
     setActionToConfirm(() => async () => {
       try {
-        await api.patch(`/products/${product.id}/restore`);
+        await productService.restore(product.id);
         toast.success('Produto restaurado!');
         loadProducts();
         loadDeletedProducts();
-      } catch { toast.error('Erro ao restaurar.'); }
+      } catch (error) { toast.error(getApiErrorMessage(error, 'Erro ao restaurar.')); }
     });
     setConfirmOpen(true);
   }
@@ -115,16 +114,19 @@ export default function Products() {
   function requestPermanentDelete(product: Product) {
     setConfirmMessage({
       title: 'Excluir Permanentemente?',
-      desc: `ATENÇÃO: "${product.name}" será apagado para sempre. Histórico de vendas pode ser afetado.`,
+      desc: `ATENÇÃO: "${product.name}" será apagado para sempre. Produtos que já aparecem em pedidos não podem ser apagados (o histórico de vendas é preservado).`,
       confirmLabel: 'Apagar para Sempre',
       isDestructive: true
     });
     setActionToConfirm(() => async () => {
       try {
-        await api.delete(`/products/${product.id}/permanent`);
+        await productService.deletePermanent(product.id);
         toast.success('Produto excluído definitivamente.');
         loadDeletedProducts();
-      } catch { toast.error('Erro ao excluir.'); }
+      } catch (error) {
+        // 409: o produto aparece em pedidos (a API explica o motivo)
+        toast.error(getApiErrorMessage(error, 'Erro ao excluir.'), { duration: 6000 });
+      }
     });
     setConfirmOpen(true);
   }
@@ -163,16 +165,16 @@ export default function Products() {
               key={cat.id}
               onClick={() => setActiveTab(cat.id)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm whitespace-nowrap transition-all ${
-                activeTab === cat.id 
-                  ? 'bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 shadow-sm border border-orange-100 dark:border-orange-800' 
+                activeTab === cat.id
+                  ? 'bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 shadow-sm border border-orange-100 dark:border-orange-800'
                   : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700 hover:text-gray-700 dark:hover:text-white'
               }`}
             >
               <cat.icon size={18} />
               {cat.label}
               <span className={`ml-1 text-xs px-2 py-0.5 rounded-full ${
-                activeTab === cat.id 
-                  ? 'bg-orange-200 dark:bg-orange-800 text-orange-800 dark:text-orange-200' 
+                activeTab === cat.id
+                  ? 'bg-orange-200 dark:bg-orange-800 text-orange-800 dark:text-orange-200'
                   : 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-gray-300'
               }`}>
                 {cat.id === 'todos' ? products.length : cat.id === 'lixeira' ? deletedProducts.length : products.filter(p => p.category === cat.id).length}
@@ -183,8 +185,8 @@ export default function Products() {
 
         <div className="p-4 bg-gray-50 dark:bg-slate-900/50 flex gap-3 items-center">
           <Search className="text-gray-400 dark:text-gray-500" />
-          <input 
-            placeholder={activeTab === 'lixeira' ? "Buscar na lixeira..." : "Buscar produto..."} 
+          <input
+            placeholder={activeTab === 'lixeira' ? "Buscar na lixeira..." : "Buscar produto..."}
             className="bg-transparent outline-none flex-1 text-sm font-medium text-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-600"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
@@ -206,19 +208,27 @@ export default function Products() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+              {filteredList.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="p-12 text-center text-gray-400 dark:text-gray-500 italic">
+                    {activeTab === 'lixeira' ? 'A lixeira de produtos está vazia.' : 'Nenhum produto encontrado.'}
+                  </td>
+                </tr>
+              )}
               {filteredList.map(product => (
                 <tr key={product.id} className={`transition-colors group ${
-                  activeTab === 'lixeira' || !product.available 
-                    ? 'bg-gray-50 dark:bg-slate-800/50' 
+                  activeTab === 'lixeira' || !product.available
+                    ? 'bg-gray-50 dark:bg-slate-800/50'
                     : 'hover:bg-gray-50 dark:hover:bg-slate-700'
                 }`}>
                   <td className="p-4">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-gray-100 dark:bg-slate-700 rounded-lg overflow-hidden shrink-0 relative border border-gray-200 dark:border-slate-600">
                         {product.image ? (
-                          <img 
-                            src={`http://localhost:3000/uploads/${product.image}`} 
-                            className={`w-full h-full object-cover transition-all duration-300 ${(!product.available || activeTab === 'lixeira') ? 'grayscale opacity-75' : ''}`} 
+                          <img
+                            src={assetUrl(product.image)}
+                            alt={product.name}
+                            className={`w-full h-full object-cover transition-all duration-300 ${(!product.available || activeTab === 'lixeira') ? 'grayscale opacity-75' : ''}`}
                           />
                         ) : (
                           <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500"><PackageX size={20}/></div>
@@ -226,8 +236,8 @@ export default function Products() {
                       </div>
                       <div className="min-w-0">
                         <p className={`font-bold truncate ${
-                          !product.available || activeTab === 'lixeira' 
-                            ? 'text-gray-500 dark:text-gray-500' 
+                          !product.available || activeTab === 'lixeira'
+                            ? 'text-gray-500 dark:text-gray-500'
                             : 'text-gray-800 dark:text-white'
                         }`}>
                           {product.name}
@@ -236,26 +246,33 @@ export default function Products() {
                       </div>
                     </div>
                   </td>
-                  
+
                   {activeTab !== 'lixeira' && (
                     <td className="p-4">
                       <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-md text-xs font-bold uppercase">
-                        {product.category}
+                        {categoryLabel(product.category)}
                       </span>
                     </td>
                   )}
 
                   <td className="p-4 font-bold text-gray-700 dark:text-gray-200">
-                    {Number(product.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    {hasPromotion(product) ? (
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-gray-400 line-through">{formatCurrency(product.price)}</span>
+                        <span className="text-red-600 dark:text-red-400" title="Preço promocional">{formatCurrency(effectivePrice(product))}</span>
+                      </div>
+                    ) : (
+                      formatCurrency(product.price)
+                    )}
                   </td>
-                  
+
                   {activeTab !== 'lixeira' && (
                     <td className="p-4 text-center">
-                      <button 
-                        onClick={() => toggleAvailability(product)} 
+                      <button
+                        onClick={() => toggleAvailability(product)}
                         className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center justify-center gap-1.5 mx-auto w-28 border transition-all active:scale-95 ${
-                          product.available 
-                            ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-800' 
+                          product.available
+                            ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-800'
                             : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-green-50 dark:hover:bg-green-900/20 hover:text-green-700 dark:hover:text-green-400 hover:border-green-200 dark:hover:border-green-800'
                         }`}
                       >
@@ -263,7 +280,7 @@ export default function Products() {
                       </button>
                     </td>
                   )}
-                  
+
                   <td className="p-4 text-right">
                     <div className="flex justify-end gap-2">
                       {activeTab === 'lixeira' ? (
@@ -277,10 +294,10 @@ export default function Products() {
                         </>
                       ) : (
                         <>
-                          <button onClick={() => handleOpenEdit(product)} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg">
+                          <button onClick={() => handleOpenEdit(product)} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg" title="Editar">
                             <Edit2 size={18} />
                           </button>
-                          <button onClick={() => requestDelete(product)} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg">
+                          <button onClick={() => requestDelete(product)} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg" title="Mover para Lixeira">
                             <Trash2 size={18} />
                           </button>
                         </>
@@ -294,7 +311,7 @@ export default function Products() {
         </div>
       </div>
 
-      <CreateProductModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSuccess={() => { loadProducts(); toast.success('Salvo!'); }} productToEdit={productToEdit} />
+      <CreateProductModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSuccess={loadProducts} productToEdit={productToEdit} />
       <ConfirmModal isOpen={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={actionToConfirm} title={confirmMessage.title} message={confirmMessage.desc} isDestructive={confirmMessage.isDestructive} confirmLabel={confirmMessage.confirmLabel} />
     </div>
   );

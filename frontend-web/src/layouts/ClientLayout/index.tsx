@@ -1,25 +1,33 @@
-import { useState } from 'react';
-import { Outlet, Link, useNavigate } from 'react-router-dom';
-import { 
-  ShoppingBag, ChefHat, User, LogOut,
+import { Suspense, useState } from 'react';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import {
+  ShoppingBag, User, LogOut,
   LayoutDashboard, Clock, ChevronDown, UserCog, Package,
   Sun, Moon, Monitor, Smartphone, Menu
 } from 'lucide-react';
-import toast from 'react-hot-toast'; 
+import toast from 'react-hot-toast';
 import { useCart } from '../../contexts/CartContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import ClientFooter from '../../components/ClientFooter'; 
+import ClientFooter from '../../components/ClientFooter';
 import { StoreStatusBadge } from '../../components/StoreStatusBadge';
 import ConfirmModal from '../../components/ConfirmModal';
+import BrandLogo from '../../components/BrandLogo';
+import PageLoader from '../../components/PageLoader';
+import ErrorBoundary from '../../components/ErrorBoundary';
+import { assetUrl } from '../../services/api';
+import { STORE_INFO } from '../../config/brand';
+import { homePathForRole, isStaffRole } from '../../utils/roles';
 
 export default function ClientLayout() {
   const { cartCount } = useCart();
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
-  
-  const isStaff = user?.role === 'ADMIN' || user?.role === 'EMPLOYEE';
+  const { pathname } = useLocation();
+
+  // Qualquer perfil da equipe ganha o atalho para o seu painel (Administrador → Dashboard, demais → Pedidos)
+  const isStaff = isStaffRole(user?.role);
   
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -34,16 +42,17 @@ export default function ClientLayout() {
     navigate('/'); 
   };
 
-  const ThemeIcon = () => {
-    if (theme === 'dark') return <Moon size={20} />;
-    if (theme === 'light') return <Sun size={20} />;
-    return (
-      <>
-        <Smartphone size={20} className="block md:hidden" />
-        <Monitor size={20} className="hidden md:block" />
-      </>
-    );
-  };
+  // Ícone do tema atual (elemento, não componente: evita recriar componente a cada render)
+  const themeIcon = theme === 'dark'
+    ? <Moon size={20} />
+    : theme === 'light'
+      ? <Sun size={20} />
+      : (
+        <>
+          <Smartphone size={20} className="block md:hidden" />
+          <Monitor size={20} className="hidden md:block" />
+        </>
+      );
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 flex flex-col font-sans transition-colors duration-300">
@@ -59,13 +68,8 @@ export default function ClientLayout() {
         
         {/* ESQUERDA */}
         <div className="flex items-center gap-4">
-          <Link to="/" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="flex items-center gap-2 group">
-            <div className="bg-orange-600 dark:bg-orange-500 text-white w-10 h-10 rounded-xl flex items-center justify-center group-hover:bg-orange-700 dark:group-hover:bg-orange-600 transition-colors shadow-sm">
-              <ChefHat size={22} />
-            </div>
-            <span className="font-bold text-gray-800 dark:text-gray-100 text-lg tracking-tight hidden min-[350px]:inline">
-              Torres<span className="text-orange-600 dark:text-orange-500">Burgers</span>
-            </span>
+          <Link to="/" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="flex items-center rounded-xl hover:opacity-90 transition-opacity" aria-label="Página inicial">
+            <BrandLogo size={40} nameClassName="hidden min-[350px]:inline" />
           </Link>
 
           <div className="hidden md:flex items-center gap-3 pl-4 border-l border-gray-200 dark:border-slate-700 h-8">
@@ -73,7 +77,7 @@ export default function ClientLayout() {
              <div className="flex flex-col leading-none">
                <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Funcionamento</span>
                <span className="text-xs font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1">
-                 <Clock size={10} className="text-orange-500"/> Ter a Dom: 12h às 04h
+                 <Clock size={10} className="text-orange-500"/> {STORE_INFO.openingHoursShort}
                </span>
              </div>
           </div>
@@ -93,7 +97,7 @@ export default function ClientLayout() {
               className="w-10 h-10 flex items-center justify-center text-gray-600 dark:text-gray-300 hover:text-orange-600 dark:hover:text-orange-400 bg-gray-50 dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700 rounded-xl transition-colors shadow-sm"
               title="Alterar Tema"
             >
-              <ThemeIcon />
+              {themeIcon}
             </button>
             {isThemeMenuOpen && (
               <div className="absolute right-0 top-full mt-2 w-32 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-100 dark:border-slate-700 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -113,8 +117,9 @@ export default function ClientLayout() {
           </div>
 
           {/* Carrinho */}
-          <Link 
-            to="/cart" 
+          <Link
+            to="/cart"
+            aria-label={cartCount > 0 ? `Carrinho com ${cartCount} ${cartCount === 1 ? 'item' : 'itens'}` : 'Carrinho'}
             className="relative w-10 h-10 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:text-orange-600 dark:hover:text-orange-400 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-xl transition-colors shadow-sm"
           >
             <ShoppingBag size={20} />
@@ -127,14 +132,16 @@ export default function ClientLayout() {
 
           {/* Menu de Usuário (Desktop + Mobile Integrado) */}
           <div className="relative z-50">
-             <button 
+             <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
+                aria-label={user ? 'Menu da conta' : 'Menu'}
+                aria-expanded={isMenuOpen}
                 className="flex items-center gap-1 border border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 p-0.5 rounded-xl transition-all shadow-sm bg-white dark:bg-slate-800"
               >
                 {user ? (
                    <div className="w-8 h-8 rounded-lg overflow-hidden bg-orange-50 dark:bg-slate-700 flex items-center justify-center">
                      {user.avatar ? (
-                       <img src={user.avatar.startsWith('http') ? user.avatar : `http://localhost:3000${user.avatar}`} alt="Avatar" className="w-full h-full object-cover" />
+                       <img src={assetUrl(user.avatar)} alt="Avatar" className="w-full h-full object-cover" />
                      ) : (
                        <User size={18} className="text-orange-600 dark:text-orange-500" />
                      )}
@@ -174,8 +181,8 @@ export default function ClientLayout() {
                           <Package size={18} /> Meus Pedidos
                         </Link>
                         {isStaff && (
-                           <Link to="/dashboard" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-orange-50 dark:hover:bg-slate-800 hover:text-orange-700 dark:hover:text-orange-400 rounded-xl transition-colors">
-                              <LayoutDashboard size={18} /> Painel Administrativo
+                           <Link to={homePathForRole(user.role)} onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-orange-50 dark:hover:bg-slate-800 hover:text-orange-700 dark:hover:text-orange-400 rounded-xl transition-colors">
+                              <LayoutDashboard size={18} /> {user.role === 'ADMIN' ? 'Painel Administrativo' : 'Painel da Equipe'}
                            </Link>
                         )}
                         <div className="h-px bg-gray-100 dark:bg-slate-800 mx-2 my-1"></div>
@@ -205,7 +212,13 @@ export default function ClientLayout() {
       </header>
       
       <main className="flex-1 w-full max-w-7xl mx-auto p-4 lg:p-6 pb-20 md:pb-6 dark:text-gray-100">
-        <Outlet />
+        {/* Páginas carregadas sob demanda (ex.: carrinho): o cabeçalho continua visível,
+            inclusive se a página falhar (ex.: nova versão publicada com a aba aberta) */}
+        <ErrorBoundary resetKey={pathname}>
+          <Suspense fallback={<PageLoader />}>
+            <Outlet />
+          </Suspense>
+        </ErrorBoundary>
       </main>
       
       <ClientFooter />

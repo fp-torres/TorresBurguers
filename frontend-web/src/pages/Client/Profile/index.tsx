@@ -1,14 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId, useMemo, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { 
-  User as UserIcon, Phone, Lock, Save, Camera, 
-  Eye, EyeOff, Check, X, Mail, ArrowLeft 
+import {
+  User as UserIcon, Phone, Lock, Save, Camera,
+  Eye, EyeOff, Check, X, Mail, ArrowLeft
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../../contexts/AuthContext';
-import { userService } from '../../../services/userService';
+import { userService, type UpdateUserPayload } from '../../../services/userService';
+import { assetUrl, getApiErrorMessage } from '../../../services/api';
 import { maskPhone } from '../../../utils/masks';
+import { PASSWORD_RULES_MESSAGE, PASSWORD_TOO_LONG_MESSAGE, checkPassword, isPasswordTooLong, passwordScore } from '../../../utils/password';
 import ConfirmModal from '../../../components/ConfirmModal';
+
+// Depois de salvar, volta ao cardápio (cancelado se a pessoa sair da página antes)
+const REDIRECT_AFTER_SAVE_MS = 10000;
 
 const FUN_AVATARS = [
   "https://cdn-icons-png.flaticon.com/512/3075/3075977.png", 
@@ -21,7 +26,8 @@ const FUN_AVATARS = [
 export default function ClientProfile() {
   const { user, updateUser, signOut } = useAuth();
   const navigate = useNavigate();
-  
+  const photoInputId = useId();
+
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [avatar, setAvatar] = useState(''); 
@@ -31,12 +37,15 @@ export default function ClientProfile() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   const [showPass, setShowPass] = useState(false);
-  
-  const [strength, setStrength] = useState(0);
-  const [checks, setChecks] = useState({ length: false, upper: false, special: false });
+
+  // Mesmas regras de senha da API (inclusive o limite de 72 bytes)
+  const checks = useMemo(() => checkPassword(newPassword), [newPassword]);
+  const strength = useMemo(() => passwordScore(newPassword), [newPassword]);
+  const passwordTooLong = useMemo(() => isPasswordTooLong(newPassword), [newPassword]);
 
   const [loading, setLoading] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const redirectTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -46,31 +55,20 @@ export default function ClientProfile() {
     }
   }, [user]);
 
-  useEffect(() => {
-    if (newPassword) {
-      const c = {
-        length: newPassword.length >= 9,
-        upper: /[A-Z]/.test(newPassword),
-        special: /[!@#$%^&*(),.?":{}|<>]/.test(newPassword) || /[0-9]/.test(newPassword)
-      };
-      setChecks(c);
-      let score = 0;
-      if (c.length) score++;
-      if (c.upper) score++;
-      if (c.special) score++;
-      setStrength(score);
-    } else {
-      setStrength(0);
-    }
-  }, [newPassword]);
+  // Saiu da página antes do redirecionamento: cancela o timer
+  useEffect(() => () => {
+    if (redirectTimer.current) window.clearTimeout(redirectTimer.current);
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (file) {
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { toast.error('Use uma imagem JPG, PNG ou WebP.'); return; }
       if (file.size > 5 * 1024 * 1024) { toast.error("Imagem muito grande! O limite é 5MB."); return; }
       setSelectedFile(file);
       setPreviewUrl(URL.createObjectURL(file));
-      setAvatar(''); 
+      setAvatar('');
     }
   };
 
@@ -84,52 +82,82 @@ export default function ClientProfile() {
     e.preventDefault();
     if (!user) return;
 
-    if (
-      name === user.name && 
-      phone === (user.phone || '') && 
-      avatar === (user.avatar || '') && 
-      !selectedFile && 
-      !newPassword
-    ) {
+    // Só os campos alterados (a API recusa campos desconhecidos e nunca recebe o perfil daqui).
+    // Telefone apagado vai vazio: a API limpa o telefone.
+    const data: UpdateUserPayload = {};
+    if (name.trim() !== user.name) data.name = name.trim();
+    if (phone.trim() !== (user.phone || '')) data.phone = phone.trim();
+    if (newPassword) data.password = newPassword;
+    if (avatar && avatar !== user.avatar) data.avatar = avatar;
+
+    // Sucesso só quando algo foi de fato enviado
+    if (Object.keys(data).length === 0 && !selectedFile) {
       toast("Nenhuma alteração para salvar!", { icon: "👍" });
       return;
     }
 
-    if (newPassword && (strength < 3 || newPassword !== confirmPass)) {
-      toast.error('Para alterar a senha, ela precisa ser FORTE e confirmada corretamente.');
+    if (newPassword && strength < 3) {
+      toast.error(PASSWORD_RULES_MESSAGE);
+      return;
+    }
+    if (passwordTooLong) {
+      toast.error(PASSWORD_TOO_LONG_MESSAGE);
+      return;
+    }
+    if (newPassword && newPassword !== confirmPass) {
+      toast.error('A confirmação não confere com a nova senha.');
+      return;
+    }
+    if (!name.trim()) {
+      toast.error('Informe seu nome.');
       return;
     }
 
     setLoading(true);
     try {
-      const data: any = {};
-      if (name !== user.name) data.name = name;
-      if (phone !== user.phone) data.phone = phone;
-      if (newPassword) data.password = newPassword;
-      if (avatar && avatar !== user.avatar) data.avatar = avatar;
-
       const updated = await userService.update(user.id, data, selectedFile || undefined);
-      
-      updateUser(updated);
+
+      // A sessão guarda só os campos públicos (o AuthContext descarta o resto)
+      updateUser({
+        ...user,
+        name: updated.name ?? user.name,
+        email: updated.email ?? user.email,
+        phone: updated.phone ?? undefined,
+        avatar: updated.avatar ?? undefined,
+      });
       toast.success('Perfil atualizado com sucesso!');
-      
+
       setNewPassword('');
       setConfirmPass('');
       setSelectedFile(null);
+      setPreviewUrl('');
 
-      setTimeout(() => { navigate('/'); }, 10000); 
+      if (redirectTimer.current) window.clearTimeout(redirectTimer.current);
+      redirectTimer.current = window.setTimeout(() => { navigate('/'); }, REDIRECT_AFTER_SAVE_MS);
 
     } catch (error) {
-      toast.error('Erro ao atualizar perfil.');
+      toast.error(getApiErrorMessage(error, 'Erro ao atualizar perfil.'));
     } finally {
       setLoading(false);
     }
   };
 
+  async function handleDeleteAccount() {
+    if (!user) return;
+    try {
+      await userService.deleteAccount(user.id);
+      signOut();
+      toast.success('Sua conta foi excluída.');
+      navigate('/');
+    } catch (error) {
+      // Ex.: um Administrador não pode excluir a própria conta (400)
+      toast.error(getApiErrorMessage(error, 'Não foi possível excluir a conta.'));
+    }
+  }
+
   const getDisplayImage = () => {
     if (previewUrl) return previewUrl;
-    if (avatar) return avatar.startsWith('http') ? avatar : `http://localhost:3000${avatar}`; 
-    return null;
+    return assetUrl(avatar) ?? null;
   };
 
   return (
@@ -157,9 +185,21 @@ export default function ClientProfile() {
               </div>
             )}
             
-            <label className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
+            {/* Campo de arquivo visualmente oculto, mas focável pelo teclado (o rótulo aparece ao focar) */}
+            <input
+              id={photoInputId}
+              type="file"
+              className="sr-only peer"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handleFileChange}
+            />
+            <label
+              htmlFor={photoInputId}
+              title="Enviar foto"
+              className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 peer-focus-visible:opacity-100 peer-focus-visible:ring-4 peer-focus-visible:ring-inset peer-focus-visible:ring-orange-500 rounded-full cursor-pointer transition-opacity"
+            >
               <Camera className="text-white" size={24} />
-              <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+              <span className="sr-only">Enviar foto de perfil (JPG, PNG ou WebP até 5MB)</span>
             </label>
           </div>
           
@@ -171,9 +211,11 @@ export default function ClientProfile() {
                 key={idx}
                 type="button"
                 onClick={() => handleSelectIcon(url)}
+                aria-label={`Usar o ícone ${idx + 1} como foto`}
+                aria-pressed={avatar === url && !previewUrl}
                 className={`w-10 h-10 rounded-full border-2 transition-all hover:scale-110 p-1 bg-gray-50 dark:bg-slate-800 ${avatar === url && !previewUrl ? 'border-orange-500 scale-110' : 'border-transparent'}`}
               >
-                <img src={url} className="w-full h-full object-contain" />
+                <img src={url} alt="" className="w-full h-full object-contain" />
               </button>
             ))}
           </div>
@@ -222,7 +264,7 @@ export default function ClientProfile() {
               onChange={e => setNewPassword(e.target.value)}
               className="w-full p-3 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-600 rounded-xl outline-none pr-10 dark:text-white" 
             />
-            <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-3.5 text-gray-400">
+            <button type="button" onClick={() => setShowPass(!showPass)} aria-label={showPass ? 'Ocultar senha' : 'Mostrar senha'} className="absolute right-3 top-3.5 text-gray-400">
               {showPass ? <EyeOff size={18}/> : <Eye size={18}/>}
             </button>
           </div>
@@ -239,10 +281,13 @@ export default function ClientProfile() {
                 <span className={`flex items-center gap-1 ${checks.upper ? 'text-green-600 font-bold' : 'text-gray-400'}`}>
                   {checks.upper ? <Check size={10}/> : <X size={10}/>} Maiúscula
                 </span>
-                <span className={`flex items-center gap-1 ${checks.special ? 'text-green-600 font-bold' : 'text-gray-400'}`}>
-                  {checks.special ? <Check size={10}/> : <X size={10}/>} Número/Símbolo
+                <span className={`flex items-center gap-1 ${checks.numberOrSymbol ? 'text-green-600 font-bold' : 'text-gray-400'}`}>
+                  {checks.numberOrSymbol ? <Check size={10}/> : <X size={10}/>} Número/Símbolo
                 </span>
               </div>
+              {passwordTooLong && (
+                <p role="alert" className="text-[11px] font-bold text-red-500">{PASSWORD_TOO_LONG_MESSAGE}</p>
+              )}
               
               <input 
                 type="password" 
@@ -271,11 +316,7 @@ export default function ClientProfile() {
       <ConfirmModal 
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
-        onConfirm={async () => {
-          await userService.deleteAccount(user!.id);
-          signOut();
-          navigate('/');
-        }}
+        onConfirm={handleDeleteAccount}
         title="Excluir Conta?"
         message="Seus dados serão enviados para a lixeira do sistema. Esta ação pode ser revertida apenas pelo administrador."
         confirmLabel="Sim, excluir"

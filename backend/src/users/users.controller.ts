@@ -1,87 +1,133 @@
-import { 
-  Controller, Get, Post, Body, Patch, Param, Delete, 
-  UseGuards, ParseIntPipe, UseInterceptors, UploadedFile, Request, UnauthorizedException
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  Req,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { AuthGuard } from '@nestjs/passport';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { AuthGuard } from '@nestjs/passport';
+import { UserRole } from './entities/user.entity';
+import {
+  assertCanDeleteUser,
+  assertSelfOrAdmin,
+  resolveRoleChange,
+  resolveSignupRole,
+} from './users.policy';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
-import { OptimizeImagePipe } from '../common/pipes/optimize-image.pipe'; // <--- IMPORT NOVO
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
+import type {
+  AuthenticatedRequest,
+  OptionalAuthRequest,
+} from '../auth/auth-user';
+import { withOptimizedImage } from '../common/pipes/optimize-image.pipe';
+import { ParseIdPipe } from '../common/pipes/parse-id.pipe';
+import { ImageFileInterceptor } from '../common/uploads/image-upload';
 
+@ApiTags('Usuários')
+@ApiBearerAuth()
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get('trash')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN')
+  @Roles(UserRole.ADMIN)
   findDeleted() {
     return this.usersService.findDeleted();
   }
 
   @Patch(':id/restore')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN')
-  restore(@Param('id', ParseIntPipe) id: number) {
+  @Roles(UserRole.ADMIN)
+  restore(@Param('id', ParseIdPipe) id: number) {
     return this.usersService.restore(id);
   }
 
+  // Cadastro público de clientes. Contas da equipe só com token de ADMIN (autenticação opcional).
   @Post()
-  @UseInterceptors(FileInterceptor('file')) // <--- Removemos diskStorage e config manual
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiConsumes('application/json', 'multipart/form-data')
+  @UseInterceptors(ImageFileInterceptor('file'))
   create(
     @Body() createUserDto: CreateUserDto,
-    @UploadedFile(OptimizeImagePipe) file?: Express.Multer.File // <--- Pipe aqui
+    @Req() req: OptionalAuthRequest,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (file) {
-      // O Pipe converte para WebP e define o filename correto
-      (createUserDto as any).avatar = `/uploads/${file.filename}`;
-    }
-    return this.usersService.create(createUserDto);
+    const role = resolveSignupRole(createUserDto.role, req.user);
+    // Foto otimizada (.webp) só depois do corpo validado e do perfil autorizado;
+    // se o cadastro falhar (ex.: e-mail já usado), o arquivo recém-gravado é apagado
+    return withOptimizedImage(file, (filename) => {
+      if (filename) createUserDto.avatar = `/uploads/${filename}`;
+      return this.usersService.create(createUserDto, role);
+    });
   }
 
   @Get()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN')
+  @Roles(UserRole.ADMIN)
   findAll() {
     return this.usersService.findAll();
   }
 
   @Get(':id')
   @UseGuards(AuthGuard('jwt'))
-  findOne(@Param('id', ParseIntPipe) id: number) {
+  findOne(
+    @Param('id', ParseIdPipe) id: number,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    assertSelfOrAdmin(req.user, id);
     return this.usersService.findOne(id);
   }
 
+  // Próprio usuário ou ADMIN; só o ADMIN altera o perfil de acesso (e nunca o próprio)
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'))
-  @UseInterceptors(FileInterceptor('file')) // <--- Removemos diskStorage
+  @ApiConsumes('application/json', 'multipart/form-data')
+  @UseInterceptors(ImageFileInterceptor('file'))
   update(
-    @Param('id', ParseIntPipe) id: number, 
+    @Param('id', ParseIdPipe) id: number,
     @Body() updateUserDto: UpdateUserDto,
-    @UploadedFile(OptimizeImagePipe) file?: Express.Multer.File // <--- Pipe aqui
+    @Req() req: AuthenticatedRequest,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (file) {
-      (updateUserDto as any).avatar = `/uploads/${file.filename}`;
-    }
-    return this.usersService.update(id, updateUserDto);
+    assertSelfOrAdmin(req.user, id);
+    const role = resolveRoleChange(updateUserDto.role, req.user, id);
+    return withOptimizedImage(file, (filename) => {
+      if (filename) updateUserDto.avatar = `/uploads/${filename}`;
+      return this.usersService.update(id, { ...updateUserDto, role });
+    });
   }
 
+  // Exclusão lógica: a própria conta ou ADMIN (o ADMIN não exclui a si mesmo)
   @Delete(':id')
   @UseGuards(AuthGuard('jwt'))
-  remove(@Param('id', ParseIntPipe) id: number, @Request() req) {
-    if (req.user.role === 'ADMIN' || req.user.id === id) {
-       return this.usersService.remove(id);
-    }
-    throw new UnauthorizedException('Você não tem permissão para realizar esta ação.');
+  remove(
+    @Param('id', ParseIdPipe) id: number,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    assertCanDeleteUser(req.user, id);
+    return this.usersService.remove(id);
   }
 
   @Delete(':id/permanent')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN')
-  removePermanent(@Param('id', ParseIntPipe) id: number) {
+  @Roles(UserRole.ADMIN)
+  removePermanent(
+    @Param('id', ParseIdPipe) id: number,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    assertCanDeleteUser(req.user, id);
     return this.usersService.hardDelete(id);
   }
 }

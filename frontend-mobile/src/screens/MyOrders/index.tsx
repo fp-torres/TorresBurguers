@@ -1,128 +1,136 @@
 import React, { useState, useCallback, useContext } from 'react';
-import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
 
 import { AppStackParamList } from '../../routes/app.routes';
 import { ThemeContext } from '../../contexts/ThemeContext';
 import api from '../../services/api';
-
-// Mapeamento baseado no backend
-interface Order {
-  id: number;
-  status: string;
-  type: string;
-  total_price: string;
-  created_at: string;
-  items: any[];
-}
+import {
+  Order, addressLines, itemCountLabel, itemsSummary, orderAddress, orderPaymentStatusLabel, orderStatusBadge,
+  paymentMethodLabel, paymentStatusTextClass,
+} from '../../utils/orders';
+import { formatDateTime, formatPrice } from '../../utils/format';
+import { getErrorMessage } from '../../utils/errors';
 
 export default function MyOrders() {
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const { activeTheme } = useContext(ThemeContext);
+  const insets = useSafeAreaInsets();
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const fetchMyOrders = useCallback(async () => {
+    try {
+      const response = await api.get<Order[] | null>('/orders/my-orders');
+      const list = Array.isArray(response.data) ? response.data : [];
+      // Mais recentes primeiro
+      setOrders([...list].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Não foi possível carregar seus pedidos.'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   // useFocusEffect faz a tela recarregar a API toda vez que for aberta
   useFocusEffect(
     useCallback(() => {
-      async function fetchMyOrders() {
-        setLoading(true);
-        try {
-          const response = await api.get('/orders/my-orders');
-          setOrders(response.data);
-        } catch (error) {
-          console.error('Erro ao buscar pedidos:', error);
-          Alert.alert('Ops!', 'Não foi possível carregar seus pedidos.');
-        } finally {
-          setLoading(false);
-        }
-      }
       fetchMyOrders();
-    }, [])
+    }, [fetchMyOrders])
   );
 
-  const formatPrice = (price: string | number) => {
-    return Number(price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  };
+  async function handleRefresh() {
+    setRefreshing(true);
+    await fetchMyOrders();
+    setRefreshing(false);
+  }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'PENDING':
-        return { label: 'Aguardando', bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-600 dark:text-orange-400' };
-      case 'PREPARING':
-        return { label: 'Preparando', bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-600 dark:text-blue-400' };
-      case 'READY_FOR_PICKUP':
-        return { label: 'Pronto p/ Retirar', bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-600 dark:text-purple-400' };
-      case 'DELIVERING':
-        return { label: 'Saiu p/ Entrega', bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-400' };
-      case 'DONE':
-        return { label: 'Concluído', bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-600 dark:text-green-400' };
-      case 'CANCELED':
-        return { label: 'Cancelado', bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-600 dark:text-red-400' };
-      default:
-        return { label: status, bg: 'bg-gray-100 dark:bg-slate-700', text: 'text-gray-600 dark:text-slate-300' };
-    }
-  };
+  function handleGoBack() {
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.popTo('Home');
+  }
 
   const renderOrder = ({ item }: { item: Order }) => {
-    const badge = getStatusBadge(item.status);
-    const totalItems = item.items ? item.items.reduce((acc, curr) => acc + curr.quantity, 0) : 0;
+    const badge = orderStatusBadge(item.status, item.type);
+    const summary = itemsSummary(item);
+    const address = item.type === 'DELIVERY' ? orderAddress(item) : null;
+    const paymentStatus = item.payment_status ? orderPaymentStatusLabel(item) : '';
 
     return (
-      <View className="bg-white dark:bg-slate-800 p-5 rounded-2xl mb-4 border border-gray-100 dark:border-transparent shadow-sm dark:shadow-md">
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() => navigation.navigate('OrderDetails', { order_id: item.id })}
+        className="bg-white dark:bg-slate-800 p-5 rounded-2xl mb-4 border border-gray-100 dark:border-transparent shadow-sm dark:shadow-md"
+      >
         <View className="flex-row justify-between items-start mb-3">
-          <View>
+          <View className="flex-1 mr-2">
             <Text className="text-slate-900 dark:text-white font-bold text-lg mb-1">
               Pedido #{item.id}
             </Text>
             <Text className="text-slate-500 dark:text-slate-400 text-sm">
-              {formatDate(item.created_at)}
+              {formatDateTime(item.created_at)}
             </Text>
           </View>
-          
+
           <View className={`px-3 py-1.5 rounded-full ${badge.bg}`}>
             <Text className={`font-bold text-xs ${badge.text}`}>{badge.label}</Text>
           </View>
         </View>
 
-        <View className="flex-row items-center mb-4">
+        <View className="flex-row items-center mb-2">
           <Feather name={item.type === 'DELIVERY' ? 'truck' : 'shopping-bag'} size={16} color={activeTheme === 'dark' ? '#9ca3af' : '#64748b'} />
-          <Text className="text-slate-600 dark:text-slate-300 ml-2 text-sm">
-            {item.type === 'DELIVERY' ? 'Entrega' : 'Retirada'} • {totalItems} {totalItems === 1 ? 'item' : 'itens'}
+          <Text className="text-slate-600 dark:text-slate-300 ml-2 text-sm flex-1" numberOfLines={1}>
+            {item.type === 'DELIVERY' ? 'Entrega' : 'Retirada'} • {itemCountLabel(item)} • {paymentMethodLabel(item.payment_method)}
           </Text>
         </View>
+
+        {summary ? (
+          <Text className="text-slate-500 dark:text-slate-400 text-sm mb-1" numberOfLines={2}>{summary}</Text>
+        ) : null}
+
+        {address ? (
+          <View className="flex-row items-center mb-1">
+            <Feather name="map-pin" size={12} color={activeTheme === 'dark' ? '#9ca3af' : '#64748b'} />
+            <Text className="text-slate-500 dark:text-slate-400 text-xs ml-1.5 flex-1" numberOfLines={1}>
+              {addressLines(address).join(' • ')}
+            </Text>
+          </View>
+        ) : null}
+
+        {paymentStatus ? (
+          <Text className={`text-xs font-bold mb-3 ${paymentStatusTextClass(item.payment_status)}`}>
+            Pagamento: {paymentStatus}
+          </Text>
+        ) : <View className="mb-3" />}
 
         <View className="flex-row justify-between items-center pt-3 border-t border-gray-100 dark:border-slate-700">
           <Text className="text-slate-900 dark:text-white font-bold text-lg">
             {formatPrice(item.total_price)}
           </Text>
-          
-          {/* BOTÃO CONECTADO NA NAVEGAÇÃO AGORA */}
-          <TouchableOpacity 
-            className="flex-row items-center px-4 py-2 bg-orange-50 dark:bg-orange-600/10 rounded-lg"
-            onPress={() => navigation.navigate('OrderDetails', { order_id: item.id })}
-          >
+
+          <View className="flex-row items-center px-4 py-2 bg-orange-50 dark:bg-orange-600/10 rounded-lg">
             <Text className="text-orange-600 dark:text-orange-500 font-bold mr-2">Ver detalhes</Text>
             <Feather name="chevron-right" size={16} color="#f97316" />
-          </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
   return (
-    <View className="flex-1 bg-gray-50 dark:bg-slate-900 pt-16">
+    <View className="flex-1 bg-gray-50 dark:bg-slate-900" style={{ paddingTop: insets.top + 16 }}>
       <View className="flex-row items-center px-6 mb-6">
-        <TouchableOpacity 
-          onPress={() => navigation.goBack()}
+        <TouchableOpacity
+          onPress={handleGoBack}
+          accessibilityRole="button"
+          accessibilityLabel="Voltar"
           className="w-10 h-10 bg-white dark:bg-slate-800 rounded-full justify-center items-center shadow-sm dark:shadow-none border border-gray-200 dark:border-transparent"
         >
           <Feather name="arrow-left" size={24} color="#f97316" />
@@ -140,13 +148,19 @@ export default function MyOrders() {
           keyExtractor={(item) => String(item.id)}
           renderItem={renderOrder}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: insets.bottom + 40 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#f97316" colors={['#f97316']} />}
           ListEmptyComponent={
             <View className="items-center justify-center mt-20">
-              <Feather name="list" size={64} className="text-gray-300 dark:text-slate-700 mb-4" />
-              <Text className="text-slate-500 dark:text-slate-400 text-lg text-center leading-7">
-                Você ainda não fez nenhum pedido.{"\n"}Que tal experimentar nosso cardápio hoje?
+              <Feather name={errorMessage ? 'wifi-off' : 'list'} size={64} color={activeTheme === 'dark' ? '#334155' : '#cbd5e1'} />
+              <Text className="text-slate-500 dark:text-slate-400 text-lg text-center leading-7 mt-4">
+                {errorMessage ?? 'Você ainda não fez nenhum pedido.\nQue tal experimentar nosso cardápio hoje?'}
               </Text>
+              {!errorMessage && (
+                <TouchableOpacity className="mt-6 bg-orange-600 px-6 py-3 rounded-xl" onPress={() => navigation.popTo('Home')}>
+                  <Text className="text-white font-bold">Ver cardápio</Text>
+                </TouchableOpacity>
+              )}
             </View>
           }
         />

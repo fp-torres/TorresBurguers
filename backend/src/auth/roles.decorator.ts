@@ -1,4 +1,6 @@
 import { SetMetadata } from '@nestjs/common';
 
-// Cria a chave 'roles' para guardarmos quem pode acessar o quê
-export const Roles = (...roles: string[]) => SetMetadata('roles', roles);
+export const ROLES_KEY = 'roles';
+
+// Define quais perfis podem acessar a rota (conferido pelo RolesGuard, sempre depois do AuthGuard('jwt'))
+export const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);

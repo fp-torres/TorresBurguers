@@ -1,38 +1,61 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { StoreConfig } from './entities/store-config.entity';
+import { omitUndefined } from '../common/transforms';
 import { UpdateStoreDto } from './dto/update-store.dto';
+import { StoreConfig } from './entities/store-config.entity';
 
 @Injectable()
 export class StoreService implements OnModuleInit {
+  private readonly logger = new Logger(StoreService.name);
+
   constructor(
     @InjectRepository(StoreConfig)
-    private storeRepository: Repository<StoreConfig>,
+    private readonly storeRepository: Repository<StoreConfig>,
   ) {}
 
+  // Garante a configuração da loja já na subida da API
   async onModuleInit() {
-    const config = await this.storeRepository.findOne({ where: { id: 1 } });
-    if (!config) {
-      await this.storeRepository.save({ id: 1, is_open: true });
-      console.log('⚙️ Configuração da Loja criada (ID 1)');
+    try {
+      await this.getStatus();
+    } catch (error) {
+      this.logger.warn(
+        `Não foi possível preparar a configuração da loja: ${(error as Error).message}`,
+      );
     }
   }
 
-  async getStatus() {
-    return this.storeRepository.findOne({ where: { id: 1 } });
+  /**
+   * Status atual da loja: { id, is_open, opening_message, closing_message }.
+   * Se ainda não houver configuração, cria a padrão (loja aberta).
+   */
+  async getStatus(): Promise<StoreConfig> {
+    const [config] = await this.storeRepository.find({
+      order: { id: 'ASC' },
+      take: 1,
+    });
+    if (config) return config;
+
+    const created = await this.storeRepository.save(
+      this.storeRepository.create({
+        is_open: true,
+        opening_message: null,
+        closing_message: null,
+      }),
+    );
+    this.logger.log('Configuração da loja criada (loja aberta).');
+    return created;
   }
 
-  async toggleStatus(updateStoreDto: UpdateStoreDto) {
-    const config = await this.storeRepository.findOne({ where: { id: 1 } });
-    if (config) {
-      this.storeRepository.merge(config, updateStoreDto);
-      return this.storeRepository.save(config);
-    }
+  /** Abre/fecha a loja e atualiza as mensagens da vitrine. Corpo vazio não altera nada. */
+  async updateStatus(dto: UpdateStoreDto): Promise<StoreConfig> {
+    const config = await this.getStatus();
+    this.storeRepository.merge(config, omitUndefined(dto));
+    return this.storeRepository.save(config);
   }
 
   async isOpen(): Promise<boolean> {
-    const config = await this.storeRepository.findOne({ where: { id: 1 } });
-    return config ? config.is_open : false;
+    const config = await this.getStatus();
+    return config.is_open;
   }
 }

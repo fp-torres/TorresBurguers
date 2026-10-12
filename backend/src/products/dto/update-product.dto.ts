@@ -1,21 +1,11 @@
-import { PartialType } from '@nestjs/mapped-types';
+import { PartialType } from '@nestjs/swagger';
 import { CreateProductDto } from './create-product.dto';
-import { IsArray, IsOptional, IsNumber, IsBoolean } from 'class-validator';
-import { Transform } from 'class-transformer';
 
-export class UpdateProductDto extends PartialType(CreateProductDto) {
-  @IsOptional()
-  @IsArray()
-  @IsNumber({}, { each: true })
-  allowed_addons_ids?: number[];
-
-  // Força a conversão correta de string "true"/"false" para boolean
-  @IsOptional()
-  @IsBoolean()
-  @Transform(({ value }) => {
-    if (value === 'true' || value === true) return true;
-    if (value === 'false' || value === false) return false;
-    return value;
-  })
-  available?: boolean;
-}
+/**
+ * Atualização parcial: envie só o que mudou (JSON ou multipart, como no cadastro).
+ * skipNullProperties: false → null em campo obrigatório (nome, preço, categoria...) é recusado,
+ * enquanto os opcionais aceitam null para limpar (promotion_price, image).
+ */
+export class UpdateProductDto extends PartialType(CreateProductDto, {
+  skipNullProperties: false,
+}) {}

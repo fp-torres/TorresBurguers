@@ -8,6 +8,6 @@ import { StoreConfig } from './entities/store-config.entity';
   imports: [TypeOrmModule.forFeature([StoreConfig])],
   controllers: [StoreController],
   providers: [StoreService],
-  exports: [StoreService], 
+  exports: [StoreService],
 })
 export class StoreModule {}
