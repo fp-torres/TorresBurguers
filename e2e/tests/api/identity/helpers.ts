@@ -9,15 +9,17 @@ import { crc32, deflateSync } from 'node:zlib';
 import { expect, request, type APIRequestContext, type APIResponse } from '@playwright/test';
 import { E2E } from '../../../support/env';
 import { type DefaultUserKey } from '../../../support/users';
-import { body, login, loginAs, uid, uniqueEmail, type Session } from '../../../support/api';
+import { body, demoStore, login, loginAs, uid, uniqueEmail, type Session } from '../../../support/api';
 
-export { body, uid, uniqueEmail };
+export { body, demoStore, uid, uniqueEmail };
 export type { Session };
 
 export const STRONG_PASSWORD = 'SenhaForte@123';
+/** Perfis da equipe de uma loja (o ADMIN só cria/edita estes; clientes são contas globais). */
 export const STAFF_ROLES = ['ADMIN', 'EMPLOYEE', 'KITCHEN', 'COURIER'] as const;
 export const ALL_ROLES = [...STAFF_ROLES, 'CLIENT'] as const;
 export type Role = (typeof ALL_ROLES)[number];
+export type StaffRole = (typeof STAFF_ROLES)[number];
 
 /** Id válido para a coluna integer, mas que não existe (rotas destrutivas nunca atingem dados reais). */
 export const MISSING_ID = 2_147_483_000;
@@ -97,10 +99,13 @@ export async function cleanupTrackedStaff(): Promise<void> {
   await api.dispose();
 }
 
-/** Conta da equipe (ou outro cliente) criada pelo ADMIN padrão, já com login feito. */
+/**
+ * Conta da equipe da loja demo criada pelo ADMIN padrão (cadastro direto), já com login feito.
+ * Clientes não entram na equipe: eles se cadastram sozinhos (newClient).
+ */
 export async function newUserWithRole(
   api: APIRequestContext,
-  role: Role,
+  role: StaffRole,
   overrides: Record<string, unknown> = {},
 ): Promise<TestUser> {
   const admin = await sessionOf(api, 'admin');
@@ -113,8 +118,19 @@ export async function newUserWithRole(
   const res = await api.post('/users', { data, headers: bearer(admin.token) });
   expect(res.status(), `cadastro de ${role} pelo ADMIN: ${await res.text()}`).toBe(201);
   const session = await login(api, String(data.email), String(data.password));
-  if (role !== 'CLIENT') trackStaff(session.user.id);
+  trackStaff(session.user.id);
   return { ...session, email: String(data.email), password: String(data.password) };
+}
+
+/**
+ * Conta vista pelo superpainel (GET /platform/users/:id, inclusive na lixeira): clientes são contas
+ * globais, geridas pela plataforma, e o ADMIN de uma loja não as enxerga.
+ */
+export async function platformAccount(api: APIRequestContext, userId: number): Promise<Record<string, any>> {
+  const superadmin = await sessionOf(api, 'superadmin');
+  const res = await api.get(`/platform/users/${userId}`, { headers: bearer(superadmin.token) });
+  expect(res.status(), `GET /platform/users/${userId}: ${await res.text()}`).toBe(200);
+  return res.json();
 }
 
 /** Sessão de um ator da matriz de autorização: os perfis da equipe usam os usuários padrão. */

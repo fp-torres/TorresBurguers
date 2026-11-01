@@ -1,6 +1,7 @@
 /**
  * Regras puras dos pagamentos (sem Mercado Pago, sem Nest). Cobertas por payment-rules.spec.ts.
  */
+import { createHash } from 'crypto';
 import { envFlag, isDevOrTest } from '../config/env';
 import { toCents } from '../orders/order-rules';
 
@@ -18,6 +19,29 @@ export const PAYMENT_ALREADY_USED_MESSAGE =
   'Este pagamento já foi utilizado em outro pedido.';
 export const PAYMENT_ORDER_CANCELED_MESSAGE =
   'Este pagamento já foi usado em um pedido que foi cancelado (o valor é estornado). Faça um novo pagamento.';
+/** 404 uniforme: pagamento inexistente, de outra loja ou de outra pessoa. */
+export const PAYMENT_NOT_FOUND_MESSAGE = 'Pagamento não encontrado.';
+/** POST /orders com paymentId desconhecido (ou de outra loja). */
+export const PAYMENT_NOT_FOUND_OR_EXPIRED_MESSAGE =
+  'Pagamento não encontrado ou expirado. Faça o pagamento novamente.';
+/** Loja sem credencial do Mercado Pago utilizável (fora do sandbox) → 503. */
+export const ONLINE_PAYMENT_UNAVAILABLE_MESSAGE =
+  'Esta loja ainda não aceita pagamento online. Escolha pagar na entrega ou na retirada.';
+/** Plano da loja sem o recurso online_payments → 403. */
+export const ONLINE_PAYMENT_NOT_IN_PLAN_MESSAGE =
+  'Esta loja não oferece pagamento online. Escolha pagar na entrega ou na retirada.';
+
+/** Cobranças pendentes (PIX ou cartão em análise) que um cliente pode ter ao mesmo tempo numa loja. */
+export const MAX_PENDING_CHARGES_PER_CUSTOMER = 5;
+/** Teto de cobranças pendentes do cliente na loja → 429. */
+export const TOO_MANY_PENDING_CHARGES_MESSAGE =
+  'Você já tem pagamentos pendentes nesta loja. Pague ou cancele um deles antes de gerar outro.';
+/**
+ * Pagamento aprovado numa loja que deixou de vender (suspensa, desativada ou assinatura bloqueada):
+ * vai para finalize_error (o cliente pode ver), então nunca leva o motivo interno do bloqueio.
+ */
+export const STORE_CANNOT_SELL_REASON =
+  'a loja não está aceitando pedidos no momento';
 
 /** Chave de idempotência enviada pelos apps (uuid ou similar). */
 export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
@@ -176,12 +200,81 @@ export function mercadoPagoDate(date: Date): string {
   return date.toISOString().replace('Z', '+00:00');
 }
 
-/** Referência externa dos pagamentos deste servidor: "<slug>-cliente-<userId>-<timestamp>". */
+/** Credencial de teste do Mercado Pago ("TEST-..."): só vale em development/test. */
+export function isTestAccessToken(token: string): boolean {
+  return token.trim().startsWith('TEST-');
+}
+
+/**
+ * Prazo do PIX em minutos: com o Mercado Pago de verdade (credencial da loja ou MP_ACCESS_TOKEN),
+ * nunca menos que o mínimo dele; o PIX simulado do sandbox usa o prazo configurado.
+ */
+export function pixMinutesFor(
+  mode: Pick<PaymentMode, 'pixExpirationMinutes'>,
+  withMercadoPago: boolean,
+): number {
+  return withMercadoPago
+    ? Math.max(mode.pixExpirationMinutes, MERCADO_PAGO_MIN_PIX_MINUTES)
+    : mode.pixExpirationMinutes;
+}
+
+/** Referência externa dos pagamentos deste servidor: "<marca>-loja-<storeId>-cliente-<userId>-<timestamp>". */
+export function externalReferenceFor(
+  brandSlug: string,
+  storeId: number,
+  userId: number,
+  timestamp: number,
+): string {
+  return `${brandSlug}-loja-${storeId}-cliente-${userId}-${timestamp}`;
+}
+
+export interface ExternalReference {
+  /** null no formato antigo, da versão de loja única ("<marca>-cliente-<userId>-<timestamp>"). */
+  storeId: number | null;
+  userId: number;
+}
+
+/** Loja e cliente da referência externa (formato atual ou antigo); outro formato → null. */
+export function parseExternalReference(
+  reference?: string | null,
+): ExternalReference | null {
+  const text = reference ?? '';
+  const current = /-loja-(\d+)-cliente-(\d+)-\d+$/.exec(text);
+  if (current)
+    return { storeId: Number(current[1]), userId: Number(current[2]) };
+  const legacy = /-cliente-(\d+)-\d+$/.exec(text);
+  return legacy ? { storeId: null, userId: Number(legacy[1]) } : null;
+}
+
+/** Cliente da referência externa (formato atual ou antigo). */
 export function externalReferenceUserId(
   reference?: string | null,
 ): number | null {
-  const match = /-cliente-(\d+)-\d+$/.exec(reference ?? '');
-  return match ? Number(match[1]) : null;
+  return parseExternalReference(reference)?.userId ?? null;
+}
+
+/**
+ * X-Idempotency-Key enviada ao Mercado Pago quando o app manda uma idempotencyKey: derivada da loja,
+ * do cliente e da chave (a mesma tentativa repete a mesma chave; a mesma chave em outra loja ou de
+ * outro cliente nunca devolve o pagamento de outra pessoa). Formato UUID (o recomendado pelo Mercado Pago).
+ */
+export function mercadoPagoIdempotencyKey(
+  storeId: number,
+  userId: number,
+  key: string,
+): string {
+  const hex = createHash('sha256')
+    .update(`loja:${storeId}|cliente:${userId}|chave:${key}`, 'utf8')
+    .digest('hex');
+  // Versão 5 e variante RFC 4122 (UUID derivado de nome)
+  const variant = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `5${hex.slice(13, 16)}`,
+    `${variant}${hex.slice(17, 20)}`,
+    hex.slice(20, 32),
+  ].join('-');
 }
 
 function paymentIdFrom(value: unknown): number | null {
@@ -218,6 +311,23 @@ export function parseWebhookPaymentId(
     paymentIdFrom(query['data.id']) ??
     paymentIdFrom(query.id)
   );
+}
+
+/**
+ * JSON com as chaves em ordem alfabética (campos undefined omitidos): compara o pedido de um PIX novo
+ * com o guardado no pagamento (o jsonb do banco não preserva a ordem das chaves).
+ */
+export function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => item !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
 }
 
 /** Nome do pagador do PIX a partir do nome do usuário logado ("Maria da Silva" → Maria / da Silva). */

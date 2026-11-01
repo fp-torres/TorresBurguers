@@ -139,17 +139,34 @@ test.describe('password_hash/senha nunca aparecem nas respostas com usuários', 
     trackStaff(kitchen.id);
   });
 
-  test('GET /users (todos os usuários)', async ({ request }) => {
+  test('GET /users (equipe da loja)', async ({ request }) => {
     const admin = await sessionOf(request, 'admin');
     const users = await expectClean(await request.get('/users', { headers: bearer(admin.token) }), 'GET /users');
-    expect(users.length).toBeGreaterThan(5);
+    expect(users.length, 'equipe padrão (4) + entregador do teste').toBeGreaterThanOrEqual(5);
   });
 
-  test('GET /users/:id (próprio usuário e ADMIN)', async ({ request }) => {
+  test('GET /users/:id (próprio usuário e ADMIN na equipe)', async ({ request }) => {
     const admin = await sessionOf(request, 'admin');
     await expectClean(await request.get(`/users/${client.user.id}`, { headers: bearer(client.token) }), 'GET /users/:id próprio');
-    await expectClean(await request.get(`/users/${client.user.id}`, { headers: bearer(admin.token) }), 'GET /users/:id ADMIN');
+    await expectClean(await request.get(`/users/${courier.user.id}`, { headers: bearer(admin.token) }), 'GET /users/:id ADMIN');
     await expectClean(await request.get(`/users/${admin.user.id}`, { headers: bearer(admin.token) }), 'GET /users/:id do ADMIN');
+  });
+
+  test('GET /auth/me e contas no superpainel (GET /platform/users e /platform/users/:id)', async ({ request }) => {
+    for (const key of ['admin', 'client', 'superadmin'] as const) {
+      const session = await sessionOf(request, key);
+      await expectClean(await request.get('/auth/me', { headers: bearer(session.token) }), `GET /auth/me (${key})`);
+    }
+    const superadmin = await sessionOf(request, 'superadmin');
+    const list = await expectClean(
+      await request.get('/platform/users?pageSize=100', { headers: bearer(superadmin.token) }),
+      'GET /platform/users',
+    );
+    expect(list.items.length).toBeGreaterThan(0);
+    await expectClean(
+      await request.get(`/platform/users/${client.user.id}`, { headers: bearer(superadmin.token) }),
+      'GET /platform/users/:id',
+    );
   });
 
   test('PATCH /users/:id (JSON, troca de senha e multipart)', async ({ request }) => {
@@ -158,24 +175,33 @@ test.describe('password_hash/senha nunca aparecem nas respostas com usuários', 
       await request.patch(`/users/${user.user.id}`, { headers: bearer(user.token), data: { name: 'Higiene' } }),
       'PATCH JSON',
     );
-    await expectClean(
+    const changed = await expectClean(
       await request.patch(`/users/${user.user.id}`, { headers: bearer(user.token), data: { password: 'OutraSenha#99' } }),
       'PATCH senha',
     );
+    // Trocar a senha encerra as outras sessões: a resposta traz o token novo da própria pessoa
+    expect(typeof changed.access_token).toBe('string');
     await expectClean(
-      await request.patch(`/users/${user.user.id}`, { headers: bearer(user.token), multipart: { file: pngFile(makePng(8, 8)) } }),
+      await request.patch(`/users/${user.user.id}`, {
+        headers: bearer(changed.access_token),
+        multipart: { file: pngFile(makePng(8, 8)) },
+      }),
       'PATCH multipart',
     );
+    const member = await newUserWithRole(request, 'KITCHEN');
     const admin = await sessionOf(request, 'admin');
     await expectClean(
-      await request.patch(`/users/${user.user.id}`, { headers: bearer(admin.token), data: { role: 'EMPLOYEE' } }),
+      await request.patch(`/users/${member.user.id}`, { headers: bearer(admin.token), data: { role: 'EMPLOYEE' } }),
       'PATCH perfil (ADMIN)',
     );
-    trackStaff(user.user.id);
+    await expectClean(
+      await request.patch(`/users/${member.user.id}`, { headers: bearer(admin.token), data: { password: 'SenhaNova#2026' } }),
+      'PATCH senha do membro (ADMIN)',
+    );
   });
 
   test('GET /users/trash e PATCH /users/:id/restore', async ({ request }) => {
-    const user = await newClient(request);
+    const user = await newUserWithRole(request, 'COURIER');
     const admin = await sessionOf(request, 'admin');
     expect((await request.delete(`/users/${user.user.id}`, { headers: bearer(admin.token) })).ok()).toBeTruthy();
     await expectClean(await request.get('/users/trash', { headers: bearer(admin.token) }), 'GET /users/trash');
@@ -185,7 +211,7 @@ test.describe('password_hash/senha nunca aparecem nas respostas com usuários', 
     );
   });
 
-  for (const key of ['admin', 'employee', 'kitchen', 'courier'] as const) {
+  for (const key of ['admin', 'employee'] as const) {
     test(`GET /orders como ${DEFAULT_USERS[key].role}: user/driver de todos os pedidos sem senha`, async ({ request }) => {
       const session = await sessionOf(request, key);
       const orders = await expectClean(await request.get('/orders', { headers: bearer(session.token) }), `GET /orders (${key})`);
@@ -195,6 +221,42 @@ test.describe('password_hash/senha nunca aparecem nas respostas com usuários', 
       expect(mine.driver).toMatchObject({ id: courier.user.id });
     });
   }
+
+  // Cozinha e entregador leem só a própria etapa (docs/saas/arquitetura.md §4.3): a higiene é conferida
+  // nos pedidos que cada um recebe
+  test('GET /orders como KITCHEN: só pedidos PENDING/PREPARING, cliente sem contato e sem senha', async ({ request }) => {
+    const kitchen = await sessionOf(request, 'kitchen');
+    const pending = await createOrder(request, client.token, {
+      items: [{ productId: product.id, quantity: 1 }],
+      type: 'TAKEOUT',
+      paymentMethod: 'MONEY',
+    });
+    createdOrders.push(pending.id);
+
+    const orders = await expectClean(await request.get('/orders', { headers: bearer(kitchen.token) }), 'GET /orders (kitchen)');
+    const ids = orders.map((o: { id: number }) => o.id);
+    expect(ids, 'pedido novo (PENDING) está no quadro da cozinha').toContain(pending.id);
+    expect(ids, 'pedido já em entrega não é da etapa da cozinha').not.toContain(deliveryOrderId);
+    const mine = orders.find((o: { id: number }) => o.id === pending.id);
+    expect(mine.user).toMatchObject({ id: client.user.id, name: client.user.name });
+    expect(mine.user).not.toHaveProperty('email');
+    expect(mine.user).not.toHaveProperty('phone');
+  });
+
+  test('GET /orders como COURIER: as próprias entregas e as prontas sem entregador, sem senha nem e-mail', async ({ request }) => {
+    const assigned = await expectClean(await request.get('/orders', { headers: bearer(courier.token) }), 'GET /orders (entregador atribuído)');
+    const delivering = assigned.find((o: { id: number }) => o.id === deliveryOrderId);
+    expect(delivering, 'a entrega atribuída aparece para o entregador dela').toBeTruthy();
+    expect(delivering.user).toMatchObject({ id: client.user.id, name: client.user.name });
+    expect(delivering.user).not.toHaveProperty('email');
+    expect(delivering.driver).toMatchObject({ id: courier.user.id });
+
+    const other = await sessionOf(request, 'courier');
+    const board = await expectClean(await request.get('/orders', { headers: bearer(other.token) }), 'GET /orders (outro entregador)');
+    const ids = board.map((o: { id: number }) => o.id);
+    expect(ids, 'entrega pronta sem entregador fica disponível para os entregadores').toContain(readyOrderId);
+    expect(ids, 'entrega de outro entregador não aparece').not.toContain(deliveryOrderId);
+  });
 
   test('GET /orders/:id para o dono, o ADMIN, o atendente e o entregador', async ({ request }) => {
     const admin = await sessionOf(request, 'admin');

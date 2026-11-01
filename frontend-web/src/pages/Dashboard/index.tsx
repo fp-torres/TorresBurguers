@@ -1,333 +1,242 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { LucideIcon } from 'lucide-react';
-import {
-  DollarSign, ShoppingBag, Clock, Store,
-  Loader2, TrendingUp, PieChart as PieIcon, Wallet, AlertTriangle
-} from 'lucide-react';
-import { orderService, type Order } from '../../services/orderService';
-import { getApiErrorMessage, getApiErrorStatus } from '../../services/api';
-import { useAuth } from '../../contexts/AuthContext';
-import { useStoreStatus } from '../../contexts/StoreStatusContext';
+import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { AlertTriangle, ChefHat, Clock, DollarSign, ShoppingBag, TrendingUp, Wallet } from 'lucide-react';
+import { CARD_CLASS, EmptyState, StatCard, StatusBadge, cx } from '../../components/ui';
 import StoreToggle from '../../components/StoreToggle';
-import { isOrderPaid, paymentMethodLabel } from '../../utils/orders';
-import { formatCurrency, formatTime } from '../../utils/format';
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell, PieChart, Pie, Legend
-} from 'recharts';
+import { useAuth } from '../../contexts/AuthContext';
+import { usePolling } from '../../hooks/usePolling';
+import { orderNumber, orderService } from '../../services/orderService';
+import { usePanelStore, type PanelStoreData } from '../../layouts/DefaultLayout/panelStore';
+import { useResource } from '../../hooks/useResource';
+import { orderStatusTone } from '../../layouts/DefaultLayout/orderTones';
+import { shortDateKey } from '../../utils/dates';
+import { formatCurrency, formatTime, formatCompactCurrency, formatInteger } from '../../utils/format';
+import { orderStatusLabel } from '../../utils/orders';
+import FeatureLockedCard from './FeatureLockedCard';
+import ReportsSection from './ReportsSection';
+import { AreaTrendChart, HorizontalBars } from './charts';
+import { ChartCard, ChartDataDetails } from '../../components/charts';
 
-interface RevenuePoint { date: string; total: number }
-interface ProductPoint { name: string; quantity: number }
-interface PaymentSlice { name: string; value: number }
+// Indicadores e atividade atualizados a cada 15 s; gráficos a cada minuto (pausam com a aba oculta)
+const SUMMARY_INTERVAL_MS = 15_000;
+const CHARTS_INTERVAL_MS = 60_000;
 
-const ACTIVE_STATUSES: Order['status'][] = ['PENDING', 'PREPARING', 'READY_FOR_PICKUP', 'DELIVERING'];
-
-// Indicadores atualizados a cada 15 s
-const POLL_INTERVAL_MS = 15000;
-
-/** Faturamento conta só pedidos pagos e não cancelados (mesma regra da API). */
-function isRevenueOrder(order: Order): boolean {
-  return isOrderPaid(order) && order.status !== 'CANCELED';
+/** Explicação do bloqueio quando o plano (já conhecido pelo layout) não inclui relatórios e gráficos. */
+function planLockMessage(panel: PanelStoreData): string | undefined {
+  const overview = panel.subscription;
+  if (!overview) return undefined;
+  if (!overview.limitsAvailable) return 'A loja não tem uma assinatura ativa: relatórios e gráficos ficam indisponíveis.';
+  return overview.plan?.name ? `O plano ${overview.plan.name} não inclui relatórios e gráficos.` : undefined;
 }
 
+/**
+ * Painel da loja › Dashboard (/dashboard; só Administrador): totais da loja (GET /orders/summary),
+ * gráficos dos últimos 7 dias (GET /orders/charts), relatórios por período (GET /orders/reports) e a
+ * atividade recente do quadro. Gráficos e relatórios dependem do recurso "relatórios" do plano (403 sem ele).
+ */
 export default function Dashboard() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [summary, setSummary] = useState({
-    totalOrders: 0, revenue: 0, activeOrders: 0, avgTicket: 0, paidOrders: 0
+  const { refreshUser } = useAuth();
+  const panel = usePanelStore();
+  // Recurso do plano já conhecido pelo layout (GET /store/settings → features): sem ele, nem consulta os gráficos.
+  // Enquanto não chega (null), a API decide: 403 em /orders/charts também bloqueia.
+  const reportsIncluded = panel.features ? panel.features.advanced_reports : null;
+
+  const summary = useResource((signal) => orderService.getSummary(signal), {
+    errorMessage: 'Não foi possível atualizar os indicadores.',
+  });
+  const activity = useResource((signal) => orderService.getActive(signal), {
+    errorMessage: 'Não foi possível atualizar a atividade recente.',
+  });
+  const charts = useResource((signal) => orderService.getCharts(signal), {
+    enabled: reportsIncluded !== false,
+    errorMessage: 'Não foi possível carregar os gráficos.',
   });
 
-  // Dados calculados para gráficos
-  const [revenueData, setRevenueData] = useState<RevenuePoint[]>([]);
-  const [productsData, setProductsData] = useState<ProductPoint[]>([]);
-  const [paymentData, setPaymentData] = useState<PaymentSlice[]>([]);
+  const chartsLocked = reportsIncluded === false || charts.errorStatus === 403;
+  // Os relatórios esperam a primeira resposta dos gráficos: num plano sem o recurso, o 403 dos gráficos já
+  // mostra o aviso e o relatório não chega a ser pedido
+  const showReports = !chartsLocked && (charts.data !== null || charts.error !== null);
+  const reloadSummary = summary.reload;
+  const reloadActivity = activity.reload;
+  const reloadCharts = charts.reload;
 
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // Status da loja compartilhado (o mesmo do selo da vitrine e do quadro de pedidos)
-  const { refresh: refreshStoreStatus } = useStoreStatus();
-  const { refreshUser } = useAuth();
+  usePolling(() => Promise.all([reloadSummary({ silent: true }), reloadActivity({ silent: true })]), SUMMARY_INTERVAL_MS);
+  usePolling(() => reloadCharts({ silent: true }), CHARTS_INTERVAL_MS, { enabled: !chartsLocked });
 
-  // Só a consulta mais recente é aplicada, e a automática não começa com outra em andamento
-  const requestSeq = useRef(0);
-  const loadInFlight = useRef(false);
-
-  const loadIntelligence = useCallback(async (trigger: 'poll' | 'manual' = 'manual') => {
-    if (trigger === 'poll' && loadInFlight.current) return;
-    const requestId = ++requestSeq.current;
-    loadInFlight.current = true;
-    try {
-      // 1. Movimento recente (pedidos em andamento + concluídos/cancelados nas últimas 24 h) e gráficos dos 7 dias
-      const [allOrders, charts] = await Promise.all([
-        orderService.getActive(),
-        orderService.getCharts(),
-      ]);
-      if (requestId !== requestSeq.current) return;
-
-      const revenueOrders = allOrders.filter(isRevenueOrder);
-      const activeOrdersList = allOrders.filter(o => ACTIVE_STATUSES.includes(o.status));
-
-      // 2. Cálculos de Business Intelligence (BI)
-      const totalRevenue = revenueOrders.reduce((acc, curr) => acc + Number(curr.total_price), 0);
-      const ticket = revenueOrders.length > 0 ? totalRevenue / revenueOrders.length : 0;
-
-      // 3. Formas de pagamento dos pedidos faturados
-      const payMap: Record<string, number> = {};
-      revenueOrders.forEach(o => {
-        const method = paymentMethodLabel(o.payment_method);
-        payMap[method] = (payMap[method] || 0) + 1;
-      });
-      const payChart = Object.keys(payMap).map(k => ({ name: k, value: payMap[k] }));
-
-      setOrders([...allOrders].sort((a, b) => b.id - a.id)); // Mais recentes primeiro
-      setSummary({
-        totalOrders: allOrders.length,
-        revenue: totalRevenue,
-        activeOrders: activeOrdersList.length,
-        avgTicket: ticket,
-        paidOrders: revenueOrders.length,
-      });
-
-      setRevenueData(charts.revenueChart || []);
-      setProductsData(charts.productsChart || []);
-      setPaymentData(payChart);
-      setLoadError(null);
-    } catch (error) {
-      if (requestId !== requestSeq.current) return;
-      // Mantém os últimos números na tela; 403 = o perfil mudou (a sessão é atualizada e leva à página certa)
-      if (getApiErrorStatus(error) === 403) void refreshUser();
-      setLoadError(getApiErrorMessage(error, 'Não foi possível atualizar os indicadores.'));
-    } finally {
-      if (requestId === requestSeq.current) {
-        loadInFlight.current = false;
-        setLoading(false);
-      }
-    }
-  }, [refreshUser]);
-
+  // 403 nos totais (rota só do Administrador): o perfil pode ter mudado; a sessão leva à página certa
+  const summaryForbidden = summary.errorStatus === 403;
   useEffect(() => {
-    loadIntelligence();
-    refreshStoreStatus();
-    const interval = setInterval(() => loadIntelligence('poll'), POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [loadIntelligence, refreshStoreStatus]);
+    if (summaryForbidden) void refreshUser();
+  }, [summaryForbidden, refreshUser]);
+
+  const totals = summary.data;
+  const queue = totals ? totals.pendingOrders + totals.preparingOrders : 0;
+  const recentOrders = [...(activity.data ?? [])].sort((a, b) => b.id - a.id).slice(0, 5);
+  const chartData = charts.data;
+  const revenueChart = (chartData?.revenueChart ?? []).map((point) => ({ key: point.date, value: point.total }));
+  const productsChart = (chartData?.productsChart ?? []).map((point) => ({ key: point.name, value: point.quantity }));
+  const anyError = summary.error ?? activity.error;
 
   return (
-    <div className="space-y-6 pb-20 animate-in fade-in duration-500 max-w-400 mx-auto">
-
-      {/* HEADER E CONTROLE DE LOJA */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-slate-700 transition-colors">
+    <div className="space-y-6 pb-20 max-w-400 mx-auto">
+      {/* Cabeçalho e abrir/fechar a loja */}
+      <div className={cx(CARD_CLASS, 'flex flex-col md:flex-row justify-between items-start md:items-center gap-6 p-6')}>
         <div>
-          <h1 className="text-3xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
-            Dashboard <span className="text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-2 py-1 rounded-lg border border-orange-200 dark:border-orange-800">PRO</span>
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400 font-medium">Movimento das últimas 24 horas e pedidos em andamento.</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">Dashboard</h1>
+          <p className="text-gray-500 dark:text-gray-400 font-medium">Indicadores da loja, gráficos e relatórios de vendas.</p>
         </div>
-
         <StoreToggle variant="hero" />
       </div>
 
-      {loadError && (
+      {anyError && !summaryForbidden && (
         <div role="alert" className="flex items-center gap-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 px-4 py-3 rounded-2xl text-sm">
-          <AlertTriangle size={18} className="shrink-0" />
-          <span>{loadError} Os números abaixo podem estar desatualizados; uma nova tentativa é feita a cada 15 segundos.</span>
+          <AlertTriangle size={18} className="shrink-0" aria-hidden="true" />
+          <span>{anyError} Os números podem estar desatualizados; uma nova tentativa é feita a cada 15 segundos.</span>
         </div>
       )}
 
-      {/* KPI GRID */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <KpiCard
-          loading={loading}
-          title="Faturamento Total"
-          value={formatCurrency(summary.revenue)}
-          icon={DollarSign}
-          color="bg-emerald-500"
-          subtext={`${summary.paidOrders} pedidos pagos (sem cancelados)`}
+      {/* Totais da loja (GET /orders/summary): faturamento = pedidos pagos e não cancelados */}
+      <section aria-label="Indicadores da loja" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <StatCard
+          label="Faturamento Total"
+          value={formatCurrency(totals?.revenue ?? 0)}
+          icon={<DollarSign size={22} />}
+          tone="emerald"
+          hint="Pedidos pagos e não cancelados"
+          loading={summary.loading && !totals}
         />
-        <KpiCard
-          loading={loading}
-          title="Pedidos Realizados"
-          value={summary.totalOrders}
-          icon={ShoppingBag}
-          color="bg-blue-500"
-          subtext={`${summary.activeOrders} ativos agora`}
+        <StatCard
+          label="Pedidos Realizados"
+          value={formatInteger(totals?.totalOrders ?? 0)}
+          icon={<ShoppingBag size={22} />}
+          tone="blue"
+          hint="Todos os pedidos, sem os cancelados"
+          loading={summary.loading && !totals}
         />
-        <KpiCard
-          loading={loading}
-          title="Ticket Médio"
-          value={formatCurrency(summary.avgTicket)}
-          icon={Wallet}
-          color="bg-violet-500"
-          subtext="Média por pedido pago"
+        <StatCard
+          label="Fila de Produção"
+          value={formatInteger(queue)}
+          icon={<ChefHat size={22} />}
+          tone="orange"
+          hint={totals ? `${formatInteger(totals.pendingOrders)} novos · ${formatInteger(totals.preparingOrders)} em preparo` : 'Novos e em preparo'}
+          loading={summary.loading && !totals}
         />
-        <KpiCard
-          loading={loading}
-          title="Fila de Produção"
-          value={summary.activeOrders}
-          icon={Clock}
-          color="bg-orange-500"
-          subtext="Pedidos em andamento"
+        <StatCard
+          label="Pagamentos Pendentes"
+          value={formatInteger(totals?.pendingPayments ?? 0)}
+          icon={<Wallet size={22} />}
+          tone="violet"
+          hint="Pedidos em andamento ainda não pagos"
+          loading={summary.loading && !totals}
         />
-      </div>
+      </section>
 
-      {/* PAINEL CENTRAL */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 h-full">
-
-        {/* ESQUERDA: GRÁFICOS FINANCEIROS (Ocupa 2 colunas) */}
-        <div className="xl:col-span-2 space-y-6">
-
-          {/* GRÁFICO DE FATURAMENTO */}
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-slate-700 transition-colors">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                <TrendingUp size={20} className="text-emerald-600 dark:text-emerald-400"/> Desempenho Financeiro
-              </h3>
-              <span className="bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-xs rounded-lg px-3 py-1 text-gray-600 dark:text-gray-300 font-bold">
-                Últimos 7 dias
-              </span>
-            </div>
-            <div className="h-80 w-full">
-              {loading ? (
-                <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-gray-300"/></div>
+      {chartsLocked ? (
+        <FeatureLockedCard message={charts.errorStatus === 403 ? charts.error : planLockMessage(panel)} />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <ChartCard
+              className="xl:col-span-2"
+              title="Desempenho Financeiro"
+              icon={<TrendingUp size={20} className="text-blue-600 dark:text-blue-400" />}
+              description="Faturamento de cada dia (pedidos pagos e não cancelados)."
+              aside={<StatusBadge tone="neutral">Últimos 7 dias</StatusBadge>}
+            >
+              {chartData ? (
+                <>
+                  <AreaTrendChart
+                    data={revenueChart}
+                    name="Faturamento"
+                    formatValue={formatCurrency}
+                    formatAxisValue={formatCompactCurrency}
+                    formatLabel={shortDateKey}
+                    stale={charts.refreshing}
+                  />
+                  <ChartDataDetails
+                    caption="Faturamento dos últimos 7 dias"
+                    columns={['Dia', 'Faturamento']}
+                    rows={revenueChart.map((point) => [shortDateKey(point.key), formatCurrency(point.value)])}
+                  />
+                </>
+              ) : charts.error ? (
+                <EmptyState compact title="Gráfico indisponível" description={charts.error} />
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={revenueData}>
-                    <defs>
-                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#94a3b8" strokeOpacity={0.1} />
-                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
-                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} tickFormatter={(val) => `R$${val}`} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#1e293b', borderRadius: '16px', border: 'none', color: '#fff', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.3)' }}
-                      itemStyle={{ color: '#fff' }}
-                      formatter={(val) => [formatCurrency(Number(val)), 'Vendas']}
+                <div className="h-70 rounded-xl bg-gray-100 dark:bg-slate-700/50 animate-pulse" role="status"><span className="sr-only">Carregando o gráfico...</span></div>
+              )}
+            </ChartCard>
+
+            <ChartCard
+              title="Produtos Campeões"
+              icon={<ShoppingBag size={20} className="text-blue-600 dark:text-blue-400" />}
+              description="Mais vendidos nos últimos 7 dias."
+            >
+              {chartData ? (
+                <>
+                  <HorizontalBars
+                    data={productsChart}
+                    name="Quantidade"
+                    formatValue={(value) => `${formatInteger(value)} un.`}
+                    labelWidth={120}
+                    emptyTitle="Nenhuma venda nos últimos 7 dias"
+                    stale={charts.refreshing}
+                  />
+                  {productsChart.length > 0 && (
+                    <ChartDataDetails
+                      caption="Produtos mais vendidos nos últimos 7 dias"
+                      columns={['Produto', 'Quantidade']}
+                      rows={productsChart.map((point) => [point.key, formatInteger(point.value)])}
                     />
-                    <Area type="monotone" dataKey="total" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
-
-          {/* GRÁFICO DE PRODUTOS */}
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-slate-700 transition-colors">
-            <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2 mb-6">
-              <ShoppingBag size={20} className="text-blue-600 dark:text-blue-400"/> Produtos Campeões
-            </h3>
-            <div className="h-62.5 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={productsData} layout="vertical" margin={{ left: 40, right: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#94a3b8" strokeOpacity={0.1} />
-                  <XAxis type="number" hide />
-                  <YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12, fontWeight: 600}} />
-                  <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{ backgroundColor: '#1e293b', borderRadius: '12px', border: 'none', color: '#fff' }} />
-                  <Bar dataKey="quantity" name="Quantidade" fill="#3b82f6" radius={[0, 6, 6, 0]} barSize={24}>
-                    {productsData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={index === 0 ? '#f59e0b' : '#3b82f6'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-
-        {/* DIREITA: DETALHES E FEED (Ocupa 1 coluna) */}
-        <div className="space-y-6">
-
-          {/* MEIOS DE PAGAMENTO (PIZZA) */}
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-slate-700 min-h-75 transition-colors">
-            <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2 mb-2">
-              <PieIcon size={20} className="text-violet-600 dark:text-violet-400"/> Pagamentos
-            </h3>
-            <div className="h-62.5">
-              {!loading && paymentData.length === 0 ? (
-                <p className="h-full flex items-center justify-center text-center text-gray-400 text-xs">Nenhum pedido pago ainda.</p>
+                  )}
+                </>
+              ) : charts.error ? (
+                <EmptyState compact title="Gráfico indisponível" description={charts.error} />
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={paymentData}
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {paymentData.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={['#8b5cf6', '#ec4899', '#f59e0b', '#10b981'][index % 4]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', borderRadius: '12px', border: 'none', color: '#fff' }} />
-                    <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ color: '#94a3b8' }}/>
-                  </PieChart>
-                </ResponsiveContainer>
+                <div className="h-56 rounded-xl bg-gray-100 dark:bg-slate-700/50 animate-pulse" role="status"><span className="sr-only">Carregando o gráfico...</span></div>
               )}
-            </div>
+            </ChartCard>
           </div>
 
-          {/* ATIVIDADE RECENTE (FEED) */}
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-slate-700 flex-1 transition-colors">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                <Clock size={20} className="text-gray-400"/> Atividade
-              </h3>
-              <span className="text-[10px] font-bold bg-gray-100 dark:bg-slate-700 dark:text-gray-300 px-2 py-1 rounded text-gray-500">Últimos 5</span>
-            </div>
+          {showReports && <ReportsSection />}
+        </>
+      )}
 
-            <div className="space-y-4">
-              {orders.slice(0, 5).map(order => (
-                <div key={order.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-700">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-full ${order.status === 'DONE' ? 'bg-green-100 dark:bg-green-900/30 text-green-600' : 'bg-orange-100 dark:bg-orange-900/30 text-orange-600'}`}>
-                      {order.status === 'DONE' ? <Store size={14}/> : <Clock size={14}/>}
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-gray-700 dark:text-gray-200">Pedido #{order.id}</p>
-                      <p className="text-[10px] text-gray-400 font-medium">{formatTime(order.created_at)} • {order.items.length} {order.items.length === 1 ? 'item' : 'itens'}</p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-bold text-gray-800 dark:text-white">
-                    {formatCurrency(order.total_price)}
-                  </span>
+      {/* Atividade recente do quadro (pedidos em andamento e das últimas 24 h) */}
+      <section aria-labelledby="activity-title" className={cx(CARD_CLASS, 'p-5 sm:p-6')}>
+        <div className="flex justify-between items-center gap-3 mb-4">
+          <h2 id="activity-title" className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+            <Clock size={20} className="text-gray-400" aria-hidden="true" /> Atividade recente
+          </h2>
+          <Link to="/orders" className="text-xs font-bold text-orange-600 dark:text-orange-400 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500">
+            Abrir o quadro de pedidos
+          </Link>
+        </div>
+
+        {activity.loading && !activity.data ? (
+          <div className="space-y-3" role="status">
+            {[0, 1, 2].map((index) => <div key={index} className="h-14 rounded-xl bg-gray-100 dark:bg-slate-700/50 animate-pulse" />)}
+            <span className="sr-only">Carregando a atividade recente...</span>
+          </div>
+        ) : recentOrders.length === 0 ? (
+          <p className="text-center text-gray-500 dark:text-gray-400 text-sm py-6">Sem atividade recente.</p>
+        ) : (
+          <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+            {recentOrders.map((order) => (
+              <li key={order.id} className="flex items-center justify-between gap-3 p-3 bg-gray-50 dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-700">
+                <div className="min-w-0">
+                  {/* Número do pedido NA LOJA (como no quadro); o id interno fica no title */}
+                  <p className="text-sm font-bold text-gray-700 dark:text-gray-200" title={`ID interno ${order.id}`}>Pedido #{orderNumber(order)}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {formatTime(order.created_at)} • {order.items.length} {order.items.length === 1 ? 'item' : 'itens'}
+                  </p>
+                  <StatusBadge tone={orderStatusTone(order.status)} className="mt-1">{orderStatusLabel(order.status, order.type)}</StatusBadge>
                 </div>
-              ))}
-              {orders.length === 0 && <p className="text-center text-gray-400 text-xs py-4">Sem atividade recente.</p>}
-            </div>
-          </div>
-
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface KpiCardProps {
-  title: string;
-  value: string | number;
-  icon: LucideIcon;
-  color: string;
-  subtext?: string;
-  loading: boolean;
-}
-
-// --- COMPONENTES VISUAIS ---
-function KpiCard({ title, value, icon: Icon, color, subtext, loading }: KpiCardProps) {
-  return (
-    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 flex flex-col justify-between hover:shadow-lg transition-all group h-full relative overflow-hidden">
-      <div className={`absolute -right-4 -top-4 w-24 h-24 rounded-full opacity-10 ${color}`}></div>
-      <div className="flex justify-between items-start mb-4 relative z-10">
-        <div className={`p-3 rounded-xl ${color} text-white shadow-md`}>
-          <Icon size={22} />
-        </div>
-      </div>
-      <div className="relative z-10">
-        <h3 className="text-2xl font-bold text-gray-800 dark:text-white">{loading ? '...' : value}</h3>
-        <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mt-1">{title}</p>
-        {subtext && <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">{subtext}</p>}
-      </div>
+                <span className="text-sm font-bold text-gray-800 dark:text-white tabular-nums shrink-0">{formatCurrency(order.total_price)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

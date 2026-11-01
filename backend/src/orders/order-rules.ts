@@ -142,8 +142,10 @@ export function priceLine(
 }
 
 // ---------------------------------------------------------------------------
-// Entrega: taxa e tempo estimado pelo bairro (fonte única — os apps exibem o orçamento do servidor)
-// As zonas vêm de delivery-zones.config.ts ou de DELIVERY_ZONES_JSON / DELIVERY_ZONES_FILE.
+// Entrega: taxa e tempo estimado pelo bairro ou pela faixa de CEP (fonte única — os apps exibem o
+// orçamento do servidor). As zonas vêm de stores.delivery_zones ou, na loja padrão sem zonas próprias, de
+// delivery-zones.config.ts / DELIVERY_ZONES_JSON / DELIVERY_ZONES_FILE. O bairro e a cidade usados são os
+// canônicos do CEP quando o endereço foi conferido (addresses/address-location.ts).
 // ---------------------------------------------------------------------------
 
 export interface DeliveryEstimate {
@@ -151,19 +153,65 @@ export interface DeliveryEstimate {
   time: string;
 }
 
-export interface DeliveryZone extends DeliveryEstimate {
-  /** Bairros atendidos (nome inteiro, sem diferenciar maiúsculas e acentos). */
-  neighborhoods: string[];
-  /** Opcional: a zona só vale nestas cidades. */
-  cities?: string[];
+/** Faixa de CEP atendida (8 dígitos, início ≤ fim, inclusive). */
+export interface ZipRange {
+  from: string;
+  to: string;
 }
+
+export interface DeliveryZone extends DeliveryEstimate {
+  /**
+   * Bairros atendidos (nome inteiro, sem diferenciar maiúsculas e acentos). Pode ficar vazio quando a zona
+   * tem faixas de CEP.
+   */
+  neighborhoods: string[];
+  /** Opcional: os bairros da zona só valem nestas cidades. */
+  cities?: string[];
+  /** Opcional: faixas de CEP atendidas (valem em qualquer cidade). */
+  zip_ranges?: ZipRange[];
+}
+
+/**
+ * Endereço fora de todas as zonas: "fallback" (padrão: entrega com a taxa e o prazo de "fallback") ou
+ * "refuse" (a loja não entrega: orçamento, pedido e cobranças respondem 400).
+ */
+export type OutsideZonesPolicy = 'fallback' | 'refuse';
+export const OUTSIDE_ZONES_POLICIES: readonly OutsideZonesPolicy[] = [
+  'fallback',
+  'refuse',
+];
 
 export interface DeliveryZonesConfig {
   zones: DeliveryZone[];
   /** Bairro fora de todas as zonas. */
   fallback: DeliveryEstimate;
+  /** Ausente = "fallback" (o comportamento de sempre). */
+  outside_zones?: OutsideZonesPolicy;
 }
 
+/**
+ * Zonas próprias da loja como ficam gravadas (stores.delivery_zones): "fallback" só pode faltar com
+ * outside_zones = "refuse" (no cálculo, a falta é preenchida com o "fallback" da plataforma).
+ */
+export type StoreDeliveryZonesConfig = Omit<DeliveryZonesConfig, 'fallback'> & {
+  fallback?: DeliveryEstimate;
+};
+
+/** Local da entrega usado na escolha da zona. */
+export interface DeliveryLocation {
+  neighborhood?: string | null;
+  city?: string | null;
+  /** CEP com ou sem máscara (zonas por faixa de CEP). */
+  zipCode?: string | null;
+}
+
+/** 400 do orçamento, do pedido e das cobranças quando a loja recusa endereços fora das zonas. */
+export const DELIVERY_OUT_OF_AREA_MESSAGE =
+  'Este endereço está fora da área de entrega da loja.';
+/** Campo "code" do corpo desse 400 (o web mostra a recusa junto do endereço). */
+export const DELIVERY_OUT_OF_AREA_CODE = 'DELIVERY_OUT_OF_AREA';
+
+/** Prazo padrão da retirada no balcão (a loja pode definir o próprio em stores.takeout_estimate). */
 export const TAKEOUT_ESTIMATE: DeliveryEstimate = { fee: 0, time: '15-20 min' };
 export const DEFAULT_DELIVERY_ESTIMATE: DeliveryEstimate = {
   ...DEFAULT_DELIVERY_ZONES.fallback,
@@ -179,28 +227,75 @@ export function normalizeText(value?: string | null): string {
     .trim();
 }
 
+/** CEP com 8 dígitos ("22041-001" → "22041001"); outro formato → null. */
+export function zipCodeDigits(value: unknown): string | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const digits =
+    typeof value === 'number'
+      ? String(value).padStart(8, '0')
+      : value.replace(/\D/g, '');
+  return /^\d{8}$/.test(digits) ? digits : null;
+}
+
 /**
- * Taxa e tempo pelo bairro: vale a primeira zona que tiver o bairro com o nome INTEIRO
- * ("Barra Funda" não é "Barra") e, quando a zona lista cidades, a mesma cidade.
+ * Zona que atende o local: vale a PRIMEIRA zona (na ordem cadastrada) que tiver o bairro com o nome INTEIRO
+ * ("Barra Funda" não é "Barra") e, quando a zona lista cidades, a mesma cidade — ou que tiver o CEP numa
+ * das faixas de CEP. Nenhuma → undefined (endereço fora das zonas).
+ */
+export function findDeliveryZone(
+  location: DeliveryLocation,
+  config: DeliveryZonesConfig,
+): DeliveryZone | undefined {
+  const name = normalizeText(location.neighborhood);
+  const cityName = normalizeText(location.city);
+  const zip = zipCodeDigits(location.zipCode);
+  return config.zones.find(
+    (zone) =>
+      (!!name &&
+        zone.neighborhoods.some((item) => normalizeText(item) === name) &&
+        (!zone.cities?.length ||
+          zone.cities.some((item) => normalizeText(item) === cityName))) ||
+      (!!zip &&
+        (zone.zip_ranges ?? []).some(
+          (range) => range.from <= zip && zip <= range.to,
+        )),
+  );
+}
+
+/** Política para endereços fora das zonas (ausente ou desconhecida = "fallback"). */
+export function outsideZonesPolicy(
+  config?: { outside_zones?: unknown } | null,
+): OutsideZonesPolicy {
+  return config?.outside_zones === 'refuse' ? 'refuse' : 'fallback';
+}
+
+/**
+ * Taxa e prazo da entrega no local: os da zona ou, fora das zonas, os de "fallback"; null quando a loja
+ * recusa endereços fora das zonas (outside_zones = "refuse").
+ */
+export function deliveryEstimateAt(
+  location: DeliveryLocation,
+  config: DeliveryZonesConfig,
+): DeliveryEstimate | null {
+  const zone = findDeliveryZone(location, config);
+  if (!zone && outsideZonesPolicy(config) === 'refuse') return null;
+  const estimate = zone ?? config.fallback;
+  return { fee: estimate.fee, time: estimate.time };
+}
+
+/**
+ * Taxa e tempo pelo bairro (e cidade/CEP): a zona ou, fora das zonas, o "fallback" (sem a política de
+ * recusa: ver deliveryEstimateAt).
  */
 export function deliveryEstimate(
   neighborhood?: string | null,
   city?: string | null,
   config: DeliveryZonesConfig = DEFAULT_DELIVERY_ZONES,
+  zipCode?: string | null,
 ): DeliveryEstimate {
-  const name = normalizeText(neighborhood);
-  const cityName = normalizeText(city);
-  const zone = name
-    ? config.zones.find(
-        (candidate) =>
-          candidate.neighborhoods.some(
-            (item) => normalizeText(item) === name,
-          ) &&
-          (!candidate.cities?.length ||
-            candidate.cities.some((item) => normalizeText(item) === cityName)),
-      )
-    : undefined;
-  const estimate = zone ?? config.fallback;
+  const estimate =
+    findDeliveryZone({ neighborhood, city, zipCode }, config) ??
+    config.fallback;
   return { fee: estimate.fee, time: estimate.time };
 }
 
@@ -225,9 +320,54 @@ function isNameList(value: unknown): value is string[] {
   );
 }
 
+/** Faixas de CEP de uma zona: [{ "from": "22010-000", "to": "22099-999" }] → 8 dígitos, início ≤ fim. */
+function parseZipRanges(
+  value: unknown,
+  position: number,
+): ZipRange[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value))
+    throw new Error(
+      `"zip_ranges" da zona ${position} precisa ser uma lista de faixas { "from", "to" }.`,
+    );
+  return value.map((item: unknown, index): ZipRange => {
+    const label = `faixa de CEP ${index + 1} da zona ${position}`;
+    const range = (item && typeof item === 'object' ? item : {}) as {
+      from?: unknown;
+      to?: unknown;
+    };
+    const from = zipCodeDigits(range.from);
+    const to = zipCodeDigits(range.to);
+    if (!from || !to)
+      throw new Error(
+        `a ${label} precisa de "from" e "to" com os 8 dígitos do CEP (ex.: 22010-000).`,
+      );
+    if (from > to)
+      throw new Error(
+        `na ${label}, o CEP inicial precisa ser menor ou igual ao final.`,
+      );
+    return { from, to };
+  });
+}
+
+/** "outside_zones": "fallback" ou "refuse" (sem diferenciar maiúsculas); ausente/null → undefined. */
+export function parseOutsideZones(
+  value: unknown,
+): OutsideZonesPolicy | undefined {
+  if (value === undefined || value === null) return undefined;
+  const policy = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if ((OUTSIDE_ZONES_POLICIES as readonly string[]).includes(policy))
+    return policy as OutsideZonesPolicy;
+  throw new Error(
+    '"outside_zones" deve ser "fallback" (entrega fora das zonas com a taxa de "fallback") ou "refuse" (recusa endereços fora das zonas).',
+  );
+}
+
 /**
- * Lê a configuração de zonas: { fallback?, zones: [...] } ou só a lista de zonas.
- * Valor inválido → Error com a explicação (quem chama decide se usa o padrão).
+ * Lê a configuração de zonas: { fallback?, zones: [...], outside_zones? } ou só a lista de zonas.
+ * Cada zona tem bairros ("neighborhoods", com "cities" opcional) e/ou faixas de CEP ("zip_ranges").
+ * Sem "fallback" (ou null), vale o da base. Valor inválido → Error com a explicação (quem chama decide se
+ * usa o padrão).
  */
 export function parseDeliveryZones(
   raw: unknown,
@@ -237,9 +377,10 @@ export function parseDeliveryZones(
   const list: unknown = Array.isArray(data)
     ? data
     : (data as { zones?: unknown } | null)?.zones;
-  const fallback: unknown = Array.isArray(data)
-    ? undefined
-    : (data as { fallback?: unknown } | null)?.fallback;
+  const object = Array.isArray(data)
+    ? null
+    : (data as { fallback?: unknown; outside_zones?: unknown } | null);
+  const fallback: unknown = object?.fallback ?? undefined;
 
   if (!Array.isArray(list))
     throw new Error('informe "zones" com a lista de zonas de entrega.');
@@ -247,6 +388,7 @@ export function parseDeliveryZones(
     throw new Error(
       '"fallback" precisa de "fee" (número ≥ 0) e "time" (texto).',
     );
+  const policy = parseOutsideZones(object?.outside_zones);
 
   const zones = list.map((zone: unknown, index): DeliveryZone => {
     const position = index + 1;
@@ -255,17 +397,29 @@ export function parseDeliveryZones(
         `a zona ${position} precisa de "fee" (número ≥ 0) e "time" (texto).`,
       );
     const { neighborhoods, cities } = zone as Partial<DeliveryZone>;
-    if (!isNameList(neighborhoods))
+    const ranges = parseZipRanges(
+      (zone as { zip_ranges?: unknown }).zip_ranges,
+      position,
+    );
+    // Só com faixas de CEP, a lista de bairros pode faltar ou vir vazia
+    const onlyRanges =
+      !!ranges?.length &&
+      (neighborhoods === undefined ||
+        (Array.isArray(neighborhoods) && neighborhoods.length === 0));
+    if (!onlyRanges && !isNameList(neighborhoods))
       throw new Error(
-        `a zona ${position} precisa de "neighborhoods" (lista de bairros).`,
+        `a zona ${position} precisa de "neighborhoods" (lista de bairros) ou "zip_ranges" (faixas de CEP).`,
       );
     if (cities !== undefined && !isNameList(cities))
       throw new Error(
         `"cities" da zona ${position} precisa ser uma lista de cidades.`,
       );
     return {
-      neighborhoods: neighborhoods.map((name) => name.trim()),
+      neighborhoods: onlyRanges
+        ? []
+        : (neighborhoods as string[]).map((name) => name.trim()),
       ...(cities ? { cities: cities.map((name) => name.trim()) } : {}),
+      ...(ranges?.length ? { zip_ranges: ranges } : {}),
       fee: fromCents(toCents(zone.fee)),
       time: zone.time.trim(),
     };
@@ -275,6 +429,7 @@ export function parseDeliveryZones(
   return {
     zones,
     fallback: { fee: fromCents(toCents(chosen.fee)), time: chosen.time.trim() },
+    ...(policy ? { outside_zones: policy } : {}),
   };
 }
 
@@ -313,6 +468,100 @@ export function resolveDeliveryZones(
 }
 
 // ---------------------------------------------------------------------------
+// Operação da loja: entrega/retirada ligadas, zonas e prazo de retirada próprios
+// ---------------------------------------------------------------------------
+
+export const DELIVERY_DISABLED_MESSAGE =
+  'Esta loja não está fazendo entregas no momento. Escolha retirar no balcão.';
+export const TAKEOUT_DISABLED_MESSAGE =
+  'Esta loja não está aceitando retirada no balcão no momento. Escolha a entrega.';
+export const DELIVERY_ZONES_MISSING_MESSAGE =
+  'Esta loja ainda não configurou as taxas de entrega. Escolha retirar no balcão.';
+
+/**
+ * Entrega sem zonas próprias (stores.delivery_zones nulo): só a loja padrão usa as zonas da
+ * plataforma (DELIVERY_ZONES_* — compatibilidade com a instalação de loja única). Nas demais lojas,
+ * as taxas da plataforma não valem (outra cidade, outros bairros): a entrega fica indisponível
+ * até a loja configurar as próprias zonas.
+ */
+export function deliveryZonesMissing(
+  store: { delivery_zones?: unknown },
+  isDefaultStore: boolean,
+): boolean {
+  return (
+    (store.delivery_zones === null || store.delivery_zones === undefined) &&
+    !isDefaultStore
+  );
+}
+
+/**
+ * Tipo de pedido desligado nas configurações da loja → mensagem do 400 (null = permitido).
+ * Só "true" libera (falha fechada se a configuração não vier).
+ */
+export function orderTypeUnavailableMessage(
+  type: OrderType,
+  store: {
+    delivery_enabled?: boolean | null;
+    takeout_enabled?: boolean | null;
+  },
+): string | null {
+  if (type === OrderType.DELIVERY && store.delivery_enabled !== true)
+    return DELIVERY_DISABLED_MESSAGE;
+  if (type === OrderType.TAKEOUT && store.takeout_enabled !== true)
+    return TAKEOUT_DISABLED_MESSAGE;
+  return null;
+}
+
+/**
+ * Zonas de entrega da loja (stores.delivery_zones) ou, sem elas, as da plataforma.
+ * Configuração inválida gravada no banco → as da plataforma, com o motivo em "error" (nunca derruba o pedido).
+ */
+export function storeDeliveryZones(
+  storeZones: unknown,
+  platform: DeliveryZonesConfig,
+): { config: DeliveryZonesConfig; error?: string } {
+  if (storeZones === null || storeZones === undefined)
+    return { config: platform };
+  try {
+    return { config: parseDeliveryZones(storeZones, platform) };
+  } catch (error) {
+    return {
+      config: platform,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/** Retirada no balcão: sem taxa, no prazo da loja (stores.takeout_estimate) ou no padrão. */
+export function takeoutEstimateFor(
+  storeEstimate?: string | null,
+): DeliveryEstimate {
+  const time = storeEstimate?.trim();
+  return { fee: 0, time: time || TAKEOUT_ESTIMATE.time };
+}
+
+/**
+ * Mesmo bairro (nome inteiro, sem acentos/maiúsculas) e, quando os dois informam, a mesma cidade.
+ * Usado para agrupar entregas ("pedidos próximos").
+ */
+export function isSameDeliveryArea(
+  a: { neighborhood?: string | null; city?: string | null } | null,
+  b: { neighborhood?: string | null; city?: string | null } | null,
+): boolean {
+  if (!a || !b) return false;
+  const neighborhood = normalizeText(a.neighborhood);
+  if (!neighborhood || neighborhood !== normalizeText(b.neighborhood))
+    return false;
+  const cityA = normalizeText(a.city);
+  const cityB = normalizeText(b.city);
+  return !cityA || !cityB || cityA === cityB;
+}
+
+/** 403 para o cliente quando a loja atingiu o limite mensal de pedidos do plano. */
+export const MONTHLY_ORDERS_LIMIT_MESSAGE =
+  'Esta loja atingiu o limite de pedidos do plano neste mês e não está recebendo novos pedidos agora.';
+
+// ---------------------------------------------------------------------------
 // Troco (pagamento em dinheiro na entrega)
 // ---------------------------------------------------------------------------
 
@@ -342,8 +591,16 @@ export type ChangeForResult =
   | { ok: false; message: string };
 
 /**
+ * Teto do troco: o valor informado pode passar do total em até R$ 200,00 (a maior cédula). Quem paga
+ * com mais do que isso teria uma cédula sobrando; acima do teto o valor é erro de digitação ou abuso e
+ * faria o entregador sair com muito dinheiro em espécie.
+ */
+export const MAX_CHANGE_ABOVE_TOTAL_CENTS = 20_000;
+
+/**
  * Troco só faz sentido em dinheiro. Guarda sempre no formato "R$ 50,00" (o painel da equipe lê esse formato).
- * Vazio, zero ou texto sem número → sem troco (null). Valor menor que o total → erro.
+ * Vazio, zero ou texto sem número → sem troco (null). Valor menor que o total ou acima do teto
+ * (total + R$ 200,00) → erro.
  */
 export function resolveChangeFor(
   paymentMethod: string,
@@ -359,6 +616,12 @@ export function resolveChangeFor(
     return {
       ok: false,
       message: `O valor para troco (${formatBRL(amount)}) é menor que o total do pedido (${formatBRL(fromCents(totalCents))}).`,
+    };
+  }
+  if (toCents(amount) - totalCents > MAX_CHANGE_ABOVE_TOTAL_CENTS) {
+    return {
+      ok: false,
+      message: `Valor para troco acima do permitido: informe até ${formatBRL(fromCents(totalCents + MAX_CHANGE_ABOVE_TOTAL_CENTS))} (no máximo ${formatBRL(fromCents(MAX_CHANGE_ABOVE_TOTAL_CENTS))} acima do total do pedido).`,
     };
   }
   return { ok: true, value: formatBRL(amount) };
@@ -616,38 +879,249 @@ export function isInActiveScope(
   );
 }
 
+/** Teto do quadro (scope=active e as listas da cozinha e do entregador), mais novos primeiro. */
+export const ACTIVE_ORDERS_LIMIT = 500;
+
 // ---------------------------------------------------------------------------
-// Datas no fuso da loja (gráficos e "hoje"): STORE_TIME_ZONE, padrão America/Sao_Paulo
+// Páginas das listas (GET /orders sem scope e GET /orders/my-orders): a resposta continua sendo
+// uma lista; sem parâmetros, os ORDERS_PAGE_MAX_SIZE mais recentes.
+// ---------------------------------------------------------------------------
+
+export const ORDERS_PAGE_MAX_SIZE = 100;
+/** Evita OFFSET gigantes (cada página pula as anteriores no banco). */
+export const ORDERS_PAGE_MAX = 10_000;
+
+export const ORDERS_PAGE_INVALID_MESSAGE = `Paginação inválida: use page de 1 a ${ORDERS_PAGE_MAX} e pageSize de 1 a ${ORDERS_PAGE_MAX_SIZE}.`;
+
+export interface ListPage {
+  skip: number;
+  take: number;
+}
+
+function pageNumber(raw: unknown, fallback: number, max: number) {
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  if (typeof raw !== 'string' || !/^\d{1,6}$/.test(raw)) return null;
+  const value = Number(raw);
+  return value >= 1 && value <= max ? value : null;
+}
+
+/** ?page=&pageSize= (inteiros; padrão: página 1 com ORDERS_PAGE_MAX_SIZE). Inválido → null (400). */
+export function parseListPage(
+  rawPage: unknown,
+  rawSize: unknown,
+): ListPage | null {
+  const page = pageNumber(rawPage, 1, ORDERS_PAGE_MAX);
+  const size = pageNumber(rawSize, ORDERS_PAGE_MAX_SIZE, ORDERS_PAGE_MAX_SIZE);
+  if (page === null || size === null) return null;
+  return { skip: (page - 1) * size, take: size };
+}
+
+// ---------------------------------------------------------------------------
+// O que cada perfil da equipe enxerga (lista, quadro e detalhe de pedidos)
+// ---------------------------------------------------------------------------
+
+/**
+ * Um conjunto de pedidos visíveis a um perfil: as condições valem juntas e os conjuntos se somam.
+ * driver "none" = sem entregador; "self" = o entregador é quem está autenticado. recent = atualizados
+ * nas últimas ACTIVE_SCOPE_RECENT_HOURS horas.
+ */
+export interface StaffOrderScope {
+  statuses: readonly OrderStatus[];
+  type?: OrderType;
+  driver?: 'none' | 'self';
+  recent?: boolean;
+}
+
+/** Cozinha: os pedidos que esperam o preparo e os em preparo. */
+const KITCHEN_ORDER_SCOPES: readonly StaffOrderScope[] = [
+  { statuses: [OrderStatus.PENDING, OrderStatus.PREPARING] },
+];
+
+/**
+ * Entregador: entregas prontas sem entregador, as próprias prontas/em andamento e as próprias
+ * concluídas ou canceladas nas últimas 24 h.
+ */
+const COURIER_ORDER_SCOPES: readonly StaffOrderScope[] = [
+  {
+    statuses: [OrderStatus.READY_FOR_PICKUP],
+    type: OrderType.DELIVERY,
+    driver: 'none',
+  },
+  {
+    statuses: [OrderStatus.READY_FOR_PICKUP, OrderStatus.DELIVERING],
+    driver: 'self',
+  },
+  { statuses: TERMINAL_STATUSES, driver: 'self', recent: true },
+];
+
+/**
+ * Pedidos da loja que o perfil lê: null = todos (ADMIN e EMPLOYEE); cozinha e entregador só os da
+ * própria etapa; outro perfil, nenhum. A mesma regra vale para a lista e para o detalhe (fora dela → 404).
+ */
+export function staffOrderScopes(
+  role?: string | null,
+): readonly StaffOrderScope[] | null {
+  if (isOrderManager(role)) return null;
+  if (role === 'KITCHEN') return KITCHEN_ORDER_SCOPES;
+  if (role === 'COURIER') return COURIER_ORDER_SCOPES;
+  return [];
+}
+
+/** O pedido está entre os que o perfil enxerga? (mesma regra da consulta de staffOrderScopes) */
+export function canStaffSeeOrder(
+  order: {
+    status: OrderStatus;
+    type: OrderType;
+    driverId: number | null;
+    updated_at: Date | string;
+  },
+  actor: { id: number; role: string },
+  now: Date = new Date(),
+): boolean {
+  const scopes = staffOrderScopes(actor.role);
+  if (scopes === null) return true;
+  return scopes.some(
+    (scope) =>
+      scope.statuses.includes(order.status) &&
+      (!scope.type || order.type === scope.type) &&
+      (scope.driver !== 'none' || order.driverId === null) &&
+      (scope.driver !== 'self' || order.driverId === actor.id) &&
+      (!scope.recent ||
+        new Date(order.updated_at).getTime() >=
+          activeScopeSince(now).getTime()),
+  );
+}
+
+/** Como a equipe recebe o pedido: completo (gestão), da cozinha ou do entregador. */
+export type StaffOrderView = 'full' | 'kitchen' | 'courier';
+
+export function staffOrderView(role?: string | null): StaffOrderView {
+  if (role === 'KITCHEN') return 'kitchen';
+  if (role === 'COURIER') return 'courier';
+  return 'full';
+}
+
+// ---------------------------------------------------------------------------
+// Datas no fuso da loja (gráficos, relatórios e "hoje"): stores.time_zone, padrão America/Sao_Paulo
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_STORE_TIME_ZONE = 'America/Sao_Paulo';
 
-function isValidTimeZone(timeZone: string): boolean {
+export function isValidTimeZone(timeZone: string): boolean {
   try {
-    new Intl.DateTimeFormat('en-US', { timeZone });
+    zoneFormatter(timeZone);
     return true;
   } catch {
     return false;
   }
 }
 
-/** Fuso da loja (STORE_TIME_ZONE); vazio ou inválido → America/Sao_Paulo. */
+/*
+ * Desempenho: criar um Intl.DateTimeFormat custa ~100 µs, e os relatórios convertem um instante por
+ * pedido (200 mil pedidos = 20 s de event loop travado para todas as lojas). Os formatadores ficam em
+ * cache por fuso (são imutáveis) e a diferença do fuso para o UTC fica em cache por hora UTC: dentro
+ * de uma hora em que ela não muda (conferida no primeiro e no último segundo), o dia sai de uma soma.
+ * Horas com troca de horário de verão (ex.: 30 min em Lord Howe) são calculadas instante a instante.
+ * Caches limitados: no máximo ZONE_CACHE_LIMIT fusos e OFFSET_CACHE_LIMIT horas (esvaziam ao encher).
+ */
+const ZONE_CACHE_LIMIT = 100;
+const OFFSET_CACHE_LIMIT = 50_000;
+const HOUR_MS = 60 * 60 * 1000;
+const zoneFormatters = new Map<string, Intl.DateTimeFormat>();
+const zoneOffsets = new Map<string, Map<number, number>>();
+let cachedOffsets = 0;
+
+/** Formatador (ano a segundo, relógio de 24 h) do fuso; fuso inválido → RangeError (não entra no cache). */
+function zoneFormatter(timeZone: string): Intl.DateTimeFormat {
+  let formatter = zoneFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    if (zoneFormatters.size >= ZONE_CACHE_LIMIT) {
+      zoneFormatters.clear();
+      zoneOffsets.clear();
+      cachedOffsets = 0;
+    }
+    zoneFormatters.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
+/** Diferença exata (ms) entre o relógio do fuso e o UTC no segundo do instante. */
+function exactZoneOffsetMs(instant: number, timeZone: string): number {
+  const second = Math.floor(instant / 1000) * 1000;
+  const values: Record<string, number> = {};
+  for (const part of zoneFormatter(timeZone).formatToParts(new Date(second))) {
+    if (part.type !== 'literal') values[part.type] = Number(part.value);
+  }
+  const asUtc = Date.UTC(
+    values.year,
+    values.month - 1,
+    values.day,
+    values.hour,
+    values.minute,
+    values.second,
+  );
+  return asUtc - second;
+}
+
+/** Diferença (ms) entre o relógio do fuso e o UTC num instante (com o cache por hora). */
+function zoneOffsetMs(instant: number, timeZone: string): number {
+  const hour = Math.floor(instant / HOUR_MS);
+  let offsets = zoneOffsets.get(timeZone);
+  let offset = offsets?.get(hour);
+  if (offset === undefined) {
+    const start = hour * HOUR_MS;
+    const first = exactZoneOffsetMs(start, timeZone);
+    const last = exactZoneOffsetMs(start + HOUR_MS - 1000, timeZone);
+    // NaN marca uma hora com troca de fuso: calculada instante a instante
+    offset = first === last ? first : NaN;
+    if (cachedOffsets >= OFFSET_CACHE_LIMIT) {
+      zoneOffsets.clear();
+      cachedOffsets = 0;
+      offsets = undefined;
+    }
+    if (!offsets) {
+      offsets = new Map();
+      zoneOffsets.set(timeZone, offsets);
+    }
+    offsets.set(hour, offset);
+    cachedOffsets++;
+  }
+  return Number.isNaN(offset) ? exactZoneOffsetMs(instant, timeZone) : offset;
+}
+
+/** Fuso informado (ex.: stores.time_zone); vazio ou inválido → America/Sao_Paulo. */
+export function resolveTimeZone(zone?: string | null): string {
+  const value = zone?.trim();
+  return value && isValidTimeZone(value) ? value : DEFAULT_STORE_TIME_ZONE;
+}
+
+/**
+ * Fuso padrão da plataforma (STORE_TIME_ZONE); vazio ou inválido → America/Sao_Paulo.
+ * Cada loja tem o próprio fuso em stores.time_zone (use resolveTimeZone).
+ */
 export function storeTimeZone(env: NodeJS.ProcessEnv = process.env): string {
-  const zone = env.STORE_TIME_ZONE?.trim();
-  return zone && isValidTimeZone(zone) ? zone : DEFAULT_STORE_TIME_ZONE;
+  return resolveTimeZone(env.STORE_TIME_ZONE);
 }
 
 /** Ano, mês e dia do calendário no fuso informado. */
 function calendarDate(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const part = (type: string) =>
-    Number(parts.find((item) => item.type === type)?.value);
-  return { year: part('year'), month: part('month'), day: part('day') };
+  const instant = date.getTime();
+  const local = new Date(instant + zoneOffsetMs(instant, timeZone));
+  return {
+    year: local.getUTCFullYear(),
+    month: local.getUTCMonth() + 1,
+    day: local.getUTCDate(),
+  };
 }
 
 const twoDigits = (value: number) => String(value).padStart(2, '0');
@@ -681,4 +1155,111 @@ export function chartWindowStart(now: Date, timeZone: string, count = 7): Date {
     today.day - (count - 1),
   );
   return new Date(firstDay - 14 * 60 * 60 * 1000);
+}
+
+// ---------------------------------------------------------------------------
+// Relatórios: períodos de datas "AAAA-MM-DD" no calendário da loja
+// ---------------------------------------------------------------------------
+
+/** Maior período de um relatório (um ano, inclusive bissexto). */
+export const REPORT_MAX_DAYS = 366;
+/** Período quando nenhuma data é informada: os últimos 30 dias até hoje. */
+export const REPORT_DEFAULT_DAYS = 30;
+
+const DATE_KEY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function formatDateKey(utcMidnight: number): string {
+  const date = new Date(utcMidnight);
+  return `${date.getUTCFullYear()}-${twoDigits(date.getUTCMonth() + 1)}-${twoDigits(date.getUTCDate())}`;
+}
+
+/** "AAAA-MM-DD" existente no calendário → meia-noite UTC daquele dia; senão null (ex.: 2026-02-30). */
+function dateKeyToUtc(value: string): number | null {
+  const match = DATE_KEY_PATTERN.exec(value);
+  if (!match) return null;
+  const [year, month, day] = match.slice(1).map(Number);
+  const time = Date.UTC(year, month - 1, day);
+  return formatDateKey(time) === value ? time : null;
+}
+
+/** "AAAA-MM-DD" do dia em que o instante cai no fuso da loja. */
+export function dateKeyInZone(date: Date, timeZone: string): string {
+  const { year, month, day } = calendarDate(date, timeZone);
+  return `${year}-${twoDigits(month)}-${twoDigits(day)}`;
+}
+
+/** Soma (ou subtrai) dias de uma data "AAAA-MM-DD" (calendário puro, sem fuso). */
+export function addDaysToKey(key: string, days: number): string {
+  const [year, month, day] = key.split('-').map(Number);
+  return formatDateKey(Date.UTC(year, month - 1, day + days));
+}
+
+/** Todos os dias de from até to (inclusive), em ordem. */
+export function dateKeysBetween(from: string, to: string): string[] {
+  const keys: string[] = [];
+  for (let key = from; key <= to; key = addDaysToKey(key, 1)) keys.push(key);
+  return keys;
+}
+
+/** Instante da meia-noite do dia "AAAA-MM-DD" no fuso da loja (duas passadas acertam o horário de verão). */
+export function startOfDayInZone(key: string, timeZone: string): Date {
+  const [year, month, day] = key.split('-').map(Number);
+  const localMidnight = Date.UTC(year, month - 1, day);
+  let guess = localMidnight - zoneOffsetMs(localMidnight, timeZone);
+  guess = localMidnight - zoneOffsetMs(guess, timeZone);
+  return new Date(guess);
+}
+
+export type ReportRange =
+  | { ok: true; from: string; to: string; days: number }
+  | { ok: false; message: string };
+
+/**
+ * Período de GET /orders/reports (?from=AAAA-MM-DD&to=AAAA-MM-DD, datas do calendário da loja):
+ * sem datas = os últimos 30 dias até hoje; só "from" = até hoje; só "to" = os 30 dias até ele.
+ * Formato inválido, from depois de to ou mais de 366 dias → mensagem do 400.
+ */
+export function parseReportRange(
+  rawFrom: unknown,
+  rawTo: unknown,
+  now: Date,
+  timeZone: string,
+): ReportRange {
+  const given = (value: unknown) =>
+    value !== undefined && value !== null && value !== '';
+  const invalid = {
+    ok: false as const,
+    message:
+      'Período inválido: informe from e to no formato AAAA-MM-DD (ex.: from=2026-10-01&to=2026-10-31).',
+  };
+  for (const value of [rawFrom, rawTo]) {
+    if (
+      given(value) &&
+      (typeof value !== 'string' || dateKeyToUtc(value) === null)
+    )
+      return invalid;
+  }
+
+  const today = dateKeyInZone(now, timeZone);
+  const to = given(rawTo) ? (rawTo as string) : today;
+  const from = given(rawFrom)
+    ? (rawFrom as string)
+    : addDaysToKey(to, -(REPORT_DEFAULT_DAYS - 1));
+
+  const fromTime = dateKeyToUtc(from) as number;
+  const toTime = dateKeyToUtc(to) as number;
+  if (fromTime > toTime) {
+    return {
+      ok: false,
+      message: 'A data inicial (from) não pode ser depois da data final (to).',
+    };
+  }
+  const days = Math.round((toTime - fromTime) / 86_400_000) + 1;
+  if (days > REPORT_MAX_DAYS) {
+    return {
+      ok: false,
+      message: `O período do relatório pode ter no máximo ${REPORT_MAX_DAYS} dias.`,
+    };
+  }
+  return { ok: true, from, to, days };
 }

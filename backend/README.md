@@ -2,9 +2,9 @@
 
 > **Cozinha, balcão e entrega no mesmo compasso.**
 
-API REST do **Comestra**. Ela concentra autenticação e perfis de acesso, cardápio, pedidos com preço calculado no servidor, pagamentos (Mercado Pago), entregas, endereços, status da loja e imagens. Atende a loja/back office web (`frontend-web`) e o app mobile (`frontend-mobile`).
+API REST **multi-tenant** da plataforma Comestra. Ela concentra o isolamento entre lojas, o superpainel (lojas, usuários, planos, assinaturas, auditoria, suporte), o painel de cada loja (equipe, convites, configurações, cardápio, pedidos, clientes), a vitrine pública por slug, os pagamentos do delivery (Mercado Pago de cada loja) e a cobrança da assinatura SaaS. Atende o site e os painéis (`frontend-web`) e, pelas rotas antigas, o app mobile (`frontend-mobile`, fora do escopo desta fase).
 
-Visão geral do produto, usuários padrão e checklist de produção: [README da raiz](../README.md).
+Visão geral do produto e contas de demonstração: [README da raiz](../README.md). Arquitetura e contratos: [`docs/saas/arquitetura.md`](../docs/saas/arquitetura.md). Instalação, migrations e operação: [`docs/saas/operacao.md`](../docs/saas/operacao.md).
 
 ---
 
@@ -13,14 +13,15 @@ Visão geral do produto, usuários padrão e checklist de produção: [README da
 | Camada | Tecnologia |
 |---|---|
 | Framework | NestJS 11 (TypeScript) |
-| Banco de dados | PostgreSQL 14+ com TypeORM 0.3 |
-| Autenticação | JWT (Passport) + bcrypt, perfis com `RolesGuard` |
-| Validação | `ValidationPipe` global com class-validator / class-transformer |
-| Documentação | Swagger (OpenAPI) em `/api` |
-| Imagens | Multer + Sharp (conversão para WebP) |
-| Pagamentos | SDK oficial do Mercado Pago (cartão e PIX) |
+| Banco de dados | PostgreSQL 14+ com TypeORM 0.3 e **migrations** versionadas (`src/database/migrations`) |
+| Autenticação | JWT (Passport) com versão de sessão (`token_version`) e sessões registradas por token (`jti` em `auth_sessions`) + bcrypt; guards de loja, de perfil e da plataforma |
+| Validação | `ValidationPipe` global com class-validator / class-transformer (`whitelist`, `forbidNonWhitelisted`) |
+| Documentação | Swagger (OpenAPI) em `/api` (ligado em development/test) |
+| Imagens | Multer + Sharp (conversão para WebP, limite de resolução e fila de conversões) |
+| Pagamentos | SDK oficial do Mercado Pago: delivery por loja (cartão e PIX) e assinaturas SaaS (preapproval) |
 | Cache | cache-manager em memória (banner do dia) |
-| Testes | Jest (unitários) e Jest + Supertest (E2E da API) |
+| E-mail | nodemailer **10.1.7** (SMTP; traz os próprios tipos, sem `@types/nodemailer`; Node ≥ 20). Driver de log por padrão (`MAIL_DRIVER`) |
+| Testes | Jest (unitários) e Jest + Supertest (`test/`); suíte Playwright em [`../e2e`](../e2e/README.md) |
 
 ---
 
@@ -35,20 +36,26 @@ Visão geral do produto, usuários padrão e checklist de produção: [README da
 ```bash
 cd backend
 cp .env.example .env          # Windows (PowerShell): Copy-Item .env.example .env
-# edite o .env: NODE_ENV=development e DB_PASSWORD (senha do usuário postgres)
+# edite o .env: NODE_ENV=development e DB_PASSWORD (senha do usuário postgres); deixe DB_SYNCHRONIZE vazio
 npm install
 npm run start:dev
 ```
 
-Com `NODE_ENV=development`, a primeira subida cria as tabelas (`DB_SYNCHRONIZE` ligado por padrão), a configuração da loja (aberta) e os [usuários padrão](#-usuários-padrão). O `.env.example` vem com `NODE_ENV=production`: sem trocar o valor, a API segue as regras de produção e não sobe sem um `JWT_SECRET` forte (veja [Ambiente e segurança](#-ambiente-e-segurança)).
+Na subida, a API aplica as migrations pendentes (`DB_MIGRATIONS_RUN`, ligado por padrão) e, com `NODE_ENV=development`, cria a loja **Lanchonete Demo** (só num banco sem lojas) e as [contas de demonstração](#-contas-de-demonstração). O `.env.example` vem com `NODE_ENV=production`: sem trocar o valor, a API segue as regras de produção e não sobe sem um `JWT_SECRET` forte (veja [Ambiente e segurança](#-ambiente-e-segurança)).
+
+Crie o seu superadmin (o de demonstração não é criado em development):
+
+```bash
+npm run platform:superadmin -- --email=voce@exemplo.com --name="Seu Nome"   # a senha aparece uma vez
+```
 
 | Endereço | O que é |
 |---|---|
-| <http://localhost:3000/health> | Saúde: `{ "status": "ok", "name": "Comestra", "version": "<versão do package.json>" }` |
+| <http://localhost:3000/health> | Saúde: `{ "status": "ok" }` (sem nome nem versão; a versão fica no Swagger) |
 | <http://localhost:3000/api> | Swagger. Faça `POST /auth/login` e use o `access_token` no botão **Authorize** |
 | `http://localhost:3000/uploads/<arquivo>` | Imagens enviadas (pasta `UPLOADS_DIR`) |
 
-A API escuta em `0.0.0.0`, então o app mobile alcança a API pelo IP da máquina na rede local.
+Por padrão a API escuta em `0.0.0.0` (`HOST`), então o app mobile alcança a API pelo IP da máquina na rede local (não exponha uma API de desenvolvimento com contas de demonstração; veja o aviso do [README da raiz](../README.md#-contas-de-demonstração)). Com `HOST=127.0.0.1` ela fica só neste computador. O log da subida mostra `API Comestra escutando em <host>:<porta> (<alcance>)`.
 
 ### Scripts
 
@@ -58,38 +65,66 @@ A API escuta em `0.0.0.0`, então o app mobile alcança a API pelo IP da máquin
 | `npm run start:debug` | Desenvolvimento com o inspetor do Node |
 | `npm run build` | Compila para `dist/` |
 | `npm run start:prod` | Executa o build (`node dist/main`) sempre com `NODE_ENV=production` |
-| `npm run seed` | Cria/restaura os usuários padrão e redefine as senhas. Em produção, só com `npm run seed -- --force` |
+| `npm run migration:show` · `migration:run` · `migration:revert` | Estado, aplicação e reversão (da última) das migrations, pelo código-fonte |
+| `npm run migration:check` | Falha se as entidades divergem do banco (CI ou cópia do banco migrado) |
+| `npm run migration:generate -- src/database/migrations/Nome` | Gera uma migration nova a partir das entidades (revise e registre em `migrations/index.ts`) |
+| `npm run migration:run:prod` · `migration:show:prod` | O mesmo a partir do build (`dist/`). Reverter pelo build: `npx typeorm -d dist/database/data-source.js migration:revert` |
+| `npm run platform:superadmin -- --email=...` | Cria, promove (`--promote-existing`), recupera (`--reset-password`) ou revoga (`--revoke`) um superadmin. Pelo build: `npm run platform:superadmin:prod -- ...` |
+| `npm run seed` | Cria/restaura a loja e as contas de demonstração e redefine as senhas (`-- --with-superadmin` inclui o superadmin demo). Nunca roda em produção |
 | `npx jest` (ou `npm test`) | Testes unitários |
 | `npm run test:cov` | Testes unitários com cobertura (`coverage/`) |
 | `npm run test:e2e` | Teste E2E da API (Jest + Supertest, precisa de PostgreSQL) |
+| `npm run build:e2e` | Build próprio da suíte Playwright (`dist-e2e/`) |
 | `npm run lint` · `npm run format` | ESLint (com correção) e Prettier |
 
 ---
 
 ## 🔐 Variáveis de ambiente
 
-Modelo comentado em [`.env.example`](.env.example). Variáveis definidas no próprio ambiente (servidor, Docker, CI) têm prioridade sobre o `.env`.
+Modelo comentado, com todas as variáveis e padrões, em [`.env.example`](.env.example); explicação completa em [`docs/saas/operacao.md`](../docs/saas/operacao.md#7-configuração). Variáveis definidas no próprio ambiente (servidor, Docker, CI) têm prioridade sobre o `.env`.
 
 | Variável | Padrão | Descrição |
 |---|---|---|
 | `NODE_ENV` | vazio = produção | `development` (máquina local) ou `test` (testes) liberam as facilidades de desenvolvimento. Vazio ou qualquer outro valor conta como `production` |
 | `PORT` | `3000` | Porta HTTP |
-| `DB_HOST` · `DB_PORT` | `localhost` · `5432` | PostgreSQL |
-| `DB_USERNAME` · `DB_PASSWORD` | `postgres` · vazio | Credenciais do banco |
-| `DB_DATABASE` | `comestra` | Nome do banco (vazio = slug da marca em `src/config/brand.ts`) |
-| `DB_SYNCHRONIZE` | ligado em development/test, desligado em produção | Sincroniza o schema com as entidades. **Produção: `false` + migrations** |
-| `JWT_SECRET` | segredo fixo só em development/test | **Obrigatório em produção, com 32+ caracteres**: sem ele, a API não sobe |
-| `JWT_EXPIRES_IN` | `7d` | `7d`, `12h`, `30m` ou segundos. Valor inválido cai no padrão, com aviso |
-| `APP_NAME` | `Comestra` | Nome no Swagger, em `/health` e na descrição dos pagamentos |
+| `HOST` | `0.0.0.0` | Interface de escuta: `0.0.0.0` = todas (rede local, app mobile); `127.0.0.1` = só este computador (túnel ou proxy na mesma máquina); IPv6 com ou sem colchetes |
+| `DB_HOST` · `DB_PORT` · `DB_USERNAME` · `DB_PASSWORD` · `DB_DATABASE` | `localhost` · `5432` · `postgres` · vazio · `comestra` | PostgreSQL (`DB_DATABASE` vazio = slug da marca em `src/config/brand.ts`) |
+| `DB_MIGRATIONS_RUN` | `true` | Aplica as migrations pendentes na subida (várias instâncias: `false` e `migration:run:prod` no deploy) |
+| `DB_SYNCHRONIZE` | `false` em todos os ambientes | Synchronize do TypeORM. Mantenha `false`: com `true` ele cria índices e colunas por fora das migrations |
+| `DB_ALLOW_DESTRUCTIVE_REVERT` | vazio | Libera o `down()` destrutivo das migrations `MultiTenantFoundation` e `OrderNumbersAndCustomerBlocks` (só com backup) |
+| `DB_POOL_SIZE` · `DB_STATEMENT_TIMEOUT_MS` · `DB_POOL_ACQUIRE_TIMEOUT_MS` | `10` · `60000` · `30000` | Pool da API (1 a 200), tempo máximo de cada consulta (`0` desliga; não vale para as migrations nem para o CLI) e espera máxima por uma conexão livre (`0` = sem limite) |
+| `INITIAL_STORE_NAME` · `INITIAL_STORE_SLUG` | "Loja principal" · `loja-principal` | Loja que recebe os dados na migração de uma instalação de loja única |
+| `DEFAULT_STORE_SLUG` | vazio | Loja das rotas antigas sem slug (senão, a escolhida no superpainel) |
+| `JWT_SECRET` | development: aleatório por máquina (`.temp/dev-jwt-secret`, caminho em `JWT_DEV_SECRET_FILE`); test: fixo | **Obrigatório em produção, com 32+ caracteres**: sem ele, a API não sobe |
+| `JWT_EXPIRES_IN` | `7d` | `7d`, `12h`, `30m` ou segundos. Valor inválido cai no padrão, com aviso. Validade do token bearer (app mobile, suporte) |
+| `JWT_LEGACY_ISSUED_BEFORE` | vazio | Instante ISO 8601 do deploy que aplicou `AuthSessions`: tokens sem `jti` emitidos antes valem até ele + `JWT_EXPIRES_IN`. Vazio: em produção, nenhum é aceito (todos entram de novo); em dev/test, todos até expirar |
+| `AUTH_WEB_COOKIE` · `JWT_ACCESS_EXPIRES_IN` · `AUTH_SESSION_MAX_AGE` · `AUTH_REFRESH_GRACE_SECONDS` · `AUTH_COOKIE_ORIGINS` · `AUTH_COOKIE_SAMESITE` | `true` · `15m` · = `JWT_EXPIRES_IN` · `30` · vazio · `strict` | Sessão do site em cookie (refresh rotativo `HttpOnly`): liga/desliga, validade do token de acesso e da sessão, tolerância do refresh anterior, origens com credenciais e `SameSite` |
+| `ACCOUNT_SECURITY_MODE` | `compat` | Verificação e troca de e-mail; `strict` ainda não existe nesta versão (só gera aviso) |
+| `CREDENTIALS_ENCRYPTION_KEY` | chave fixa só em development/test | AES-256 (32 bytes em base64 ou hex) das credenciais Mercado Pago das lojas. **Obrigatória em produção** |
+| `APP_NAME` · `APP_WEB_URL` | `Comestra` · `http://localhost:5173` | Nome da plataforma; endereço do site nos links de convite, de redefinição e dos e-mails de conta |
+| `PUBLIC_API_URL` | vazio | Endereço público da API (logo das lojas nos e-mails: `<PUBLIC_API_URL>/uploads/<arquivo>`); vazio = sem logo |
 | `UPLOADS_DIR` | `./uploads` | Pasta das imagens (use um volume persistente em produção) |
-| `CORS_ORIGINS` | vazio = qualquer origem | Lista separada por vírgula com os domínios do site e do painel (em produção, vazio gera aviso na subida) |
-| `SEED_DEMO_USERS` | ligado em development/test | Cria os usuários padrão na subida. **Nunca em produção** (`true` é ignorado, com erro no log) |
-| `MP_ACCESS_TOKEN` | vazio | Access token do Mercado Pago (`TEST-...` = credencial de teste) |
+| `UPLOADS_CLEANUP_INTERVAL_HOURS` | vazio (desligada) | Limpeza automática dos arquivos sem uso, em horas (ex.: `24`) |
+| `PLATFORM_INSIGHTS_CACHE_MS` | `30000` | Cache do dashboard e do financeiro do superpainel (`0` desliga) |
+| `SWAGGER_ENABLED` | ligado em development/test | Documentação em `/api` (desligada em produção) |
+| `CORS_ORIGINS` | vazio = qualquer origem | Domínios do site e do painel, separados por vírgula (em produção, vazio gera aviso) |
+| `TRUST_PROXY` | vazio | IP real atrás de proxy/túnel: número de proxies (ex.: `1`) ou lista de IPs/sub-redes. `true` vale como `1`, com aviso. Vazio com `X-Forwarded-For` recebido gera aviso |
+| `RATE_LIMIT_ENABLED` · `RATE_LIMIT_<NOME>` | ligado | Limites (`limite/segundos`) de login (por IP e por conta), cadastro, links, pedidos, cobranças, webhook, uploads, endereços, equipe, troca de credenciais, e-mails de conta, renovação da sessão do site, checkout da assinatura e e-mail de teste do superpainel (`RATE_LIMIT_TEST_EMAIL`, padrão `5/600` por operador; em memória por instância, como os demais) |
+| `CEP_LOOKUP_FAKE` | vazio | Só com `NODE_ENV=test`: mapa JSON de CEPs no lugar de ViaCEP/BrasilAPI (testes determinísticos) |
+| `MAIL_DRIVER` | `log` | E-mail transacional: `log` (nada é enviado; em produção só destinatário e assunto vão para o log, com aviso na subida) ou `smtp` |
+| `SMTP_HOST` · `SMTP_PORT` · `SMTP_SECURE` | vazio · `587` (ou `465` com `SMTP_SECURE=true`) · ligado só na porta 465 | Servidor SMTP. Sem `SMTP_SECURE`, usa STARTTLS (obrigatório quando há usuário e senha) |
+| `SMTP_USER` · `SMTP_PASSWORD` | vazio | Opcionais, sempre juntos; nunca aparecem em respostas, logs ou auditoria |
+| `MAIL_FROM` | vazio | Remetente (`"Nome <endereco@dominio>"` ou só o endereço), obrigatório com `smtp` |
+| `SEED_DEMO_USERS` | ligado em development/test | Loja e contas de demonstração na subida. **Nunca em produção** (`true` é ignorado, com erro no log) |
+| `SEED_DEMO_SUPERADMIN` | ligado em test, desligado em development | Superadmin de demonstração (senha pública). Nunca em produção |
+| `SUPERADMIN_PASSWORD` | vazio | Senha do comando `platform:superadmin` no lugar da aleatória |
+| `MP_ACCESS_TOKEN` · `MP_PUBLIC_KEY` | vazio | Conta Mercado Pago da **loja padrão** sem credencial própria (`TEST-...` = teste) |
 | `PAYMENT_SANDBOX` | automático só em development/test | Vazio = sandbox quando não há token ou ele é `TEST-`. Em produção o sandbox nunca é ligado |
-| `PIX_SANDBOX_APPROVAL_SECONDS` | `5` | No sandbox, segundos até o PIX ser aprovado |
-| `PIX_EXPIRATION_MINUTES` | `30` | Validade do QR Code PIX |
-| `STORE_TIME_ZONE` | `America/Sao_Paulo` | Fuso do "hoje" e dos gráficos do painel |
-| `DELIVERY_ZONES_JSON` | vazio | Faixas de entrega em JSON (substitui o arquivo de configuração) |
+| `PIX_SANDBOX_APPROVAL_SECONDS` · `PIX_EXPIRATION_MINUTES` | `5` · `30` | Aprovação do PIX no sandbox; validade do QR Code (30 min a 30 dias) |
+| `MP_NOTIFICATION_URL` | vazio | URL pública de `POST /payment/webhook` |
+| `SAAS_BILLING_PROVIDER` · `MP_SAAS_ACCESS_TOKEN` · `MP_SAAS_WEBHOOK_SECRET` · `SAAS_BILLING_BACK_URL` · `SAAS_BILLING_INTERVAL_MS` | `MANUAL` · vazio · vazio · vazio · `300000` | Cobrança da assinatura SaaS (conta Mercado Pago da Comestra) e intervalo da rotina (mínimo 10000) |
+| `STORE_TIME_ZONE` | `America/Sao_Paulo` | Fuso das lojas que não têm o próprio |
+| `DELIVERY_ZONES_JSON` · `DELIVERY_ZONES_FILE` | vazio | Faixas de entrega da loja padrão (as demais lojas configuram no painel) |
 | `FOOTBALL_DATA_TOKEN` | vazio | Token de football-data.org para o banner de jogos (opcional) |
 
 Valores booleanos aceitam `true/false`, `1/0`, `yes/no`, `sim/não` e `on/off`. Um valor diferente (ex.: `fasle`) usa o padrão e gera um aviso no log.
@@ -100,19 +135,22 @@ A API **falha fechada**: só `NODE_ENV=development` ou `NODE_ENV=test` liberam a
 
 | | development / test | produção |
 |---|---|---|
-| `JWT_SECRET` vazio | segredo fixo de desenvolvimento (aviso no log) | a API **não sobe** (também com menos de 32 caracteres) |
-| Usuários padrão (senhas públicas) | criados na subida (`SEED_DEMO_USERS=false` desliga) | **nunca** criados; `SEED_DEMO_USERS=true` gera erro no log |
-| `npm run seed` | roda | recusado, a menos que use `npm run seed -- --force` |
-| `DB_SYNCHRONIZE` vazio | ligado | desligado |
+| `JWT_SECRET` vazio | development: segredo aleatório desta máquina em `.temp/dev-jwt-secret` (fora do Git; aviso no log); test: segredo fixo | a API **não sobe** (também com menos de 32 caracteres) |
+| Tokens antigos sem `jti` | aceitos até expirar | só na janela de `JWT_LEGACY_ISSUED_BEFORE` (sem ela, recusados) |
+| `CREDENTIALS_ENCRYPTION_KEY` vazia | chave fixa de desenvolvimento | aviso no log; as lojas não gravam nem usam credenciais próprias |
+| Loja e contas de demonstração (senhas públicas) | criadas na subida (`SEED_DEMO_USERS=false` desliga); superadmin demo só em test ou com `SEED_DEMO_SUPERADMIN=true` | **nunca** criadas; `SEED_DEMO_USERS=true` gera erro no log |
+| `npm run seed` | roda | **recusado** (com ou sem `--force`) |
+| Swagger | ligado | desligado (`SWAGGER_ENABLED=true` liga) |
 | Sandbox de pagamentos | automático sem token ou com token `TEST-` | nunca é ligado |
+| `DB_SYNCHRONIZE` | desligado (recomendado) | desligado (ligado gera aviso) |
 
-`npm run start:prod` define `NODE_ENV=production` (com `cross-env`, funciona no Windows e no Linux). Para testar o build localmente com as facilidades de desenvolvimento, rode `node dist/main` com `NODE_ENV=development` no `.env`.
+`npm run start:prod` define `NODE_ENV=production` (com `cross-env`, funciona no Windows e no Linux). A subida registra `Ambiente: <modo>` e os avisos de configuração.
 
 ---
 
-## 👥 Usuários padrão
+## 👥 Contas de demonstração
 
-Criados na subida da API com `NODE_ENV=development` ou `test` (desligue com `SEED_DEMO_USERS=false`). Nessa etapa, só os que faltam são criados, e contas existentes nunca são alteradas. A lista fica em [`src/database/seeds/default-users.ts`](src/database/seeds/default-users.ts).
+Criadas na subida com `NODE_ENV=development` ou `test` (desligue com `SEED_DEMO_USERS=false`), só as que faltam; contas existentes nunca são alteradas nessa etapa. A lista fica em [`src/database/seeds/default-users.ts`](src/database/seeds/default-users.ts) e a loja demo em [`src/database/seeds/demo-store.ts`](src/database/seeds/demo-store.ts).
 
 | Perfil | E-mail | Senha |
 |---|---|---|
@@ -121,10 +159,11 @@ Criados na subida da API com `NODE_ENV=development` ou `test` (desligue com `SEE
 | `KITCHEN` (Cozinha) | `cozinha@comestra.com.br` | `Cozinha@123` |
 | `COURIER` (Entregador) | `entregador@comestra.com.br` | `Entregador@123` |
 | `CLIENT` (Cliente) | `cliente@comestra.com.br` | `Cliente@123` |
+| `SUPER_ADMIN` (global) | `superadmin@comestra.com.br` | `Superadmin@123` — só em test ou com `SEED_DEMO_SUPERADMIN=true` / `npm run seed -- --with-superadmin` |
 
-`npm run seed` recria os que faltam, restaura os que estão na lixeira e redefine nome, perfil e senha. Onde cada perfil entra e o que pode fazer: [README da raiz](../README.md#-usuários-padrão-um-por-perfil).
+A equipe demo trabalha na loja padrão (a loja demo num banco novo; a loja inicial num banco migrado da loja única). `npm run seed` recria as contas que faltam, restaura as que estão na lixeira e redefine nome, perfil e senha. Onde cada perfil entra e o que pode fazer: [README da raiz](../README.md#-contas-de-demonstração).
 
-> ⚠️ **Produção:** essas senhas são públicas. A API nunca cria esses usuários em produção, e `npm run seed` só roda lá com `--force` (para recuperar o acesso; troque as senhas em seguida). Se as contas já existirem no banco de produção, exclua-as ou troque as senhas antes de abrir a loja. O mesmo vale para uma API de desenvolvimento exposta na internet (ex.: o `npm run tunnel` do app mobile).
+> ⚠️ **Senhas públicas.** A API nunca cria essas contas em produção, e `npm run seed` se recusa a rodar lá. Bancos antigos podem ter o superadmin demo com a senha pública: com `SEED_DEMO_USERS` ligado, a subida avisa no log. Antes de expor a API (rede, `npm run tunnel` do app, ngrok), rode `npm run platform:superadmin -- --email=superadmin@comestra.com.br --reset-password` (ou `--revoke`) e troque ou exclua as contas demo.
 
 ---
 
@@ -132,123 +171,74 @@ Criados na subida da API com `NODE_ENV=development` ou `test` (desligue com `SEE
 
 | Módulo | Pasta | Responsabilidade |
 |---|---|---|
-| Auth | `src/auth` | `POST /auth/login`, estratégia JWT, `RolesGuard`, `@Roles()`, autenticação opcional |
-| Users | `src/users` | Cadastro de clientes e equipe, perfil, avatar, lixeira e regras de acesso (`users.policy.ts`) |
-| Products | `src/products` | Produtos, categorias, adicionais e lixeira |
-| Orders | `src/orders` | Orçamento e criação de pedidos (`order-pricing.service.ts`), regras puras (`order-rules.ts`), transições por perfil, dashboard e logística |
-| Payment | `src/payment` | Cartão e PIX pelo Mercado Pago, modo sandbox e verificação do pagamento na criação do pedido |
-| Addresses | `src/addresses` | Endereços do cliente e busca de CEP (ViaCEP → BrasilAPI) |
-| Store | `src/store` | Loja aberta/fechada e mensagens da vitrine |
-| Promotions | `src/promotions` | Banner do dia: jogo de futebol ou sugestão do dia da semana (texto neutro, sem cupom nem desconto) |
-| Common | `src/common` | Upload e otimização de imagens, manutenção e validadores/transformações comuns |
-| Database | `src/database` | Seed dos usuários padrão (na subida e via `npm run seed`) |
-| Config | `src/config` | Marca (`brand.ts`), leitura de variáveis, JWT, CORS/validação (`app-setup.ts`) e versão |
+| Tenancy | `src/tenancy` | Resolução da loja (equipe, slug, loja padrão), guards (`@StaffRoute`, `@PublicStoreRoute`, `@PlatformRoute`) e situação da loja × capacidades (`store-access.ts`) |
+| Platform | `src/platform` | Superpainel: lojas, usuários, sessões de suporte, configurações, dashboard/financeiro, autoatendimento de lojas e o comando `platform:superadmin` (`cli/`) |
+| Billing | `src/billing` | Planos, assinaturas, faturas, limites do plano, rotina do ciclo de vida, provedores `MANUAL`/`MERCADO_PAGO` e webhook da cobrança SaaS |
+| Audit | `src/audit` | Registro de auditoria com metadados sanitizados |
+| Auth | `src/auth` | Login, JWT e versão de sessão, sessões registradas (`SessionJwtService` + `SessionIssuanceInterceptor`, `auth_sessions`), sessão do site em cookie (`web-session.*`, `refresh-token.ts`, `/auth/web/*`), `GET /auth/me`, logout, lista e encerramento de sessões, recuperação de senha e interceptor da sessão de suporte somente leitura |
+| Account | `src/account` | Minha conta (`/account/*`): troca de senha com a senha atual, confirmação do e-mail, troca de e-mail confirmada no endereço novo, "Não fui eu" e os avisos por e-mail (`account_email_tokens`) |
+| Invitations | `src/invitations` | Convites da equipe (painel da loja e superpainel) e aceite |
+| Users | `src/users` | Clientes e equipe, perfil, avatar, lixeira, responsável da loja e regras de acesso (`users.policy.ts`) |
+| Products | `src/products` | Produtos, categorias, adicionais e lixeira, por loja |
+| Orders | `src/orders` | Orçamento e pedidos (`order-pricing.service.ts`), regras puras (`order-rules.ts`), visão por perfil e etapa, transições, dashboard, relatórios e logística |
+| Payment | `src/payment` | Mercado Pago por loja (cartão e PIX), sandbox, finalização no servidor, estornos, webhook e conciliação |
+| Store | `src/store` | Status, configurações, logo, credenciais Mercado Pago e clientes da loja (com bloqueio por loja); diretório e perfil público (`/stores`) |
+| Addresses | `src/addresses` | Endereços do cliente, busca de CEP compartilhada (`CepLookupService`: ViaCEP → BrasilAPI, com cache) e conferência do bairro pelo CEP (`AddressLocationService`) |
+| Promotions | `src/promotions` | Banner do dia (jogo de futebol ou sugestão do dia da semana) |
+| Notifications | `src/notifications` | E-mails em texto e HTML com a marca da loja ou da plataforma (`MailService`: driver de log ou SMTP; `mail-layout.ts`, `mail-brand.ts`, modelos em `mail-templates.ts`) e links de convite/redefinição |
+| Common | `src/common` | Uploads e imagens (cota de armazenamento por loja: `storage-usage.ts`, `storage-quota.ts`), limites (`RateLimitService`), criptografia (`secret-box.ts`), manutenção em segundo plano (otimização de imagens, limpeza dos arquivos sem uso, manual ou agendada, regravação das credenciais Mercado Pago) e validações |
+| Config | `src/config` | Marca (`brand.ts`), variáveis (`env.ts`), JWT, CORS, validação e cabeçalhos de segurança (`app-setup.ts`) |
+| Database | `src/database` | Data source do CLI, configuração do TypeORM, migrations e seeds |
 
 ---
 
-## 🔑 Autenticação e perfis
+## 🔑 Autenticação, perfis e isolamento
 
 - `POST /auth/login` com `{ email, password }` devolve `{ access_token, user }`. As rotas protegidas usam `Authorization: Bearer <token>`.
-- A cada requisição, a `JwtStrategy` recarrega o usuário do banco. Uma conta excluída (lixeira) recebe `401` mesmo com o token válido, e uma mudança de perfil vale na hora.
-- O e-mail é gravado em minúsculas e o login não diferencia maiúsculas. A senha é guardada com bcrypt e nunca sai nas respostas.
-- **Política de senha:** de 9 caracteres a 72 bytes (o limite do bcrypt; letras acentuadas ocupam 2 bytes), com uma letra maiúscula e um número ou símbolo. Vale no cadastro e na troca de senha.
-- **Cadastro (`POST /users`):** sem token, cria um `CLIENT`. Outros perfis só podem ser criados com token de `ADMIN`. Só o `ADMIN` altera o perfil de alguém, e nunca o próprio (`400`).
-- **Sempre há um administrador:** rebaixar, mandar para a lixeira ou excluir definitivamente o último `ADMIN` ativo responde `400`.
-- **Sessão:** todo `401` tem o formato `{ "statusCode": 401, "message": "Sessão inválida ou expirada. Faça login novamente.", "error": "Unauthorized" }` (sem token, token inválido/expirado ou conta excluída). Só a senha errada no login mantém a mensagem própria (`Email ou senha inválidos`).
+- A cada requisição, a `JwtStrategy` recarrega o usuário do banco: conta excluída, bloqueada ou com sessões encerradas (`token_version`) recebe `401`; mudança de perfil vale na hora.
+- **Sessões registradas:** todo token emitido numa requisição leva `jti` e ganha uma linha em `auth_sessions`, gravada antes de a resposta sair (no máximo 100 sessões ativas por conta). Token com `jti` só vale com a sessão existente, não revogada e no prazo (uma consulta indexada a mais por requisição); token antigo sem `jti` só vale na janela de `JWT_LEGACY_ISSUED_BEFORE`. `POST /auth/logout` encerra a sessão atual (com o token de suporte, encerra também o suporte), `GET /auth/sessions` e `DELETE /auth/sessions/:id` listam e encerram as próprias sessões, e `POST /auth/logout-all` revoga todas. Tokens de link (convite, redefinição, conta) usam `link-token.ts`, nunca o JWT de sessão.
+- **Sessão do site em cookie:** com o cabeçalho `X-Auth-Transport: cookie` (só o site envia), login, aceite de convite, cadastro de loja, troca da própria conta e `POST /account/password` devolvem um token de 15 min e gravam um refresh rotativo num cookie `HttpOnly` (`__Host-comestra_rt` em produção/HTTPS). `POST /auth/web/refresh` renova (com detecção de reuso) e `POST /auth/web/logout` encerra. Sem o cabeçalho, o contrato é o de sempre (app mobile).
+- A loja da equipe vem sempre de `users.store_id`; a da vitrine, do slug da rota. Nenhum `storeId` enviado pelo navegador é aceito. Recurso de outra loja → `404` uniforme.
+- **Política de senha:** de 9 caracteres a 72 bytes, com uma letra maiúscula e um número ou símbolo.
+- **Sessão de suporte:** token temporário do superadmin para uma loja, **somente leitura em toda a API** (`POST/PUT/PATCH/DELETE` → `403`).
+- **Limites:** login e resgate de links reservam a vaga antes de conferir a senha ou o link; cadastro e equipe são limitados antes de ler o corpo. O login também tem teto de falhas por conta (somando os IPs) e todo 429 do login demora o mesmo que uma conferência de senha. Valores em `.env.example`.
 
 | Perfil | Papel |
 |---|---|
-| `ADMIN` | Acesso total: dashboard, pedidos, cardápio, equipe, lixeira, loja e manutenção |
-| `EMPLOYEE` | Atendente: conduz todo o fluxo dos pedidos, despacha entregas, cancela e abre/fecha a loja |
-| `KITCHEN` | Cozinha: inicia o preparo e marca o pedido como pronto |
-| `COURIER` | Entregador: pega pedidos prontos para entrega e conclui as próprias entregas |
-| `CLIENT` | Cliente: faz pedidos e pagamentos e gerencia os próprios endereços e dados |
+| `SUPER_ADMIN` (global, `platform_role`) | Superpainel; não opera lojas nem compra; sessão de suporte somente leitura |
+| `ADMIN` | Tudo da própria loja: dashboard, pedidos, cardápio, equipe e convites, clientes, configurações, assinatura |
+| `EMPLOYEE` | Atendente: todos os pedidos da loja, despacho, cancelamento, abrir/fechar a loja, clientes (leitura) |
+| `KITCHEN` | Cozinha: só pedidos `PENDING` e `PREPARING`, sem dados de contato do cliente |
+| `COURIER` | Entregador: entregas prontas sem responsável e as próprias (nome, telefone, endereço e troco do cliente) |
+| `CLIENT` | Cliente global: compra em qualquer loja, endereços e dados da conta |
 
-Pedidos e pagamentos online são exclusivos de `CLIENT` (`ClientOnlyGuard`). A equipe recebe `403`.
+Pedidos e pagamentos online são exclusivos de `CLIENT` (`ClientOnlyGuard`): a equipe e o superadmin recebem `403`.
 
 ---
 
 ## 📡 Endpoints
 
-Use o Swagger (`/api`) para ver os schemas e testar as rotas. "Equipe" = `ADMIN`, `EMPLOYEE`, `KITCHEN` e `COURIER`. "Gestão" = `ADMIN` e `EMPLOYEE`.
+Use o Swagger (`/api`) para os schemas. Contratos detalhados, mensagens e limites: [`docs/saas/arquitetura.md`](../docs/saas/arquitetura.md) (seções 5 e 11). Rotas com `stores/:storeSlug/...` atuam na loja do slug; as antigas sem slug, na loja da equipe autenticada (leituras) ou na loja padrão.
 
-**Saúde e autenticação**
+| Área | Rotas principais | Acesso |
+|---|---|---|
+| Saúde | `GET /health` (`{ "status": "ok" }`) | Público |
+| Autenticação | `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`, `POST /auth/logout-all`, `GET /auth/sessions`, `DELETE /auth/sessions/:id`, `POST /auth/forgot-password`, `GET /auth/reset-password/:token`, `POST /auth/reset-password`, `POST /auth/web/refresh`, `POST /auth/web/logout` (sessão do site em cookie) | Público (limitado) / autenticado |
+| Minha conta | `GET /account/security`, `POST /account/password`, `POST/DELETE /account/email-change`, `POST /account/email-verification` (autenticado); `GET /account/email-change/:token`, `POST /account/email-change/confirm`, `GET /account/email-revert/:token`, `POST /account/email-revert`, `GET /account/email-verification/:token`, `POST /account/email-verification/confirm` (links públicos, limitados) | Autenticado (escritas: não na sessão de suporte) / público |
+| Convites | `GET /invitations/:token`, `POST /invitations/:token/accept` | Público (limitado) |
+| Conta e equipe | `POST /users` (cadastro de cliente ou equipe pelo ADMIN), `GET /users`, `GET /users/trash`, `GET/PATCH/DELETE /users/:id`, `PATCH /users/:id/restore`, `DELETE /users/:id/permanent` | Próprio usuário · ADMIN (equipe da própria loja) |
+| Painel da loja | `GET/PATCH /store/status`, `GET/PATCH /store/settings`, `PUT/DELETE /store/settings/payments`, `POST/DELETE /store/logo`, `GET/POST /store/invitations`, `DELETE /store/invitations/:id`, `GET /store/customers`, `GET /store/customers/:userId`, `POST/DELETE /store/customers/:userId/block` | ADMIN (status e leitura dos clientes: também EMPLOYEE; bloquear e desbloquear: só ADMIN) |
+| Assinatura da loja | `GET /store/subscription`, `POST /store/subscription/{checkout,cancel,resume}` | ADMIN |
+| Vitrine | `GET /stores`, `GET /stores/default`, `GET /stores/:storeSlug`, `GET /stores/:storeSlug/status`, `GET /plans`, `POST /stores/signup` | Público |
+| Cardápio | `GET /products`, `GET /products/:id`, `GET /addons` (e por slug); `GET /products/trash`, `POST/PATCH/DELETE /products...`, `PATCH /products/:id/restore`, `DELETE /products/:id/permanent`, `POST/PATCH/DELETE /addons...` | Público (leitura) · ADMIN |
+| Pedidos | `POST /orders/quote`, `POST /orders`, `GET /orders/my-orders`, `PATCH /orders/:id/cancel` (cliente); `GET /orders`, `GET /orders/:id`, `PATCH /orders/:id`, `PATCH /orders/:id/assign`, `GET /orders/:id/nearby`, `GET /orders/drivers/list`, `GET /orders/summary`, `GET /orders/charts`, `GET /orders/reports` (equipe, conforme o perfil) | Cliente · equipe |
+| Pagamentos do delivery | `POST /payment/card`, `POST /payment/pix`, `GET /payment/status/:id`, `POST /payment/:id/cancel`, `POST /payment/webhook` | Cliente (status: pagador ou ADMIN/EMPLOYEE da loja) · webhook público |
+| Endereços | `GET /addresses/cep/:cep`, `POST/GET /addresses`, `GET/PATCH/DELETE /addresses/:id` | Público (CEP) · dono |
+| Banner e imagens | `GET /promotions/banner`, `POST /uploads` | Público · ADMIN |
+| Superpainel | `/platform/dashboard`, `/platform/stores/**`, `/platform/users/**`, `/platform/auth-events`, `/platform/plans/**`, `/platform/subscriptions/**`, `/platform/invoices/**`, `/platform/finance`, `/platform/audit`, `/platform/settings`, `/platform/settings/test-email`, `/platform/support-sessions/**`, `/platform/maintenance/{optimize-images,cleanup-uploads,store-credentials,store-credentials/reencrypt}` | `SUPER_ADMIN` (token normal; o de suporte recebe 403) |
+| Cobrança SaaS | `POST /billing/webhook/mercadopago` | Público (assinatura validada com `MP_SAAS_WEBHOOK_SECRET`) |
 
-| Método | Rota | Acesso | Descrição |
-|---|---|---|---|
-| GET | `/health` | Público | Status, nome e versão da API |
-| POST | `/auth/login` | Público | Login por e-mail e senha |
-
-**Usuários**
-
-| Método | Rota | Acesso | Descrição |
-|---|---|---|---|
-| POST | `/users` | Público (`CLIENT`) · `ADMIN` (outros perfis) | Cadastro (JSON ou multipart com o avatar em `file`) |
-| GET | `/users` | `ADMIN` | Lista os usuários ativos |
-| GET | `/users/trash` | `ADMIN` | Usuários na lixeira |
-| GET | `/users/:id` | Próprio usuário ou `ADMIN` | Detalhe |
-| PATCH | `/users/:id` | Próprio usuário ou `ADMIN` | Edição (só o `ADMIN` muda `role` de outra conta), com avatar opcional. `phone` vazio ou `null` remove o telefone |
-| PATCH | `/users/:id/restore` | `ADMIN` | Restaura da lixeira |
-| DELETE | `/users/:id` | Própria conta ou `ADMIN` | Exclusão lógica (o `ADMIN` não exclui a si mesmo, nem o último `ADMIN` ativo) |
-| DELETE | `/users/:id/permanent` | `ADMIN` | Exclusão definitiva (`409` se houver pedidos; `400` para o último `ADMIN` ativo) |
-
-Ids fora de `1..2147483647` (ou não numéricos) respondem `400 "Id inválido."`.
-
-**Cardápio**
-
-| Método | Rota | Acesso | Descrição |
-|---|---|---|---|
-| GET | `/products` | Público | Produtos fora da lixeira (inclusive indisponíveis), com adicionais permitidos |
-| GET | `/products/:id` | Público | Detalhe |
-| GET | `/products/trash` | `ADMIN` | Produtos na lixeira |
-| POST | `/products` | `ADMIN` | Cadastro (multipart com a foto em `file`, ou JSON) |
-| PATCH | `/products/:id` | `ADMIN` | Edição (foto opcional) |
-| PATCH | `/products/:id/restore` | `ADMIN` | Restaura da lixeira |
-| DELETE | `/products/:id` | `ADMIN` | Move para a lixeira |
-| DELETE | `/products/:id/permanent` | `ADMIN` | Exclusão definitiva (`409` se o produto aparece em pedidos) |
-| GET | `/addons` | Público | Adicionais fora da lixeira |
-| POST · PATCH · DELETE | `/addons`, `/addons/:id` | `ADMIN` | Cadastro, edição e exclusão lógica de adicionais |
-
-Categorias aceitas: `hamburgueres`, `combos`, `entradas`, `acompanhamentos`, `bebidas`, `sobremesas`, `molhos`, `adicionais`. Preços vão até R$ 999.999,99. `promotion_price` vazio, `null`, `0` ou negativo significa "sem promoção" e é gravado como `null`; quando existe, precisa ser menor que o preço.
-
-**Pedidos** (todas exigem login)
-
-| Método | Rota | Acesso | Descrição |
-|---|---|---|---|
-| POST | `/orders/quote` | `CLIENT` | Orçamento calculado no servidor (itens, subtotal, taxa, total, tempo estimado e `store_open`) |
-| POST | `/orders` | `CLIENT` | Cria o pedido (com `paymentId` quando pago online) |
-| GET | `/orders/my-orders` | Logado | Pedidos do próprio usuário |
-| GET | `/orders/:id` | Dono ou equipe | Detalhe |
-| PATCH | `/orders/:id/cancel` | Dono (enquanto `PENDING`) ou gestão | Cancela |
-| GET | `/orders` | Equipe | Todos os pedidos |
-| PATCH | `/orders/:id` | Equipe | Muda o status (`{ status }`), conforme o perfil |
-| PATCH | `/orders/:id/assign` | Gestão | Atribui um entregador (`{ driverId }`) e leva o pedido para `DELIVERING` |
-| GET | `/orders/:id/nearby` | Gestão | Pedidos prontos, sem entregador, do mesmo bairro |
-| GET | `/orders/drivers/list` | Gestão | Entregadores ativos |
-| GET | `/orders/summary` | `ADMIN` | Resumo do dashboard |
-| GET | `/orders/charts` | `ADMIN` | Faturamento dos últimos 7 dias e os 5 produtos mais vendidos |
-
-**Pagamentos**
-
-| Método | Rota | Acesso | Descrição |
-|---|---|---|---|
-| POST | `/payment/card` | `CLIENT` | Cobra o cartão (token do Mercado Pago). O valor vem do `order` enviado |
-| POST | `/payment/pix` | `CLIENT` | Gera o PIX (QR Code e copia e cola) |
-| GET | `/payment/status/:id` | Pagador ou equipe | Status do pagamento (consultado pelas telas de PIX e cartão) |
-| POST | `/payment/webhook` | Público | Só confirma o recebimento (`{ "status": "ok" }`) |
-
-**Endereços, loja, banner e imagens**
-
-| Método | Rota | Acesso | Descrição |
-|---|---|---|---|
-| GET | `/addresses/cep/:cep` | Público | Busca de CEP (ViaCEP, com BrasilAPI como reserva) |
-| POST · GET | `/addresses` | Logado | Cria / lista os endereços do próprio usuário |
-| GET · PATCH · DELETE | `/addresses/:id` | Logado (dono) | Detalhe, edição e exclusão lógica (pedidos antigos mantêm o endereço) |
-| GET | `/store/status` | Público | `{ is_open, opening_message, closing_message }` |
-| PATCH | `/store/status` | `ADMIN`, `EMPLOYEE` | Abre/fecha a loja e edita as mensagens |
-| GET | `/promotions/banner` | Público | Banner do dia: jogo de futebol ou sugestão do dia, sem cupom (`/promotions/football` é um alias antigo) |
-| POST | `/uploads` | `ADMIN` | Envia uma imagem avulsa (campo `file`) e devolve `{ filename }` |
-| POST | `/maintenance/optimize-images` | `ADMIN` | Converte para WebP as imagens antigas de produtos e avatares |
+Ids fora de `1..2147483647` (ou não numéricos) respondem `400 "Id inválido."`. Listas novas são paginadas (`{ items, total, page, pageSize }`); `GET /orders` e `GET /orders/my-orders` mantêm o formato de lista, com `?page`/`?pageSize` (padrão: os 100 mais recentes).
 
 ---
 
@@ -272,28 +262,19 @@ As regras ficam em funções puras em [`src/orders/order-rules.ts`](src/orders/o
 ```
 
 - O preço unitário é o promocional quando ele existe e é menor que o normal. Adicionais repetidos em `addonIds` indicam a quantidade (`[4, 4]` = 2×).
-- Se o produto define adicionais permitidos, só eles são aceitos. Produtos e adicionais indisponíveis ou na lixeira são recusados.
+- Só os adicionais permitidos no produto são aceitos; **produto sem adicionais configurados não aceita nenhum** (400). Produtos e adicionais indisponíveis, na lixeira ou de outra loja são recusados ("não encontrado", sem revelar o nome).
 - Limites por pedido: 50 linhas, até 50 unidades por item, até 50 adicionais por item e observação de até 300 caracteres.
-- **Retrato do preço:** cada item grava `unit_price` e `addons_snapshot` (nome, preço e quantidade cobrados), então o histórico não muda quando o cardápio muda.
-- **Loja fechada:** o orçamento devolve `store_open: false`, e a criação do pedido e os pagamentos respondem `400`.
+- **Retrato do preço:** cada item grava `unit_price` e `addons_snapshot`, e o pedido de entrega grava o retrato do endereço.
+- **Loja fechada:** o orçamento devolve `store_open: false`, e o pedido e os pagamentos novos respondem `400`. **Loja que não pode vender** (suspensa, desativada, assinatura suspensa/cancelada ou ausente): `403` com mensagem neutra para o cliente.
+- **Limites de abuso:** `ORDER_CREATE` (cliente + loja) e `ORDER_CREATE_IP`; no máximo N pedidos pagos na entrega aguardando a loja por cliente (N = limite de `ORDER_CREATE`, padrão 10) → `429`. O limite mensal do plano conta também os pagamentos online em andamento.
+- **Número do pedido por loja:** toda resposta de pedido traz `number` (1..N na loja, sem buraco nem repetição), atribuído pelo banco num gatilho com o contador `store_order_counters` e imutável; `number` no corpo → `400`. O `id` continua sendo a chave das rotas e do app mobile.
+- **Cliente bloqueado pela loja** (`POST/DELETE /store/customers/:userId/block`): `403 "Não é possível fazer pedidos nesta loja. Fale com a loja."` no orçamento, no pedido pago na entrega e nas cobranças PIX/cartão daquela loja (conferido em `OrderPricingService.price()`); outras lojas não são afetadas, e um pagamento já aprovado continua virando pedido.
 
-**Entrega por bairro.** O nome inteiro do bairro é comparado, sem diferenciar maiúsculas nem acentos, e a cidade também quando a zona a informa. Padrão de fábrica:
+**Entrega por bairro.** A loja padrão usa as zonas da plataforma (`DELIVERY_ZONES_JSON`/`DELIVERY_ZONES_FILE`, padrão em [`src/orders/delivery-zones.config.ts`](src/orders/delivery-zones.config.ts)); as demais lojas configuram as próprias zonas e taxas no painel e, sem zonas, não fazem entrega. O nome inteiro do bairro é comparado, sem diferenciar maiúsculas nem acentos; uma zona também pode ter **faixas de CEP**. O bairro usado é o do CEP, conferido pela API (ViaCEP/BrasilAPI) no cadastro do endereço, na edição e no orçamento; sem o serviço, vale o digitado. Fora das zonas, a loja cobra a taxa padrão (`outside_zones: fallback`) ou recusa (`refuse` → `400` com `code: DELIVERY_OUT_OF_AREA` no orçamento, no pedido e nas cobranças, antes de cobrar). Retirada (`TAKEOUT`) é grátis.
 
-| Bairro | Taxa | Tempo |
-|---|---|---|
-| Centro, Lapa, Santa Teresa | R$ 5 | 30-40 min |
-| Flamengo, Botafogo, Laranjeiras | R$ 7 | 40-50 min |
-| Copacabana, Ipanema, Leblon | R$ 10 | 50-60 min |
-| Barra da Tijuca, Barra, Recreio dos Bandeirantes, Recreio | R$ 20 | 60-80 min |
-| Tijuca, Maracanã | R$ 12 | 50-60 min |
-| demais bairros | R$ 15 | 50-60 min |
-| retirada (`TAKEOUT`) | grátis | 15-20 min |
-
-Os bairros vêm de uma instalação no Rio de Janeiro. Em cada instalação, configure as zonas sem mexer no código: use `DELIVERY_ZONES_JSON` ou `DELIVERY_ZONES_FILE` (o formato está no `.env.example`), ou edite o padrão em [`src/orders/delivery-zones.config.ts`](src/orders/delivery-zones.config.ts).
-
-**Pagamento:** `PIX`, `CREDIT_CARD`, `DEBIT_CARD` ou `MONEY`. Com `paymentId`, o pedido foi pago online. Sem ele, o pagamento é feito na entrega ou na retirada.
-- O troco só vale para `MONEY`. É gravado como `"R$ 50,00"` e precisa ser maior ou igual ao total.
-- Pagamentos online normalmente **já viram pedido no servidor** quando são aprovados (veja Pagamentos). `POST /orders` com `paymentId` continua aceito e é idempotente. Para o mesmo cliente, devolve o pedido já criado com aquele pagamento. Se o pedido ainda não existe, a API confere o pagamento: precisa ser do mesmo cliente, ter forma compatível, estar aprovado e bater com o total (±R$ 0,01). `payment_id` é único.
+**Pagamento:** `PIX`, `CREDIT_CARD`, `DEBIT_CARD` ou `MONEY`. Com `paymentId`, o pedido foi pago online; sem ele, na entrega ou na retirada.
+- O troco só vale para `MONEY`, precisa ser maior ou igual ao total e no máximo **R$ 200,00 acima** dele.
+- Pagamentos online **viram pedido no servidor** quando são aprovados. `POST /orders` com `paymentId` é idempotente: devolve o pedido já criado com aquele pagamento (pagamento de outro cliente ou loja responde como inexistente).
 - Um pedido pago na entrega ou na retirada vira `PAID` quando é concluído (`DONE`).
 
 **Status e transições** (`PATCH /orders/:id`):
@@ -304,98 +285,110 @@ Os bairros vêm de uma instalação no Rio de Janeiro. Em cada instalação, con
 | `KITCHEN` | `PENDING → PREPARING` e `PREPARING → READY_FOR_PICKUP` |
 | `COURIER` | `READY_FOR_PICKUP → DELIVERING` (assume o pedido se ainda não tiver entregador) e `DELIVERING → DONE` só nas próprias entregas |
 
-- `DONE` e `CANCELED` são finais. Mudar para o mesmo status é inválido. `TAKEOUT` nunca entra em `DELIVERING`.
-- Transição impossível → `400 "Transição inválida: X → Y"`. Transição possível, mas não permitida ao perfil → `403`.
-- **Concorrência:** a gravação só acontece se o pedido ainda estiver no status lido. Se outra pessoa mexeu nele antes, a resposta é `409`.
-- **Cancelamento** (`PATCH /orders/:id/cancel`): o dono pode cancelar enquanto o pedido está `PENDING`. A gestão pode cancelar enquanto ele não for final.
-- **Despacho** (`PATCH /orders/:id/assign`): só para `DELIVERY` em `PREPARING`, `READY_FOR_PICKUP` ou `DELIVERING`, com um usuário `COURIER` ativo.
-
-**Dashboard:** o faturamento conta apenas pedidos `PAID` e não cancelados.
+- `DONE` e `CANCELED` são finais. `TAKEOUT` nunca entra em `DELIVERING`. Transição impossível → `400 "Transição inválida: X → Y"`; não permitida ao perfil → `403`; pedido alterado por outra pessoa → `409`. Cozinha e entregador recebem `404 "Pedido não encontrado."` ao alterar ou cancelar um pedido fora da própria etapa (inclusive o entregador que perde a corrida para pegar uma entrega).
+- **Cancelamento** (`PATCH /orders/:id/cancel`): o dono enquanto `PENDING`; a gestão enquanto não for final. Pedido pago online gera **estorno**.
+- **Despacho** (`PATCH /orders/:id/assign`): só para `DELIVERY` em `PREPARING`, `READY_FOR_PICKUP` ou `DELIVERING`, com um `COURIER` ativo da mesma loja.
+- **Dashboard e relatórios:** no fuso da loja; o faturamento conta apenas pedidos `PAID` e não cancelados. Relatórios avançados dependem do plano.
 
 ---
 
 ## 💳 Pagamentos (Mercado Pago)
 
-O modo é decidido por `resolvePaymentMode` ([`src/payment/payment-rules.ts`](src/payment/payment-rules.ts)):
-
-- **Sandbox** (somente com `NODE_ENV=development` ou `test`: `PAYMENT_SANDBOX=true`, ou vazio sem token / com token `TEST-`):
-  - **Cartão:** sem token, a aprovação é simulada. Com token de teste, o cartão vai para o Mercado Pago, e uma recusa ou falha vira aprovação simulada.
-  - **PIX:** usa o QR do Mercado Pago (ou um QR de teste, que não pode ser pago) e é aprovado sozinho após `PIX_SANDBOX_APPROVAL_SECONDS` (padrão 5 s).
-  - As respostas simuladas trazem `simulation: true`, e o log as marca como simulação.
-- **Produção** (`PAYMENT_SANDBOX=false`, ou qualquer ambiente de produção, inclusive com `NODE_ENV` vazio; lá o sandbox nunca é ligado): não há simulação. O pagamento é consultado de novo no Mercado Pago antes de o pedido ser criado. Sem `MP_ACCESS_TOKEN`, a cobrança por cartão e por PIX responde `503` (o pagamento na entrega continua funcionando).
+- **Por loja:** cada loja informa a própria conta em `PUT /store/settings/payments` (token cifrado com `CREDENTIALS_ENCRYPTION_KEY`, nunca devolvido). `MP_ACCESS_TOKEN` vale só para a loja padrão sem credencial própria. Loja sem credencial: pagamento online indisponível.
+- **Modo** (`src/payment/payment-rules.ts`): sandbox só com `NODE_ENV=development` ou `test` (`PAYMENT_SANDBOX=true`, ou vazio sem token / com token `TEST-`): cartão recusado vira aprovação simulada e o PIX é aprovado após `PIX_SANDBOX_APPROVAL_SECONDS`; respostas simuladas trazem `simulation: true`. Em produção não há simulação.
+- **Fluxo:** o front envia o `order` e uma `idempotencyKey` para `/payment/card` ou `/payment/pix`; a API calcula o valor, grava o pagamento (`payments`, com o retrato do carrinho) e cobra. Quando o pagamento é aprovado (resposta do cartão, `GET /payment/status/:id`, webhook ou conciliação a cada 60 s), **a própria API cria o pedido**.
+- **Loja que não pode vender:** o pagamento aprovado não vira pedido; o valor é estornado e o caso fica na auditoria. Loja apenas fechada continua recebendo o pedido do pagamento aprovado.
+- **Limites:** `PAYMENT_CREATE` (cliente + loja), `PAYMENT_CREATE_IP` e no máximo 5 cobranças pendentes por cliente e loja (`429`); o mesmo carrinho com um PIX pendente devolve o mesmo PIX.
+- **Webhook** (`POST /payment/webhook`): o corpo não é confiável; cada pagamento é reconsultado no Mercado Pago (no máximo a cada 15 s), com limite por IP (`PAYMENT_WEBHOOK`) e fila limitada.
+- PIX vence em `PIX_EXPIRATION_MINUTES` e pode ser cancelado em `POST /payment/:id/cancel`. Cancelar um pedido pago online gera estorno (`REFUNDED`); se falhar, `REFUND_PENDING`.
+- **Estorno ou contestação feitos no Mercado Pago** depois da aprovação: o webhook reconsulta também os pagamentos aprovados e marca o pedido com `payment_status = REFUNDED` (auditoria `payment.reversed`); o painel avisa a equipe para não entregar. A finalização de um pagamento aprovado usa uma trava do banco por pagamento (segura com várias instâncias), e `GET /payment/status/:id` consulta o Mercado Pago no máximo a cada 5 s por pagamento.
 
 Cartão de teste: `5031 4332 1540 6351`, validade `11/30`, CVV `123`, titular `APRO`, CPF `123.456.789-09`.
-
-**Fluxo:**
-1. O front envia `order` (o mesmo corpo do orçamento) e uma `idempotencyKey` para `/payment/card` (com o token do cartão) ou para `/payment/pix`. A chave evita cobrança dupla: repetir a mesma chave devolve o mesmo pagamento, e ela também é repassada ao Mercado Pago.
-2. A API calcula o valor e grava o pagamento na tabela `payments`, com o retrato do carrinho e dos preços. Em seguida, cobra.
-3. **Quando o pagamento é aprovado, a própria API cria o pedido**, de forma idempotente (`orders.payment_id` é único) e a partir do retrato, mesmo que a loja tenha fechado ou um preço tenha mudado. A aprovação pode chegar por:
-   - resposta imediata do cartão (`orderId` na resposta);
-   - `GET /payment/status/:id` (devolve `orderId` quando o pedido existe);
-   - webhook (`MP_NOTIFICATION_URL`);
-   - job de conciliação a cada 60 s.
-4. O PIX vence em `PIX_EXPIRATION_MINUTES` (`expires_at` na resposta) e pode ser cancelado em `POST /payment/:id/cancel`. Um pagamento cancelado nunca vira pedido.
-5. Cancelar um pedido pago online gera **estorno** (`REFUNDED`). Se o estorno falhar, o pedido fica como `REFUND_PENDING`, visível no painel. Pagamentos que não batem com o retrato também são estornados, e o motivo fica em `finalize_error`.
 
 ---
 
 ## 🖼 Imagens
 
-- Produtos (`POST/PATCH /products`), avatares (`POST/PATCH /users`) e `POST /uploads` aceitam **JPG, PNG ou WebP de até 5 MB**, no campo `file`.
-- O tipo é conferido pelo conteúdo do arquivo. A imagem é rotacionada conforme o EXIF, limitada a 800 px de largura e convertida para **WebP** (qualidade 80) com Sharp.
-- Os arquivos ficam em `UPLOADS_DIR` e são servidos em `/uploads/<arquivo>`. Produtos guardam só o nome do arquivo, e avatares guardam `/uploads/<arquivo>`.
-- A imagem só é gravada depois que o corpo da requisição foi validado (e, no cadastro, o perfil autorizado). Se a operação falhar depois disso, a imagem recém-gravada é apagada: requisições recusadas não deixam arquivos órfãos.
-- A pasta padrão `uploads/` está no `.gitignore`: só as imagens de demonstração já versionadas continuam no Git.
+- Produtos, adicionais, logo da loja, avatares e `POST /uploads` aceitam **JPG, PNG ou WebP de até 5 MB**, no campo `file`, com o tipo conferido pelo conteúdo. A imagem é rotacionada conforme o EXIF, limitada a 800 px de largura e convertida para **WebP** (qualidade 80).
+- Limites: `UPLOAD` por conta ou IP (antes de ler o corpo; conta também o multipart que falha no parse), até 40 megapixels, multipart com até 300 campos de 16 KB, nomes de campo com no máximo 2 níveis de aninhamento e índice até 300, e no máximo 2 conversões simultâneas por processo. Só os decodificadores de JPEG, PNG e WebP ficam ligados no libvips.
+- **Cota de armazenamento por plano** (`max_storage_mb`): soma das imagens da loja (`s<storeId>-`), conferida **antes de gravar** (403 com o aviso do plano); avatares não contam. Uso × limite em `storage` nas respostas da assinatura.
+- Os arquivos ficam em `UPLOADS_DIR` e são servidos em `/uploads/<arquivo>` com `nosniff` e CSP restrita. Imagens da loja levam o prefixo `s<storeId>-`; fotos de perfil enviadas por uma conta existente, `u<id>-` (a foto anterior da própria conta é apagada).
+- O campo `image` de produtos e adicionais aceita só arquivos da própria loja, URLs `https://` ou o valor que já tinha. O avatar em texto aceita só os ícones prontos de `src/users/avatar.ts`.
+- Se a operação falhar depois do upload, a imagem recém-gravada é apagada. A otimização das imagens antigas roda em segundo plano pelo superpainel.
+- **Limpeza dos arquivos sem uso** (superpainel, `POST /platform/maintenance/cleanup-uploads`): `check` só conta; `delete` (com `confirm: true`) apaga as imagens do primeiro nível de `UPLOADS_DIR` sem referência há mais de 24 h (produtos e adicionais, inclusive na lixeira, avatares, inclusive de contas apagadas, e logos), reconferindo cada lote no banco e no disco logo antes. Nunca segue atalhos nem apaga arquivos fora do padrão da API; o resumo guarda só números. Com `UPLOADS_CLEANUP_INTERVAL_HOURS`, o `delete` também roda sozinho a cada intervalo (auditado como sistema). `/uploads` sai com cache de 30 dias (`immutable`).
 
 ---
 
 ## 🗄 Banco de dados
 
-Tabelas: `users`, `products`, `addons`, `product_allowed_addons`, `orders`, `order_items`, `order_item_addons`, `addresses` e `store_config`.
+O schema vem das migrations em [`src/database/migrations`](src/database/migrations) (registradas em `index.ts`):
 
-- `users`, `products` e `addons` usam exclusão lógica (`deleted_at`). Endereços também, mas pedidos antigos continuam exibindo o endereço de entrega.
-- `store_config` tem uma linha só, criada na subida com a loja **aberta**.
-- Com `DB_SYNCHRONIZE=true`, o TypeORM ajusta o schema a partir das entidades. Em produção, desligue o synchronize e versione o schema com migrations. O repositório ainda não traz migrations nem um data source para o CLI do TypeORM, então crie-os antes da primeira subida em produção.
+| Migration | O que faz |
+|---|---|
+| `BaselineSchema` | Schema da versão de loja única (não faz nada num banco existente) |
+| `MultiTenantFoundation` | Tabelas da plataforma, `store_id` nas tabelas operacionais e migração dos dados para a loja inicial |
+| `TenancyIndexes` | Índices por loja/cliente e únicos parciais (idempotente) |
+| `MaintenanceJobs` | Execuções da manutenção em segundo plano |
+| `PlatformIntegrity` | `subscriptions.suspended_by`, CHECK do papel global e triggers de mesma loja / `store_id` imutável |
+| `OrderNumbersAndCustomerBlocks` | `orders.number` com backfill por loja (ordem de criação), contador `store_order_counters`, gatilhos de numeração e de imutabilidade, e `store_customer_blocks` |
+| `AuthSessions` | Tabela `auth_sessions` (uma linha por token de sessão emitido, com `jti` único). O `down()` encerra as sessões de todas as contas |
+| `AddressZoneLocation` | Bairro, cidade e UF conferidos pelo CEP em `addresses` (colunas opcionais, sem backfill) |
+| `PlanStorageLimit` | `plans.max_storage_mb` (nulo = ilimitado) |
+| `StoreSlugHistoryAndCancelOrigin` | `subscriptions.cancel_scheduled_by` (preenchida pelo histórico) e `store_slug_history` (slugs antigos reservados) |
+| `PerformanceIndexes` | Índices de desempenho com `CONCURRENTLY`, fora de transação (os de trigramas só com `pg_trgm`) |
+| `AccountEmailVerification` | `users.email_verified_at` e `account_email_tokens` |
+| `AuthSessionRefresh` | Colunas da sessão do site em cookie em `auth_sessions` |
+
+- Tabelas globais: `stores`, `store_slug_history`, `plans`, `subscriptions`, `subscription_events`, `subscription_invoices`, `billing_webhook_events`, `platform_settings`, `audit_logs`, `support_sessions`, `auth_sessions`, `maintenance_jobs`, `users`, `account_email_tokens`, `addresses`, `invitations`, `password_reset_tokens`. Por loja: `products`, `addons`, `orders`, `payments` (+ junções), `store_customer_blocks` e `store_order_counters` (sem entidade: só o gatilho usa). `store_config` fica como histórico da versão de loja única.
+- A `OrderNumbersAndCustomerBlocks` renumera os pedidos existentes por loja: telas e conversas antigas que citavam `Pedido #<id>` passam a mostrar outro número (o `id` não muda). Depois de restaurar ou importar pedidos, confira o contador ([`operacao.md`](../docs/saas/operacao.md#83-clientes-bloqueados-e-número-do-pedido)).
+- `users`, `products` e `addons` usam exclusão lógica (`deleted_at`); lojas nunca são apagadas, só desativadas.
+- Atualizar, reverter e validar migrations: [`docs/saas/operacao.md`](../docs/saas/operacao.md#4-migrations). Mantenha `DB_SYNCHRONIZE=false`.
 
 ---
 
 ## 🧪 Testes
 
 ```bash
-npx jest              # unitários (sem banco): regras de pedidos, pagamentos, permissões, cardápio, uploads...
+npx jest              # unitários (sem banco)
 npm run test:cov      # com cobertura
 ```
 
-O teste E2E da API (`test/app.e2e-spec.ts`) sobe o `AppModule` completo e precisa de PostgreSQL. Use um banco de teste já criado para não mexer no de desenvolvimento:
+O teste E2E da API com Jest (`test/app.e2e-spec.ts`) sobe o `AppModule` completo e precisa de um banco de teste já criado:
 
 ```bash
 DB_DATABASE=comestra_test npm run test:e2e                  # Linux
 $env:DB_DATABASE="comestra_test"; npm run test:e2e          # Windows (PowerShell)
 ```
 
-A suíte ponta a ponta completa (API + navegador, com Playwright) fica em [`../e2e`](../e2e/README.md).
+A suíte ponta a ponta completa (API + navegador, com Playwright, inclusive isolamento entre lojas, superpainel e cobrança) fica em [`../e2e`](../e2e/README.md).
 
 ---
 
 ## ✅ Produção (resumo)
 
-- [ ] `npm run build && npm run start:prod` (o `start:prod` já define `NODE_ENV=production`). Rodando de outro jeito (`node dist/main`, PM2, Docker), defina `NODE_ENV=production` no ambiente.
-- [ ] `JWT_SECRET` aleatório com 32+ caracteres (sem ele, a API não sobe).
-- [ ] Usuários padrão: a API não os cria em produção. Se eles já existirem no banco, exclua as contas ou troque as senhas.
-- [ ] `MP_ACCESS_TOKEN` de produção, sem `PAYMENT_SANDBOX=true`.
-- [ ] `DB_SYNCHRONIZE=false` (padrão em produção) com o schema controlado por migrations. Na primeira instalação, gere as migrations ou suba uma única vez com `DB_SYNCHRONIZE=true` (com backup) e volte para `false`.
-- [ ] `CORS_ORIGINS` com os domínios reais, HTTPS e `UPLOADS_DIR` em um volume persistente.
-- [ ] Confira o log da subida: `Ambiente: production` e nenhum aviso de configuração.
+- [ ] `npm run build`, migrations (`npm run migration:run:prod`) e `npm run start:prod` (que já define `NODE_ENV=production`).
+- [ ] `JWT_SECRET` aleatório com 32+ caracteres e `CREDENTIALS_ENCRYPTION_KEY` guardada em cofre.
+- [ ] Superadmin criado com `npm run platform:superadmin:prod -- --email=...`; nenhuma conta de demonstração no banco.
+- [ ] `DB_SYNCHRONIZE=false`, `SWAGGER_ENABLED` desligado, `CORS_ORIGINS` com os domínios reais e `TRUST_PROXY` com o número de proxies (nunca `true`).
+- [ ] `JWT_LEGACY_ISSUED_BEFORE` com o instante do deploy que aplica `AuthSessions` (ou aceite que todos entrem de novo).
+- [ ] HTTPS, `UPLOADS_DIR` em volume persistente, `APP_WEB_URL` e `PUBLIC_API_URL` reais e `MP_NOTIFICATION_URL` pública; site e API no mesmo site para a sessão em cookie.
+- [ ] E-mail por SMTP (`MAIL_DRIVER=smtp`, `SMTP_*`, `MAIL_FROM`) conferido com o e-mail de teste do superpainel; `HOST=127.0.0.1` quando o proxy roda na mesma máquina.
+- [ ] Log da subida: `Ambiente: production` e nenhum aviso de configuração.
 
-Checklist completo: [README da raiz](../README.md#-checklist-de-produção).
+Checklist completo: [`docs/saas/operacao.md`](../docs/saas/operacao.md#9-checklist-de-produção).
 
 ---
 
 ## 🛣 Roadmap da API
 
-- [ ] Recuperação de senha por e-mail
-- [ ] Eventos em tempo real (WebSockets) para o quadro de pedidos e o status do cliente
-- [ ] Confirmação de pedidos pelo webhook do Mercado Pago, com registro de pagamentos persistente
-- [ ] Cupons e promoções aplicados no orçamento e no checkout
-- [ ] Multi-loja / multi-tenant
-- [ ] Migrations versionadas do TypeORM
+- [x] E-mails em HTML com a marca da loja, confirmação e troca de e-mail (modo `compat`)
+- [x] Access token curto com refresh rotativo em cookie HttpOnly no site e recusa dos tokens sem `jti` fora da janela de transição
+- [x] Cota de armazenamento por plano, limpeza agendada, frete por CEP e índices de desempenho
+- [ ] Fila de reenvio dos e-mails, provedores por API e o modo `strict` da conta (fase 1b)
+- [ ] Refresh no app mobile, sessão deslizante e checkout da assinatura sem conexão aberta durante a chamada ao provedor
+- [ ] Agregar relatórios no SQL, paginação por cursor e retenção da auditoria
+- [ ] Cancelar as cobranças pendentes do cliente ao bloqueá-lo na loja e busca de pedidos por número
+- [ ] Validação de `x-signature` no webhook do delivery (segredo por loja)
+- [ ] Limites distribuídos (Redis) e cancelamento imediato das cobranças pendentes ao bloquear uma loja
+- [ ] Pausa/retomada da cobrança recorrente no Mercado Pago durante a suspensão pela plataforma
+- [ ] Eventos em tempo real (WebSockets) e cupons aplicados no checkout

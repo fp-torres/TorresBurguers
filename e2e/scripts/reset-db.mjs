@@ -1,5 +1,6 @@
 // Recria do zero o banco usado pelos testes E2E (nunca o banco de desenvolvimento).
-// O schema é criado pelo backend (TypeORM synchronize) e os usuários padrão pelo seed na subida.
+// O schema é criado pelas migrations do backend na subida da API (DB_MIGRATIONS_RUN) e os dados de
+// demonstração (loja demo, equipe, cliente e superadmin) pelo seed de NODE_ENV=test.
 import pg from 'pg';
 
 const database = process.env.E2E_DB_DATABASE ?? 'comestra_e2e';

@@ -1,6 +1,7 @@
 import { test, expect, request } from '@playwright/test';
-import { login, uniqueEmail } from '../../../support/api';
+import { contextAs, login, uniqueEmail } from '../../../support/api';
 import { DEFAULT_USERS } from '../../../support/users';
+import { expectCookieSession } from '../../../support/web';
 import {
   API_URL,
   STORAGE_KEYS,
@@ -14,6 +15,9 @@ import {
   readStorage,
   searchBox,
   seedCatalog,
+  storeUrl,
+  storePath,
+  storedCartItems,
   useSession,
   type Catalog,
 } from './helpers';
@@ -61,10 +65,12 @@ test.describe('Cadastro pela interface', () => {
     await expect(submit).toBeDisabled();
   });
 
-  test('cria uma conta de cliente, leva ao login e a nova conta consegue entrar', async ({ page }) => {
+  test('cria uma conta de cliente, já entra na conta e volta para a loja visitada', async ({ page }) => {
     const email = uniqueEmail('web-cadastro');
     const password = 'SenhaForte@2026';
 
+    // Loja visitada antes do cadastro (é para ela que o cliente volta)
+    await openHome(page);
     await page.goto('/signup');
     await page.getByPlaceholder('Seu Nome').fill('Joana Cadastro');
     await page.getByPlaceholder('(21) 99999-9999').fill('21977776666');
@@ -74,21 +80,25 @@ test.describe('Cadastro pela interface', () => {
     await page.getByPlaceholder('Repita a senha').fill(password);
     await page.getByRole('button', { name: 'Criar Conta Segura' }).click();
 
-    await expect(page.getByText('Conta criada com sucesso! Faça login.')).toBeVisible();
-    await expect(page).toHaveURL(/\/signin$/);
+    // A conta é criada e a sessão já é aberta: volta ao cardápio da loja
+    await expect(page.getByText('Conta criada! Bem-vindo, Joana!')).toBeVisible();
+    // O link de confirmação do e-mail sai em segundo plano: a tela avisa onde procurar
+    await expect(page.getByText(`Enviamos um link para confirmar o e-mail ${email}.`)).toBeVisible();
+    await expect(page).toHaveURL(storeUrl());
+    const storage = await readStorage(page);
+    // Sessão aberta em cookie: marcador sem segredo no navegador, token de acesso só na memória da aba
+    expect(storage[STORAGE_KEYS.session], 'sessão aberta').toBeTruthy();
+    await expectCookieSession(page);
+    expect(storage[STORAGE_KEYS.user]).not.toMatch(/password/i);
 
-    // A conta criada é de cliente, com o telefone informado
+    // A conta criada é de cliente (global, sem loja), com o telefone informado, e entra pela API
     const api = await request.newContext({ baseURL: API_URL });
     const session = await login(api, email, password);
     await api.dispose();
     expect(session.user.role).toBe('CLIENT');
+    expect(session.user.store_id).toBeNull();
     expect(String(session.user.phone).replace(/\D/g, '')).toBe('21977776666');
 
-    await page.getByPlaceholder('seu@email.com').fill(email);
-    await page.getByPlaceholder('******').fill(password);
-    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
-    await expect(page.getByText('Bem-vindo, Joana!')).toBeVisible();
-    await expect(page).toHaveURL(/\/$/);
     await page.getByRole('button', { name: 'Menu da conta' }).click();
     await expect(page.getByText('Joana Cadastro', { exact: true })).toBeVisible();
     await expect(page.getByText(email, { exact: true })).toBeVisible();
@@ -129,13 +139,14 @@ test.describe('Login e logout na loja', () => {
       await page.getByRole('button', { name: 'Menu', exact: true }).click();
       await expect(page.getByText('Olá, visitante!')).toBeVisible();
       await page.getByRole('link', { name: 'Entrar', exact: true }).click();
-      await expect(page).toHaveURL(/\/signin$/);
+      // O login guarda o destino: o carrinho desta loja
+      await expect(page).toHaveURL(/\/signin(\?|$)/);
 
       await page.getByPlaceholder('seu@email.com').fill(`  ${client.email.toUpperCase()}  `);
       await page.getByPlaceholder('******').fill(client.password);
       await page.getByRole('button', { name: 'Entrar', exact: true }).click();
 
-      await expect(page).toHaveURL(/\/cart$/);
+      await expect(page).toHaveURL(storeUrl('cart'));
       await expect(cartLine(page, catalog.drink.name)).toBeVisible();
       await expectServerQuote(page);
     } finally {
@@ -143,12 +154,15 @@ test.describe('Login e logout na loja', () => {
     }
   });
 
-  test('sair da conta mantém o carrinho e o tema escolhido', async ({ page }) => {
+  // Aparelho compartilhado: quem sai não deixa carrinho (com observações livres) nem a última loja para a próxima pessoa
+  test('sair da conta apaga os carrinhos e a última loja deste aparelho e mantém o tema escolhido', async ({ page }) => {
     const client = await createClient({ name: 'Paula Logout' });
     try {
       await useSession(page, client.session);
       await openHome(page);
-      await addToCart(page, catalog.drink.name);
+      await addToCart(page, catalog.drink.name, { observation: 'Entregar para a Ana, apto 302' });
+      // Carrinho de outra loja guardado neste aparelho (as chaves são por loja)
+      await page.evaluate((key) => localStorage.setItem(key, JSON.stringify({ v: 2, storeId: 999999, storeSlug: 'outra-loja', items: [] })), `${STORAGE_KEYS.cart}.999999`);
 
       await page.getByRole('button', { name: 'Alterar Tema' }).click();
       await page.getByRole('button', { name: 'Escuro', exact: true }).click();
@@ -162,31 +176,146 @@ test.describe('Login e logout na loja', () => {
 
       await expect(page.getByText('Você saiu da conta. Volte sempre!')).toBeVisible();
       await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
-      await expect(cartLink(page)).toHaveAccessibleName('Carrinho com 1 item');
+      await expect(cartLink(page)).toHaveAccessibleName('Carrinho');
       await expect(page.locator('html')).toHaveClass(/\bdark\b/);
 
       const storage = await readStorage(page);
       expect(storage[STORAGE_KEYS.token]).toBeUndefined();
       expect(storage[STORAGE_KEYS.user]).toBeUndefined();
       expect(storage[STORAGE_KEYS.theme]).toBe('dark');
-      expect(JSON.parse(storage[STORAGE_KEYS.cart])).toHaveLength(1);
+      expect(storage[STORAGE_KEYS.lastStore], 'última loja de quem saiu').toBeUndefined();
+      expect(Object.keys(storage).filter((key) => key === STORAGE_KEYS.cart || key.startsWith(`${STORAGE_KEYS.cart}.`)), 'carrinhos de quem saiu').toEqual([]);
+      expect(JSON.stringify(storage)).not.toContain('apto 302');
 
       await page.reload();
       await expect(searchBox(page)).toBeVisible();
-      await expect(cartLink(page)).toHaveAccessibleName('Carrinho com 1 item');
+      await expect(cartLink(page)).toHaveAccessibleName('Carrinho');
       await expect(page.locator('html')).toHaveClass(/\bdark\b/);
     } finally {
       await client.api.dispose();
     }
   });
 
-  test('"Esqueceu a senha?" explica que o administrador redefine a senha e mostra o e-mail de suporte', async ({ page }) => {
-    await page.goto('/signin');
-    await page.getByRole('link', { name: 'Esqueceu a senha?' }).click();
-    const message = page.getByText(/contato@comestra\.com\.br/);
-    await expect(message).toBeVisible();
-    await expect(message).toContainText('administrador');
-    await expect(page).toHaveURL(/\/signin$/);
+  test('depois que um cliente sai, a próxima pessoa que entra não é levada ao carrinho nem vê os itens de quem saiu', async ({ page }) => {
+    const first = await createClient({ name: 'Ana Primeira' });
+    const next = await createClient({ name: 'Bruno Seguinte' });
+    try {
+      await useSession(page, first.session);
+      await openHome(page);
+      await addToCart(page, catalog.drink.name, { observation: 'Interfone quebrado, apto 302' });
+      await page.getByRole('button', { name: 'Menu da conta' }).click();
+      await page.getByRole('button', { name: 'Sair da Conta' }).click();
+      await page.getByRole('alertdialog', { name: 'Sair?' }).getByRole('button', { name: 'Sair', exact: true }).click();
+      await expect(page.getByText('Você saiu da conta. Volte sempre!')).toBeVisible();
+
+      // A próxima pessoa entra pelo /signin sem destino: vai para o diretório, não para o carrinho da loja anterior
+      await loginViaUI(page, next.email, next.password);
+      await expect(page).toHaveURL((url) => url.pathname === '/');
+      await page.goto(storePath('cart'));
+      await expect(cartLink(page)).toHaveAccessibleName('Carrinho');
+      await expect(cartLine(page, catalog.drink.name)).toHaveCount(0);
+      expect(JSON.stringify(await readStorage(page))).not.toContain('apto 302');
+    } finally {
+      await first.api.dispose();
+      await next.api.dispose();
+    }
+  });
+
+  test('"Esqueceu a senha?" abre /esqueci-senha com o e-mail digitado e pede o link (resposta genérica)', async ({ page }) => {
+    const client = await createClient({ name: 'Rita Esqueceu' });
+    try {
+      await page.goto('/signin');
+      await page.getByPlaceholder('seu@email.com').fill(client.email);
+      await page.getByRole('link', { name: 'Esqueceu a senha?' }).click();
+      await expect(page).toHaveURL(/\/esqueci-senha$/);
+      await expect(page.getByRole('heading', { name: 'Esqueceu a senha?' })).toBeVisible();
+      await expect(page.getByLabel('E-mail')).toHaveValue(client.email);
+
+      const sent = page.waitForResponse((r) => r.url() === `${API_URL}/auth/forgot-password` && r.request().method() === 'POST');
+      await page.getByRole('button', { name: 'Enviar link de redefinição' }).click();
+      expect((await sent).status()).toBe(202);
+      await expect(page.getByRole('heading', { name: 'Verifique seu e-mail' })).toBeVisible();
+      await expect(page.getByText('Se houver uma conta com este e-mail', { exact: false })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'contato@comestra.com.br' })).toBeVisible();
+
+      // Pedir o link não troca a senha: a conta continua entrando com a senha atual
+      const api = await request.newContext({ baseURL: API_URL });
+      expect((await login(api, client.email, client.password)).user.id).toBe(client.session.user.id);
+      await api.dispose();
+    } finally {
+      await client.api.dispose();
+    }
+  });
+
+  test('link de redefinição (/redefinir-senha/:token) troca a senha pela tela, vale uma vez e a conta entra com a senha nova', async ({ page }) => {
+    const client = await createClient({ name: 'Bruno Redefine' });
+    const { ctx: superadmin } = await contextAs('superadmin');
+    try {
+      // Sem provedor de e-mail, o link de uso único é gerado pelo superpainel
+      const res = await superadmin.post(`/platform/users/${client.session.user.id}/password-reset`);
+      expect(res.status(), await res.text()).toBe(200);
+      const { url } = await res.json();
+      const path = new URL(url).pathname;
+      expect(path).toMatch(/^\/redefinir-senha\/[A-Za-z0-9_-]+$/);
+
+      await page.goto(path);
+      await expect(page.getByRole('heading', { name: 'Crie uma nova senha' })).toBeVisible();
+      const newPassword = 'NovaSenha#Web2026';
+      await page.getByRole('textbox', { name: 'Nova senha', exact: true }).fill(newPassword);
+      await page.getByRole('textbox', { name: 'Confirmar nova senha', exact: true }).fill(newPassword);
+      const saved = page.waitForResponse((r) => r.url() === `${API_URL}/auth/reset-password` && r.request().method() === 'POST');
+      await page.getByRole('button', { name: 'Salvar nova senha' }).click();
+      expect((await saved).status()).toBe(200);
+      await expect(page).toHaveURL(/\/signin$/);
+      await expect(page.getByText('Senha redefinida. Entre com a nova senha.')).toBeVisible();
+
+      // A sessão antiga caiu; a senha antiga não entra mais e a nova entra
+      expect((await client.api.get('/addresses')).status()).toBe(401);
+      await loginViaUI(page, client.email, client.password);
+      await expect(page.getByText('Email ou senha inválidos.')).toBeVisible();
+      await loginViaUI(page, client.email, newPassword);
+      await expect(page.getByText('Bem-vindo, Bruno!')).toBeVisible();
+
+      // Uso único: o mesmo link não vale de novo
+      await page.goto(path);
+      await expect(page.getByRole('heading', { name: 'Link inválido' })).toBeVisible();
+      await expect(page.getByText('Este link não vale mais', { exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Pedir novo link' })).toHaveAttribute('href', '/esqueci-senha');
+    } finally {
+      await superadmin.dispose();
+      await client.api.dispose();
+    }
+  });
+
+  test('redefinir a senha com a própria sessão aberta neste navegador encerra a sessão, mas mantém o carrinho', async ({ page }) => {
+    const client = await createClient({ name: 'Carla Redefine' });
+    const { ctx: superadmin } = await contextAs('superadmin');
+    try {
+      await useSession(page, client.session);
+      await openHome(page);
+      await addToCart(page, catalog.drink.name);
+      expect((await storedCartItems(page)).map((item) => item.name)).toEqual([catalog.drink.name]);
+
+      const res = await superadmin.post(`/platform/users/${client.session.user.id}/password-reset`);
+      expect(res.status(), await res.text()).toBe(200);
+      const { url } = await res.json();
+      await page.goto(new URL(url).pathname);
+      await expect(page.getByRole('heading', { name: 'Crie uma nova senha' })).toBeVisible();
+      const newPassword = 'NovaSenha#Carla2026';
+      await page.getByRole('textbox', { name: 'Nova senha', exact: true }).fill(newPassword);
+      await page.getByRole('textbox', { name: 'Confirmar nova senha', exact: true }).fill(newPassword);
+      await page.getByRole('button', { name: 'Salvar nova senha' }).click();
+      await expect(page).toHaveURL(/\/signin$/);
+
+      // A sessão desta conta (que deixou de valer) sai do navegador; o carrinho é da mesma pessoa e fica
+      const storage = await readStorage(page);
+      expect(storage[STORAGE_KEYS.token], 'token removido').toBeUndefined();
+      expect(storage[STORAGE_KEYS.user], 'usuário removido').toBeUndefined();
+      expect((await storedCartItems(page)).map((item) => item.name), 'carrinho mantido').toEqual([catalog.drink.name]);
+    } finally {
+      await superadmin.dispose();
+      await client.api.dispose();
+    }
   });
 
   test('conta da equipe que entra pela tela da loja é levada ao painel do seu perfil', async ({ page }) => {

@@ -10,10 +10,12 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { AuthGuard, PassportModule } from '@nestjs/passport';
 import { Test } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { JwtStrategy } from '../../auth/jwt.strategy';
+import { BLOCKED_ACCOUNT_MESSAGE, JwtStrategy } from '../../auth/jwt.strategy';
 import { setupApp } from '../../config/app-setup';
+import { SupportSession } from '../../platform/entities/support-session.entity';
 import { UserRole } from '../../users/entities/user.entity';
 import { UsersService } from '../../users/users.service';
 import {
@@ -53,13 +55,21 @@ describe('UnauthorizedExceptionFilter (todo 401 no formato do contrato)', () => 
   let app: INestApplication<App>;
   let server: App;
   const users = { findActiveById: jest.fn() };
+  const supportSessions = { findOne: jest.fn().mockResolvedValue(null) };
 
   beforeAll(async () => {
     process.env.JWT_SECRET = SECRET;
     const moduleRef = await Test.createTestingModule({
       imports: [PassportModule],
       controllers: [TestController],
-      providers: [JwtStrategy, { provide: UsersService, useValue: users }],
+      providers: [
+        JwtStrategy,
+        { provide: UsersService, useValue: users },
+        {
+          provide: getRepositoryToken(SupportSession),
+          useValue: supportSessions,
+        },
+      ],
     }).compile();
 
     app = setupApp(moduleRef.createNestApplication());
@@ -121,11 +131,46 @@ describe('UnauthorizedExceptionFilter (todo 401 no formato do contrato)', () => 
       email: 'maria@email.com',
       role: UserRole.CLIENT,
       name: 'Maria',
+      token_version: 0,
     });
     await request(server)
       .get('/teste/protegida')
       .set('Authorization', `Bearer ${tokenFor(7)}`)
       .expect(200, { ok: true });
+  });
+
+  it('sessões encerradas (token_version maior que o tv do token) → mensagem de sessão', async () => {
+    users.findActiveById.mockResolvedValueOnce({
+      id: 7,
+      email: 'maria@email.com',
+      role: UserRole.CLIENT,
+      name: 'Maria',
+      token_version: 1,
+    });
+    const res = await request(server)
+      .get('/teste/protegida')
+      .set('Authorization', `Bearer ${tokenFor(7)}`)
+      .expect(401);
+    expect(res.body).toEqual(SESSION_BODY);
+  });
+
+  it('conta bloqueada → 401 com a mensagem de bloqueio, no mesmo formato', async () => {
+    users.findActiveById.mockResolvedValueOnce({
+      id: 7,
+      email: 'maria@email.com',
+      role: UserRole.CLIENT,
+      name: 'Maria',
+      token_version: 0,
+      blocked_at: new Date(),
+    });
+    const res = await request(server)
+      .get('/teste/protegida')
+      .set('Authorization', `Bearer ${tokenFor(7)}`)
+      .expect(401);
+    expect(res.body).toEqual({
+      ...SESSION_BODY,
+      message: BLOCKED_ACCOUNT_MESSAGE,
+    });
   });
 
   it('senha errada no login mantém a própria mensagem e ganha o campo error', async () => {

@@ -6,6 +6,10 @@ import { AddonsController } from './addons.controller';
 import { Product } from './entities/product.entity';
 import { Addon } from './entities/addon.entity';
 
+/**
+ * Cardápio por loja. Loja da requisição (TenancyModule), limites do plano (BillingModule) e
+ * auditoria (AuditModule) vêm de módulos globais.
+ */
 @Module({
   imports: [TypeOrmModule.forFeature([Product, Addon])],
   controllers: [ProductsController, AddonsController],

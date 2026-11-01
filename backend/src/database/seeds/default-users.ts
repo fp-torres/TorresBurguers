@@ -1,4 +1,4 @@
-import { UserRole } from '../../users/entities/user.entity';
+import { PlatformRole, UserRole } from '../../users/entities/user.entity';
 import { BRAND } from '../../config/brand';
 
 export interface DefaultUser {
@@ -7,10 +7,14 @@ export interface DefaultUser {
   password: string;
   phone: string;
   role: UserRole;
+  /** Papel global na plataforma (só o superadmin de demonstração). */
+  platformRole?: PlatformRole;
 }
 
 /**
- * Um usuário de demonstração para cada perfil do sistema.
+ * Um usuário de demonstração para cada perfil do sistema (somente development/test).
+ * A equipe (ADMIN, cozinha, entregador, atendente) pertence à loja padrão; o cliente é global;
+ * o superadmin administra a plataforma inteira.
  * Documentados no README (seção "Usuários padrão") — mantenha os dois em sincronia.
  */
 export const DEFAULT_USERS: DefaultUser[] = [
@@ -48,5 +52,13 @@ export const DEFAULT_USERS: DefaultUser[] = [
     password: 'Cliente@123',
     phone: '21900000005',
     role: UserRole.CLIENT,
+  },
+  {
+    name: 'Superadmin',
+    email: `superadmin@${BRAND.domain}`,
+    password: 'Superadmin@123',
+    phone: '21900000006',
+    role: UserRole.CLIENT,
+    platformRole: PlatformRole.SUPER_ADMIN,
   },
 ];

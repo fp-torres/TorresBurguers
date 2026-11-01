@@ -25,9 +25,10 @@ export interface Product {
 }
 
 export const productService = {
-  getAll: async () => {
-    const response = await api.get<Product[]>('/products');
-    return response.data;
+  /** Cardápio da loja (inclui indisponíveis; no painel, a loja vem do token da equipe). */
+  getAll: async (signal?: AbortSignal) => {
+    const response = await api.get<Product[]>('/products', { signal });
+    return Array.isArray(response.data) ? response.data : [];
   },
 
   // Cadastro e edição: multipart (imagem no campo "file")
@@ -43,9 +44,9 @@ export const productService = {
 
   // --- LIXEIRA ---
 
-  getTrash: async () => {
-    const response = await api.get<Product[]>('/products/trash');
-    return response.data;
+  getTrash: async (signal?: AbortSignal) => {
+    const response = await api.get<Product[]>('/products/trash', { signal });
+    return Array.isArray(response.data) ? response.data : [];
   },
 
   /** Move para a lixeira (soft delete). */
@@ -53,7 +54,7 @@ export const productService = {
     await api.delete(`/products/${id}`);
   },
 
-  /** Volta para o cardápio mantendo a disponibilidade que o produto tinha. */
+  /** Volta para o cardápio mantendo a disponibilidade que o produto tinha (403 = limite de produtos do plano). */
   restore: async (id: number) => {
     const response = await api.patch<Product>(`/products/${id}/restore`);
     return response.data;
@@ -81,6 +82,7 @@ export const productService = {
     return response.data;
   },
 
+  /** Exclusão lógica: o adicional sai do cardápio e dos produtos; pedidos antigos mantêm o retrato. */
   deleteAddon: async (id: number) => {
     await api.delete(`/addons/${id}`);
   }

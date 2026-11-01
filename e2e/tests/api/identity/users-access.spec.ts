@@ -19,23 +19,37 @@ import {
   uniqueEmail,
   uploadedFiles,
   cleanupTrackedStaff,
+  demoStore,
+  platformAccount,
   trackStaff,
 } from './helpers';
 
 test.afterAll(cleanupTrackedStaff);
 
-test.describe('Listagem de usuários (GET /users) — somente ADMIN', () => {
-  test('ADMIN lista os usuários ativos (inclui os padrão) sem senha', async ({ request }) => {
+/** Um dos ícones prontos que a API aceita como avatar em texto (backend/src/users/avatar.ts). */
+const AVATAR_ICON = 'https://cdn-icons-png.flaticon.com/512/3075/3075977.png';
+
+test.describe('Equipe da loja (GET /users) — somente ADMIN', () => {
+  test('ADMIN lista só a equipe da própria loja (inclui a equipe padrão; nunca clientes nem a plataforma), sem senha', async ({ request }) => {
+    const store = await demoStore();
     const admin = await sessionOf(request, 'admin');
     const fresh = await newClient(request);
+    const member = await newUserWithRole(request, 'KITCHEN');
     const res = await request.get('/users', { headers: bearer(admin.token) });
     expect(res.status()).toBe(200);
     const users = await res.json();
     expect(Array.isArray(users)).toBeTruthy();
 
     const emails = users.map((u: { email: string }) => u.email);
-    for (const defaultUser of Object.values(DEFAULT_USERS)) expect(emails).toContain(defaultUser.email);
-    expect(emails).toContain(fresh.email);
+    for (const key of ['admin', 'kitchen', 'courier', 'employee'] as const) expect(emails).toContain(DEFAULT_USERS[key].email);
+    expect(emails).toContain(member.email);
+    for (const outsider of [DEFAULT_USERS.client.email, DEFAULT_USERS.superadmin.email, fresh.email]) {
+      expect(emails, 'clientes e contas da plataforma não são equipe').not.toContain(outsider);
+    }
+    for (const user of users) {
+      expect(user, `membro ${user.email}`).toMatchObject({ store_id: store.id, platform_role: null, deleted_at: null });
+      expect(user.role).not.toBe('CLIENT');
+    }
     expectNoSecrets(users, 'GET /users');
   });
 
@@ -46,6 +60,12 @@ test.describe('Listagem de usuários (GET /users) — somente ADMIN', () => {
       await expectError(await request.get('/users', { headers: bearer(session.token) }), 403);
     });
   }
+
+  test('superadmin não usa a equipe de uma loja (403): as contas são geridas pelo superpainel', async ({ request }) => {
+    const superadmin = await sessionOf(request, 'superadmin');
+    await expectError(await request.get('/users', { headers: bearer(superadmin.token) }), 403);
+    await expectError(await request.get('/users/trash', { headers: bearer(superadmin.token) }), 403);
+  });
 });
 
 test.describe('Consulta de usuário (GET /users/:id) — próprio ou ADMIN', () => {
@@ -84,14 +104,26 @@ test.describe('Consulta de usuário (GET /users/:id) — próprio ou ADMIN', () 
     expect((await res.json()).role).toBe('KITCHEN');
   });
 
-  test('ADMIN consulta qualquer usuário (sem senha)', async ({ request }) => {
-    const client = await newClient(request);
+  test('ADMIN consulta um membro da equipe da própria loja (sem senha)', async ({ request }) => {
+    const store = await demoStore();
+    const member = await newUserWithRole(request, 'COURIER');
     const admin = await sessionOf(request, 'admin');
-    const res = await request.get(`/users/${client.user.id}`, { headers: bearer(admin.token) });
+    const res = await request.get(`/users/${member.user.id}`, { headers: bearer(admin.token) });
     expect(res.status()).toBe(200);
     const user = await res.json();
-    expect(user.email).toBe(client.email);
+    expect(user).toMatchObject({ email: member.email, role: 'COURIER', store_id: store.id });
     expectNoSecrets(user, 'GET /users/:id (ADMIN)');
+  });
+
+  test('ADMIN não consulta clientes nem contas da plataforma (404 uniforme, igual a um id inexistente)', async ({ request }) => {
+    const client = await newClient(request);
+    const admin = await sessionOf(request, 'admin');
+    const superadmin = await sessionOf(request, 'superadmin');
+    const missing = await expectError(await request.get(`/users/${MISSING_ID}`, { headers: bearer(admin.token) }), 404);
+    for (const id of [client.user.id, superadmin.user.id]) {
+      const res = await expectError(await request.get(`/users/${id}`, { headers: bearer(admin.token) }), 404);
+      expect(res.message, 'mesma resposta de uma conta inexistente').toBe(missing.message);
+    }
   });
 
   test('ADMIN consultando id inexistente → 404', async ({ request }) => {
@@ -145,8 +177,7 @@ test.describe('Edição de usuário (PATCH /users/:id)', () => {
     });
     await expectError(res, 403);
 
-    const admin = await sessionOf(request, 'admin');
-    const current = await (await request.get(`/users/${victim.user.id}`, { headers: bearer(admin.token) })).json();
+    const current = await (await request.get(`/users/${victim.user.id}`, { headers: bearer(victim.token) })).json();
     expect(current).toMatchObject({ name: 'Vítima Original', email: victim.email });
   });
 
@@ -190,20 +221,30 @@ test.describe('Edição de usuário (PATCH /users/:id)', () => {
     expect(await res.json()).toMatchObject({ role: 'CLIENT', name: 'Mesmo Perfil' });
   });
 
-  test('ADMIN altera o perfil de outro usuário e o novo perfil vale no login', async ({ request }) => {
-    const user = await newClient(request);
+  test('ADMIN altera o perfil de um membro da equipe e o novo perfil vale no login', async ({ request }) => {
+    const user = await newUserWithRole(request, 'KITCHEN');
     const admin = await sessionOf(request, 'admin');
     const res = await request.patch(`/users/${user.user.id}`, { headers: bearer(admin.token), data: { role: 'COURIER' } });
     expect(res.status(), await res.text()).toBe(200);
     expect((await res.json()).role).toBe('COURIER');
-    trackStaff(user.user.id);
 
     const login = await request.post('/auth/login', { data: { email: user.email, password: user.password } });
     expect((await login.json()).user.role).toBe('COURIER');
   });
 
-  test('ADMIN edita nome e telefone de outro usuário', async ({ request }) => {
-    const user = await newClient(request);
+  test('ADMIN não troca o perfil de um membro para CLIENT (400): a equipe não tem perfil de cliente', async ({ request }) => {
+    const user = await newUserWithRole(request, 'EMPLOYEE');
+    const admin = await sessionOf(request, 'admin');
+    await expectError(
+      await request.patch(`/users/${user.user.id}`, { headers: bearer(admin.token), data: { role: 'CLIENT' } }),
+      400,
+    );
+    const login = await request.post('/auth/login', { data: { email: user.email, password: user.password } });
+    expect((await login.json()).user.role).toBe('EMPLOYEE');
+  });
+
+  test('ADMIN edita nome e telefone de um membro da equipe', async ({ request }) => {
+    const user = await newUserWithRole(request, 'COURIER');
     const admin = await sessionOf(request, 'admin');
     const res = await request.patch(`/users/${user.user.id}`, {
       headers: bearer(admin.token),
@@ -213,8 +254,21 @@ test.describe('Edição de usuário (PATCH /users/:id)', () => {
     expect(await res.json()).toMatchObject({ name: 'Editado pelo Admin', phone: '21933334444' });
   });
 
+  test('ADMIN não edita clientes nem contas da plataforma (404) e nada muda', async ({ request }) => {
+    const client = await newClient(request, { name: 'Cliente Intocado' });
+    const admin = await sessionOf(request, 'admin');
+    const superadmin = await sessionOf(request, 'superadmin');
+    for (const data of [{ name: 'Editado pelo Admin' }, { role: 'EMPLOYEE' }, { email: uniqueEmail('sequestro') }, { password: 'Sequestro#2026' }]) {
+      await expectError(await request.patch(`/users/${client.user.id}`, { headers: bearer(admin.token), data }), 404);
+      await expectError(await request.patch(`/users/${superadmin.user.id}`, { headers: bearer(admin.token), data }), 404);
+    }
+    const current = await (await request.get(`/users/${client.user.id}`, { headers: bearer(client.token) })).json();
+    expect(current).toMatchObject({ name: 'Cliente Intocado', email: client.email, role: 'CLIENT' });
+    expect((await request.post('/auth/login', { data: { email: client.email, password: client.password } })).ok()).toBeTruthy();
+  });
+
   test('perfil inexistente → 400', async ({ request }) => {
-    const user = await newClient(request);
+    const user = await newUserWithRole(request, 'KITCHEN');
     const admin = await sessionOf(request, 'admin');
     await expectError(
       await request.patch(`/users/${user.user.id}`, { headers: bearer(admin.token), data: { role: 'ROOT' } }),
@@ -350,29 +404,76 @@ test.describe('Edição de usuário (PATCH /users/:id)', () => {
   });
 
   test('foto inválida via multipart → 400 e o avatar não muda', async ({ request }) => {
-    const client = await newClient(request, { avatar: 'https://exemplo.com/avatar-original.png' });
+    const client = await newClient(request, { avatar: AVATAR_ICON });
     const res = await request.patch(`/users/${client.user.id}`, {
       headers: bearer(client.token),
       multipart: { file: { name: 'foto.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('texto qualquer') } },
     });
     await expectError(res, 400);
     const current = await (await request.get(`/users/${client.user.id}`, { headers: bearer(client.token) })).json();
-    expect(current.avatar).toBe('https://exemplo.com/avatar-original.png');
+    expect(current.avatar).toBe(AVATAR_ICON);
+  });
+
+  test('avatar em texto: URL externa, caminho ou arquivo de outro dono → 400 (cadastro e edição); ícone pronto é aceito', async ({ request }) => {
+    const refused = /Foto inválida: envie a imagem no campo "file" ou escolha um dos ícones disponíveis\./;
+    await expectError(
+      await request.post('/users', { data: { name: 'Pixel', email: uniqueEmail('pixel'), password: STRONG_PASSWORD, avatar: 'https://atacante.example/p.gif?u=1' } }),
+      400,
+      refused,
+    );
+    const client = await newClient(request);
+    for (const avatar of ['https://atacante.example/p.gif?u=123', 'http://atacante.example/p.gif', '/uploads/s1-compressed-1-aaaa.webp', 'data:image/png;base64,AAAA']) {
+      await expectError(
+        await request.patch(`/users/${client.user.id}`, { headers: bearer(client.token), data: { avatar } }),
+        400,
+        refused,
+      );
+    }
+    const ok = await request.patch(`/users/${client.user.id}`, { headers: bearer(client.token), data: { avatar: AVATAR_ICON } });
+    expect(ok.status(), await ok.text()).toBe(200);
+    expect((await ok.json()).avatar).toBe(AVATAR_ICON);
+  });
+
+  test('trocar a foto apaga o arquivo anterior da própria conta (nome com o dono: u<id>-)', async ({ request }) => {
+    const client = await newClient(request);
+    const send = async () => {
+      const res = await request.patch(`/users/${client.user.id}`, {
+        headers: bearer(client.token),
+        multipart: { file: pngFile(makePng(20, 20, { noise: true })) },
+      });
+      expect(res.status(), await res.text()).toBe(200);
+      return (await res.json()).avatar as string;
+    };
+    const first = await send();
+    expect(first).toMatch(new RegExp(`^/uploads/u${client.user.id}-compressed-[\\w.-]+\\.webp$`));
+    expect(uploadedFiles()).toContain(first.replace('/uploads/', ''));
+    const second = await send();
+    expect(second).not.toBe(first);
+    expect(uploadedFiles()).toContain(second.replace('/uploads/', ''));
+    expect(uploadedFiles(), 'a foto substituída da própria conta é apagada').not.toContain(first.replace('/uploads/', ''));
+    expect((await request.get(first)).status()).toBe(404);
   });
 });
 
 test.describe('Exclusão de usuário (DELETE /users/:id)', () => {
-  test('cliente exclui a própria conta: some da lista e vai para a lixeira', async ({ request }) => {
+  test('cliente exclui a própria conta: vai para a lixeira da plataforma (não para a equipe da loja)', async ({ request }) => {
     const client = await newClient(request);
     const res = await request.delete(`/users/${client.user.id}`, { headers: bearer(client.token) });
     expect(res.status(), await res.text()).toBe(200);
+    await expectError(await request.get('/addresses', { headers: bearer(client.token) }), 401);
 
+    // O ADMIN da loja não enxerga clientes (nem ativos nem na lixeira)
     const admin = await sessionOf(request, 'admin');
     await expectError(await request.get(`/users/${client.user.id}`, { headers: bearer(admin.token) }), 404);
     const active = await (await request.get('/users', { headers: bearer(admin.token) })).json();
     expect(active.map((u: { id: number }) => u.id)).not.toContain(client.user.id);
     const trash = await (await request.get('/users/trash', { headers: bearer(admin.token) })).json();
-    expect(trash.map((u: { id: number }) => u.id)).toContain(client.user.id);
+    expect(trash.map((u: { id: number }) => u.id)).not.toContain(client.user.id);
+
+    // O superpainel mostra a conta na lixeira
+    const account = await platformAccount(request, client.user.id);
+    expect(account).toMatchObject({ id: client.user.id, email: client.email, role: 'CLIENT' });
+    expect(account.deleted_at).toBeTruthy();
   });
 
   test('cliente não exclui outro usuário (403) e o outro continua ativo', async ({ request }) => {
@@ -397,12 +498,22 @@ test.describe('Exclusão de usuário (DELETE /users/:id)', () => {
     await expectError(await request.get('/orders', { headers: bearer(courier.token) }), 401);
   });
 
-  test('ADMIN exclui (logicamente) outro usuário', async ({ request }) => {
+  test('ADMIN exclui (logicamente) um membro da equipe', async ({ request }) => {
+    const member = await newUserWithRole(request, 'EMPLOYEE');
+    const admin = await sessionOf(request, 'admin');
+    const res = await request.delete(`/users/${member.user.id}`, { headers: bearer(admin.token) });
+    expect(res.status(), await res.text()).toBe(200);
+    await expectError(await request.get('/addresses', { headers: bearer(member.token) }), 401);
+  });
+
+  test('ADMIN não exclui clientes nem contas da plataforma (404) e elas continuam ativas', async ({ request }) => {
     const client = await newClient(request);
     const admin = await sessionOf(request, 'admin');
-    const res = await request.delete(`/users/${client.user.id}`, { headers: bearer(admin.token) });
-    expect(res.status(), await res.text()).toBe(200);
-    await expectError(await request.get('/addresses', { headers: bearer(client.token) }), 401);
+    const superadmin = await sessionOf(request, 'superadmin');
+    await expectError(await request.delete(`/users/${client.user.id}`, { headers: bearer(admin.token) }), 404);
+    await expectError(await request.delete(`/users/${superadmin.user.id}`, { headers: bearer(admin.token) }), 404);
+    expect((await request.get('/addresses', { headers: bearer(client.token) })).status()).toBe(200);
+    expect((await request.get('/auth/me', { headers: bearer(superadmin.token) })).status()).toBe(200);
   });
 
   test('ADMIN não exclui a própria conta (400) e continua ativo', async ({ request }) => {
@@ -417,10 +528,10 @@ test.describe('Exclusão de usuário (DELETE /users/:id)', () => {
   });
 
   test('excluir a mesma conta duas vezes → 404 na segunda', async ({ request }) => {
-    const client = await newClient(request);
+    const member = await newUserWithRole(request, 'KITCHEN');
     const admin = await sessionOf(request, 'admin');
-    expect((await request.delete(`/users/${client.user.id}`, { headers: bearer(admin.token) })).status()).toBe(200);
-    await expectError(await request.delete(`/users/${client.user.id}`, { headers: bearer(admin.token) }), 404);
+    expect((await request.delete(`/users/${member.user.id}`, { headers: bearer(admin.token) })).status()).toBe(200);
+    await expectError(await request.delete(`/users/${member.user.id}`, { headers: bearer(admin.token) }), 404);
   });
 
   test('id não numérico → 400', async ({ request }) => {
@@ -441,6 +552,8 @@ test.describe('Senha nunca exposta em usuários criados pelo ADMIN', () => {
     expect(res.status()).toBe(201);
     const text = await res.text();
     expect(text).not.toContain(STRONG_PASSWORD);
-    expectNoSecrets(JSON.parse(text), 'cadastro pelo ADMIN');
+    const created = JSON.parse(text);
+    trackStaff(created.id);
+    expectNoSecrets(created, 'cadastro pelo ADMIN');
   });
 });

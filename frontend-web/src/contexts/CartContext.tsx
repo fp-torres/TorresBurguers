@@ -1,42 +1,43 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Product } from '../services/productService';
-import { STORAGE_KEYS } from '../config/brand';
-import { MAX_ITEM_QUANTITY, effectivePrice, hasMeatPoint } from '../utils/catalog';
+import { effectivePrice } from '../utils/catalog';
+import { migrateLegacyCart } from '../utils/legacyStorage';
+import {
+  CARTS_CLEARED_EVENT, cartItemFromProduct, cartStorageKey, clampQuantity, mergeCartItems, readCart, sameCartItems, toCartAddonFrom,
+  writeCart, type CartAddon, type CartItem,
+} from './cartStorage';
 
-export interface Addon {
+export type { CartAddon, CartItem } from './cartStorage';
+
+/** Adicional como vem do cardápio (preço em número ou texto). */
+export interface AddonChoice {
   id: number;
   name: string;
   price: number | string;
 }
 
-export interface CartItem extends Product {
-  cartId: string;
-  quantity: number;
-  observation?: string;
-  /** Uma entrada por unidade do adicional: [Bacon, Bacon] = 2x Bacon. */
-  addons: Addon[];
-  /** Só hambúrgueres têm ponto da carne. */
-  meatPoint?: string;
-  removedIngredients: string[];
-}
-
 interface CartContextType {
+  /** Loja dona deste carrinho (cada loja tem o seu). */
+  storeId: number;
+  storeSlug: string;
   cartItems: CartItem[];
-  addToCart: (product: Product, quantity: number, observation?: string, addons?: Addon[], meatPoint?: string, removedIngredients?: string[]) => void;
+  addToCart: (
+    product: Product,
+    quantity: number,
+    observation?: string,
+    addons?: AddonChoice[],
+    meatPoint?: string,
+    removedIngredients?: string[],
+  ) => void;
   removeFromCart: (cartId: string) => void;
   updateQuantity: (cartId: string, delta: number) => void;
   clearCart: () => void;
+  /** Itens + adicionais (preço promocional quando houver). Taxa e total final vêm do orçamento da API. */
   cartTotal: number;
   cartCount: number;
 }
 
-const CartContext = createContext({} as CartContextType);
-
-/** Quantidade entre 1 e o máximo aceito pela API. */
-function clampQuantity(quantity: number): number {
-  if (!Number.isFinite(quantity)) return 1;
-  return Math.min(MAX_ITEM_QUANTITY, Math.max(1, Math.floor(quantity)));
-}
+const CartContext = createContext<CartContextType | null>(null);
 
 /** Compara duas listas sem considerar a ordem (sem alterar os arrays originais). */
 function sameItems(a: readonly (string | number)[], b: readonly (string | number)[]): boolean {
@@ -46,93 +47,100 @@ function sameItems(a: readonly (string | number)[], b: readonly (string | number
   return sortedA.every((value, index) => value === sortedB[index]);
 }
 
-function isStoredItem(value: unknown): value is CartItem {
-  if (!value || typeof value !== 'object') return false;
-  const item = value as Partial<CartItem>;
-  return typeof item.id === 'number' && typeof item.cartId === 'string' && typeof item.name === 'string';
+function newCartId(productId: number): string {
+  return `${productId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Carrinho salvo no navegador; itens inválidos são descartados. */
-function readStoredCart(): CartItem[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.cart);
-    if (!stored) return [];
-    const parsed: unknown = JSON.parse(stored);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed.filter(isStoredItem).map((item) => ({
-      ...item,
-      quantity: clampQuantity(Number(item.quantity)),
-      addons: Array.isArray(item.addons) ? item.addons : [],
-      removedIngredients: Array.isArray(item.removedIngredients) ? item.removedIngredients : [],
-      // Carrinhos antigos guardavam "Ao Ponto" até em bebidas
-      meatPoint: hasMeatPoint(item) ? item.meatPoint || undefined : undefined,
-    }));
-  } catch {
-    return [];
-  }
-}
-
-export function CartProvider({ children }: { children: ReactNode }) {
-  const [cartItems, setCartItems] = useState<CartItem[]>(readStoredCart);
+/**
+ * Carrinho de UMA loja (montado pelo StoreLayout com key = id da loja).
+ * - Salvo em "comestra.cart.<storeId>" ({ v: 2, storeId, storeSlug, items }), só com os campos necessários;
+ * - abas abertas da mesma loja ficam sincronizadas (evento "storage"): uma aba não sobrescreve mais o
+ *   carrinho da outra com uma versão velha;
+ * - na loja padrão, recebe o carrinho da versão de loja única (utils/legacyStorage).
+ */
+export function CartProvider({ storeId, storeSlug, children }: { storeId: number; storeSlug: string; children: ReactNode }) {
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => readCart(storeId));
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.cart, JSON.stringify(cartItems));
-    } catch {
-      // Armazenamento cheio ou bloqueado: o carrinho segue só em memória
+    writeCart(storeId, storeSlug, cartItems);
+  }, [storeId, storeSlug, cartItems]);
+
+  // Outra aba mudou o carrinho desta loja, ou a conta saiu (carrinhos apagados): adota a versão salva
+  useEffect(() => {
+    const key = cartStorageKey(storeId);
+    function adoptStored() {
+      const stored = readCart(storeId);
+      setCartItems((current) => (sameCartItems(current, stored) ? current : stored));
     }
-  }, [cartItems]);
+    function handleStorage(event: StorageEvent) {
+      if (event.key !== null && event.key !== key) return;
+      adoptStored();
+    }
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener(CARTS_CLEARED_EVENT, adoptStored);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener(CARTS_CLEARED_EVENT, adoptStored);
+    };
+  }, [storeId]);
+
+  // Carrinho da versão de loja única: entra no carrinho da loja padrão (uma vez; sem duplicar)
+  useEffect(() => {
+    let active = true;
+    migrateLegacyCart({ id: storeId, slug: storeSlug })
+      .then((migrated) => {
+        if (active && migrated) setCartItems((current) => mergeCartItems(current, migrated));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [storeId, storeSlug]);
 
   // Os atualizadores de estado são puros (sem mutação): o StrictMode os executa duas vezes em desenvolvimento.
   const addToCart = useCallback((
     product: Product,
-    quantity = 1,
+    quantity: number,
     observation = '',
-    addons: Addon[] = [],
+    addons: AddonChoice[] = [],
     meatPoint = '',
-    removedIngredients: string[] = []
+    removedIngredients: string[] = [],
   ) => {
-    const note = observation.trim();
-    const point = hasMeatPoint(product) ? meatPoint.trim() : '';
-    const addonIds = addons.map((addon) => addon.id);
-    const cartId = `${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const candidate = cartItemFromProduct(product, {
+      cartId: newCartId(product.id),
+      quantity,
+      observation,
+      addons: addons.map(toCartAddonFrom),
+      meatPoint: meatPoint || null,
+      removedIngredients,
+    });
+    const addonIds = candidate.addons.map((addon: CartAddon) => addon.id);
 
-    setCartItems(state => {
-      // Procura item idêntico (mesmo produto + mesmas customizações)
-      const existingIndex = state.findIndex(item =>
-        item.id === product.id &&
-        (item.observation ?? '') === note &&
-        (item.meatPoint ?? '') === point &&
-        sameItems(item.removedIngredients ?? [], removedIngredients) &&
-        sameItems((item.addons ?? []).map(addon => addon.id), addonIds)
+    setCartItems((state) => {
+      // Item idêntico (mesmo produto + mesmas personalizações) soma na mesma linha
+      const existingIndex = state.findIndex((item) =>
+        item.id === candidate.id
+        && item.observation === candidate.observation
+        && item.meatPoint === candidate.meatPoint
+        && sameItems(item.removedIngredients, candidate.removedIngredients)
+        && sameItems(item.addons.map((addon) => addon.id), addonIds),
       );
 
       if (existingIndex >= 0) {
         return state.map((item, index) =>
-          index === existingIndex ? { ...item, quantity: clampQuantity(item.quantity + quantity) } : item,
+          index === existingIndex ? { ...item, quantity: clampQuantity(item.quantity + candidate.quantity) } : item,
         );
       }
-
-      const newItem: CartItem = {
-        ...product,
-        cartId,
-        quantity: clampQuantity(quantity),
-        observation: note,
-        addons: [...addons],
-        meatPoint: point || undefined,
-        removedIngredients: [...removedIngredients],
-      };
-      return [...state, newItem];
+      return [...state, candidate];
     });
   }, []);
 
   const removeFromCart = useCallback((cartId: string) => {
-    setCartItems(state => state.filter(item => item.cartId !== cartId));
+    setCartItems((state) => state.filter((item) => item.cartId !== cartId));
   }, []);
 
   const updateQuantity = useCallback((cartId: string, delta: number) => {
-    setCartItems(state => state.map(item =>
+    setCartItems((state) => state.map((item) =>
       item.cartId === cartId ? { ...item, quantity: clampQuantity(item.quantity + delta) } : item,
     ));
   }, []);
@@ -141,18 +149,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setCartItems([]);
   }, []);
 
-  // O Total do carrinho considera apenas os ITENS + ADICIONAIS (preço promocional quando houver).
-  // A taxa de entrega e o total final vêm da cotação da API no checkout.
   const cartTotal = useMemo(() => cartItems.reduce((acc, item) => {
-    const addonsPrice = (item.addons || []).reduce((sum, addon) => sum + Number(addon.price), 0);
+    const addonsPrice = item.addons.reduce((sum, addon) => sum + addon.price, 0);
     return acc + (effectivePrice(item) + addonsPrice) * item.quantity;
   }, 0), [cartItems]);
 
   const cartCount = useMemo(() => cartItems.reduce((acc, item) => acc + item.quantity, 0), [cartItems]);
 
   const value = useMemo(
-    () => ({ cartItems, addToCart, removeFromCart, updateQuantity, clearCart, cartTotal, cartCount }),
-    [cartItems, addToCart, removeFromCart, updateQuantity, clearCart, cartTotal, cartCount],
+    () => ({ storeId, storeSlug, cartItems, addToCart, removeFromCart, updateQuantity, clearCart, cartTotal, cartCount }),
+    [storeId, storeSlug, cartItems, addToCart, removeFromCart, updateQuantity, clearCart, cartTotal, cartCount],
   );
 
   return (
@@ -162,7 +168,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** Carrinho da loja da vitrine. Só existe dentro do StoreLayout (/loja/:slug). */
 // eslint-disable-next-line react-refresh/only-export-components
-export function useCart() {
+export function useCart(): CartContextType {
+  const context = useContext(CartContext);
+  if (!context) throw new Error('useCart deve ser usado dentro da vitrine de uma loja (CartProvider).');
+  return context;
+}
+
+/** Carrinho da loja atual, ou null fora da vitrine (ex.: Meus Pedidos). */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useOptionalCart(): CartContextType | null {
   return useContext(CartContext);
 }

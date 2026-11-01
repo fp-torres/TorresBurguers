@@ -1,21 +1,17 @@
-import { useState, useRef, useId } from 'react';
-import { X, Loader2, Search, MapPin, Tag } from 'lucide-react';
-import api, { getApiErrorMessage } from '../../services/api';
-import { maskCEP } from '../../utils/masks';
+import { useRef, useState, type FormEvent } from 'react';
+import { Loader2, Search, Tag } from 'lucide-react';
 import toast from 'react-hot-toast';
+import api, { getApiErrorMessage } from '../../services/api';
+import { cepNeighborhoodNote, type CustomerAddress } from '../../services/addressService';
+import { maskCEP } from '../../utils/masks';
+import { isUf } from '../../utils/validation';
+import { FormField, Modal, buttonClass, fieldControlClass } from '../ui';
 
-/** Endereço salvo (resposta de POST /addresses). */
-export interface SavedAddress {
-  id: number;
-  nickname?: string | null;
-  zipCode?: string;
-  street: string;
-  number: string;
-  complement?: string | null;
-  neighborhood: string;
-  city: string;
-  state: string;
-}
+/**
+ * Endereço salvo (resposta de POST /addresses). Os endereços são do cliente e valem em qualquer loja; a API
+ * guarda junto o bairro do CEP (canonical_*), que é o usado na taxa de entrega.
+ */
+export type SavedAddress = CustomerAddress;
 
 interface AddressModalProps {
   isOpen: boolean;
@@ -38,10 +34,11 @@ const EMPTY_FORM = {
   complement: '',
   neighborhood: '',
   city: '',
-  state: ''
+  state: '',
 };
 
-const INPUT_CLASSES = 'w-full border border-gray-300 dark:border-slate-600 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none bg-white dark:bg-slate-800 text-gray-900 dark:text-white';
+const FORM_ID = 'address-modal-form';
+
 
 export default function AddressModal({ isOpen, onClose, onSuccess }: AddressModalProps) {
   if (!isOpen) return null;
@@ -50,29 +47,27 @@ export default function AddressModal({ isOpen, onClose, onSuccess }: AddressModa
 }
 
 function AddressForm({ onClose, onSuccess }: Omit<AddressModalProps, 'isOpen'>) {
-  const titleId = useId();
   const [loading, setLoading] = useState(false);
   const [searchingCep, setSearchingCep] = useState(false);
   const [zipCode, setZipCode] = useState('');
+  const [formData, setFormData] = useState(EMPTY_FORM);
 
-  // Ref para focar no número automaticamente após a busca do CEP
+  // Foco no número depois da busca do CEP (o resto do endereço já veio preenchido)
   const numberInputRef = useRef<HTMLInputElement>(null);
+  const nicknameRef = useRef<HTMLInputElement>(null);
   // Só a resposta do último CEP digitado é aproveitada
   const lastLookup = useRef('');
 
-  const [formData, setFormData] = useState(EMPTY_FORM);
+  function update(field: keyof typeof EMPTY_FORM, value: string) {
+    setFormData((previous) => ({ ...previous, [field]: value }));
+  }
 
-  // Gerencia a mudança do CEP e dispara a busca automática
-  function handleChangeZip(e: React.ChangeEvent<HTMLInputElement>) {
-    const value = maskCEP(e.target.value);
-    setZipCode(value);
-
-    // Quando o CEP atinge o formato completo (9 chars: 00000-000)
-    if (value.length === 9) {
-      searchCep(value.replace(/\D/g, ''));
-    } else {
-      lastLookup.current = '';
-    }
+  function handleChangeZip(value: string) {
+    const masked = maskCEP(value);
+    setZipCode(masked);
+    // CEP completo (00000-000): busca o endereço
+    if (masked.length === 9) void searchCep(masked.replace(/\D/g, ''));
+    else lastLookup.current = '';
   }
 
   async function searchCep(cepDigits: string) {
@@ -83,17 +78,14 @@ function AddressForm({ onClose, onSuccess }: Omit<AddressModalProps, 'isOpen'>) 
       const { data } = await api.get<CepLookup>(`/addresses/cep/${cepDigits}`);
       if (lastLookup.current !== cepDigits) return;
 
-      setFormData(prev => ({
-        ...prev,
-        street: data.logradouro || prev.street,
-        neighborhood: data.bairro || prev.neighborhood,
-        city: data.localidade || prev.city,
-        state: (data.uf || prev.state).toUpperCase(),
+      setFormData((previous) => ({
+        ...previous,
+        street: data.logradouro || previous.street,
+        neighborhood: data.bairro || previous.neighborhood,
+        city: data.localidade || previous.city,
+        state: (data.uf || previous.state).toUpperCase(),
       }));
-
-      // Foco automático no número para UX mobile-first rápida
-      setTimeout(() => numberInputRef.current?.focus(), 100);
-
+      window.setTimeout(() => numberInputRef.current?.focus(), 100);
     } catch (error) {
       if (lastLookup.current !== cepDigits) return;
       // Sem internet ou CEP desconhecido: a pessoa preenche o endereço à mão
@@ -103,38 +95,41 @@ function AddressForm({ onClose, onSuccess }: Omit<AddressModalProps, 'isOpen'>) 
     }
   }
 
-  async function handleSave() {
-    // Validação de campos obrigatórios conforme o DTO do Backend
+  async function handleSave(event?: FormEvent) {
+    event?.preventDefault();
+    if (loading) return;
+    // Campos obrigatórios conforme o DTO do backend
     if (!formData.street.trim() || !formData.number.trim() || !zipCode || !formData.neighborhood.trim() || !formData.city.trim() || !formData.state.trim()) {
-      toast.error("Preencha todos os campos obrigatórios!");
+      toast.error('Preencha todos os campos obrigatórios!');
       return;
     }
     if (zipCode.replace(/\D/g, '').length !== 8) {
       toast.error('CEP inválido. Informe os 8 dígitos.');
       return;
     }
-    if (!/^[A-Za-z]{2}$/.test(formData.state.trim())) {
+    if (!isUf(formData.state.trim().toUpperCase())) {
       toast.error('UF inválida. Use a sigla do estado com 2 letras (ex.: RJ).');
       return;
     }
 
+    setLoading(true);
     try {
-      setLoading(true);
-
-      // Chave 'zipCode' em camelCase para bater com o CreateAddressDto
       const { data } = await api.post<SavedAddress>('/addresses', {
         nickname: formData.nickname.trim() || 'Casa',
-        zipCode: zipCode,
+        zipCode,
         street: formData.street.trim(),
         number: formData.number.trim(),
         complement: formData.complement.trim(),
         neighborhood: formData.neighborhood.trim(),
         city: formData.city.trim(),
-        state: formData.state.trim().toUpperCase() // Garante 2 letras (ex: RJ)
+        state: formData.state.trim().toUpperCase(),
       });
 
       toast.success('Endereço salvo com sucesso!');
-      onSuccess(data); // Recarrega a lista no checkout e seleciona o novo endereço
+      // O CEP é de outro bairro: a entrega vai ser calculada para o bairro do CEP (o cliente fica sabendo já)
+      const cepNote = data ? cepNeighborhoodNote(data) : null;
+      if (cepNote) toast(cepNote, { duration: 7000 });
+      onSuccess(data); // recarrega a lista no checkout e seleciona o novo endereço
       onClose();
     } catch (error) {
       toast.error(getApiErrorMessage(error, 'Erro ao salvar endereço.', { 401: 'Faça login para salvar endereços.' }));
@@ -144,147 +139,109 @@ function AddressForm({ onClose, onSuccess }: Omit<AddressModalProps, 'isOpen'>) 
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden transition-colors border border-gray-100 dark:border-slate-800">
-
-        {/* Header */}
-        <div className="bg-orange-600 dark:bg-orange-700 px-6 py-4 flex justify-between items-center text-white shadow-md">
-          <h2 id={titleId} className="font-bold text-lg flex items-center gap-2">
-            <MapPin size={20}/> Novo Endereço
-          </h2>
-          <button type="button" onClick={onClose} aria-label="Fechar" className="hover:bg-orange-700 p-1 rounded-lg transition-colors">
-            <X size={20}/>
+    <Modal
+      open
+      onClose={onClose}
+      dismissible={!loading}
+      title="Novo Endereço"
+      description="Endereço de entrega da sua conta (vale para qualquer loja)."
+      initialFocusRef={nicknameRef}
+      footer={(
+        <>
+          <button type="button" onClick={onClose} disabled={loading} className={buttonClass('secondary')}>Cancelar</button>
+          <button type="submit" form={FORM_ID} disabled={loading} className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-200 dark:shadow-none transition-colors disabled:opacity-70">
+            {loading ? <><Loader2 className="animate-spin" size={18} aria-hidden="true" /> Salvando...</> : 'Salvar Endereço'}
           </button>
-        </div>
-
-        {/* Body */}
-        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
-
-          {/* Apelido / Nickname */}
-          <div>
-            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Apelido (Ex: Casa, Trabalho)</label>
+        </>
+      )}
+    >
+      <form id={FORM_ID} onSubmit={handleSave} noValidate className="space-y-4">
+        <FormField label="Apelido (Ex: Casa, Trabalho)">
+          {(field) => (
             <div className="relative">
-              {/* Primeiro campo do diálogo: recebe o foco ao abrir */}
               <input
-                autoFocus
+                {...field}
+                ref={nicknameRef}
                 value={formData.nickname}
-                onChange={e => setFormData({...formData, nickname: e.target.value})}
+                onChange={(event) => update('nickname', event.target.value)}
                 placeholder="Ex: Minha Casa"
                 maxLength={50}
-                className="w-full border border-gray-300 dark:border-slate-600 rounded-xl p-3 pl-10 outline-none bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500"
+                className={fieldControlClass(false, 'pl-10')}
               />
-              <Tag size={18} className="absolute left-3 top-3.5 text-gray-400" />
+              <Tag size={18} className="absolute left-3 top-3 text-gray-400" aria-hidden="true" />
             </div>
-          </div>
+          )}
+        </FormField>
 
-          {/* CEP */}
-          <div>
-            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">CEP</label>
+        <FormField label="CEP" required hint="Preenchemos o endereço pelo CEP. Se não encontrar, digite os campos abaixo.">
+          {(field) => (
             <div className="relative">
               <input
+                {...field}
                 value={zipCode}
-                onChange={handleChangeZip}
+                onChange={(event) => handleChangeZip(event.target.value)}
                 maxLength={9}
                 inputMode="numeric"
+                autoComplete="postal-code"
                 placeholder="00000-000"
-                className="w-full border border-gray-300 dark:border-slate-600 rounded-xl p-3 pr-10 outline-none bg-white dark:bg-slate-800 text-gray-900 dark:text-white font-mono focus:ring-2 focus:ring-orange-500"
+                className={fieldControlClass(false, 'pr-10 font-mono')}
               />
-              <div className="absolute right-3 top-3 text-gray-400">
-                {searchingCep ? <Loader2 size={20} className="animate-spin text-orange-600"/> : <Search size={20}/>}
-              </div>
+              <span className="absolute right-3 top-2.5 text-gray-400" aria-hidden="true">
+                {searchingCep ? <Loader2 size={20} className="animate-spin text-orange-600" /> : <Search size={20} />}
+              </span>
+              {searchingCep && <span className="sr-only" role="status">Buscando o endereço pelo CEP...</span>}
             </div>
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">Preenchemos o endereço pelo CEP. Se não encontrar, digite os campos abaixo.</p>
-          </div>
+          )}
+        </FormField>
 
-          <div className="grid grid-cols-3 gap-4">
-            <div className="col-span-2">
-              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Rua / Av.</label>
-              <input
-                value={formData.street}
-                onChange={e => setFormData({...formData, street: e.target.value})}
-                maxLength={150}
-                className={INPUT_CLASSES}
-                placeholder="Preenchimento automático"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Nº</label>
-              <input
-                ref={numberInputRef}
-                value={formData.number}
-                onChange={e => setFormData({...formData, number: e.target.value})}
-                maxLength={20}
-                className={INPUT_CLASSES}
-                placeholder="123"
-              />
-            </div>
-          </div>
+        <div className="grid grid-cols-3 gap-4">
+          <FormField label="Rua / Av." required className="col-span-2">
+            {(field) => (
+              <input {...field} value={formData.street} onChange={(event) => update('street', event.target.value)} maxLength={150} autoComplete="address-line1" placeholder="Preenchimento automático" className={fieldControlClass()} />
+            )}
+          </FormField>
+          <FormField label="Nº" required>
+            {(field) => (
+              <input {...field} ref={numberInputRef} value={formData.number} onChange={(event) => update('number', event.target.value)} maxLength={20} placeholder="123" className={fieldControlClass()} />
+            )}
+          </FormField>
+        </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Bairro</label>
-              <input
-                value={formData.neighborhood}
-                onChange={e => setFormData({...formData, neighborhood: e.target.value})}
-                maxLength={100}
-                className={INPUT_CLASSES}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Complemento</label>
-              <input
-                value={formData.complement}
-                onChange={e => setFormData({...formData, complement: e.target.value})}
-                placeholder="Apto, Bloco..."
-                maxLength={100}
-                className={INPUT_CLASSES}
-              />
-            </div>
-          </div>
+        <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-4">
+          <FormField label="Bairro" required>
+            {(field) => (
+              <input {...field} value={formData.neighborhood} onChange={(event) => update('neighborhood', event.target.value)} maxLength={100} className={fieldControlClass()} />
+            )}
+          </FormField>
+          <FormField label="Complemento">
+            {(field) => (
+              <input {...field} value={formData.complement} onChange={(event) => update('complement', event.target.value)} maxLength={100} autoComplete="address-line2" placeholder="Apto, Bloco..." className={fieldControlClass()} />
+            )}
+          </FormField>
+        </div>
 
-          {/* Cidade e UF: preenchidas pelo CEP, mas editáveis (CEP desconhecido ou sem internet) */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="col-span-2">
-              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Cidade</label>
+        {/* Cidade e UF: preenchidas pelo CEP, mas editáveis (CEP desconhecido ou sem internet) */}
+        <div className="grid grid-cols-3 gap-4">
+          <FormField label="Cidade" required className="col-span-2">
+            {(field) => (
+              <input {...field} value={formData.city} onChange={(event) => update('city', event.target.value)} maxLength={100} autoComplete="address-level2" className={fieldControlClass()} />
+            )}
+          </FormField>
+          <FormField label="UF" required>
+            {(field) => (
               <input
-                value={formData.city}
-                onChange={e => setFormData({...formData, city: e.target.value})}
-                maxLength={100}
-                className={INPUT_CLASSES}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">UF</label>
-              <input
+                {...field}
                 value={formData.state}
-                onChange={e => setFormData({...formData, state: e.target.value.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 2)})}
+                onChange={(event) => update('state', event.target.value.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 2))}
                 maxLength={2}
+                autoComplete="address-level1"
                 placeholder="RJ"
-                className={`${INPUT_CLASSES} text-center uppercase`}
+                className={fieldControlClass(false, 'text-center uppercase')}
               />
-            </div>
-          </div>
+            )}
+          </FormField>
         </div>
-
-        {/* Footer */}
-        <div className="p-4 bg-gray-50 dark:bg-slate-900 border-t border-gray-100 dark:border-slate-700 flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-gray-600 dark:text-gray-400 font-bold hover:bg-gray-200 dark:hover:bg-slate-800 rounded-xl transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={loading}
-            className="px-6 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition-colors flex items-center gap-2 shadow-lg shadow-green-200 dark:shadow-none disabled:opacity-70"
-          >
-            {loading ? <Loader2 className="animate-spin" size={20} /> : 'Salvar Endereço'}
-          </button>
-        </div>
-      </div>
-    </div>
+      </form>
+    </Modal>
   );
 }

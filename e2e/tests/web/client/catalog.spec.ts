@@ -17,6 +17,8 @@ import {
   searchBox,
   searchFor,
   seedCatalog,
+  storeUrl,
+  storedCartItems,
   summaryValue,
   type Catalog,
 } from './helpers';
@@ -115,8 +117,9 @@ test.describe('Cardápio da vitrine', () => {
     await searchFor(page, catalog.promo.name);
     const card = productCard(page, catalog.promo.name);
     await expect(card.getByText('OFERTA', { exact: true })).toBeVisible();
-    await expect(card.getByText(brl(15), { exact: true })).toBeVisible();
-    const fullPrice = card.getByText(brl(20), { exact: true });
+    // Os preços levam "De"/"por" só para leitores de tela: "De R$ 20,00 por R$ 15,00"
+    await expect(card.getByText(`por ${brl(15)}`, { exact: true })).toBeVisible();
+    const fullPrice = card.getByText(`De ${brl(20)}`, { exact: true });
     await expect(fullPrice).toBeVisible();
     await expect(fullPrice).toHaveCSS('text-decoration-line', 'line-through');
 
@@ -190,8 +193,8 @@ test.describe('Modal do produto', () => {
     await modalAddButton(dialog).click();
     await expect(cartLink(page)).toHaveAccessibleName('Carrinho com 1 item');
 
-    // Nada de "Ao Ponto" guardado para a bebida
-    const stored = JSON.parse((await readStorage(page))[STORAGE_KEYS.cart]);
+    // Nada de "Ao Ponto" guardado para a bebida (carrinho guardado por loja)
+    const stored = await storedCartItems(page);
     expect(stored).toHaveLength(1);
     expect(stored[0].meatPoint ?? null).toBeNull();
     await cartLink(page).click();
@@ -327,10 +330,12 @@ test.describe('Carrinho', () => {
     await page.getByRole('button', { name: `Remover ${catalog.combo.name}` }).click();
     await expect(page.getByRole('heading', { name: 'Seu carrinho está vazio' })).toBeVisible();
     await expect(cartLink(page)).toHaveAccessibleName('Carrinho');
-    expect(JSON.parse((await readStorage(page))[STORAGE_KEYS.cart])).toEqual([]);
+    // Carrinho vazio: a chave da loja é apagada
+    expect(await storedCartItems(page)).toEqual([]);
+    expect(Object.keys(await readStorage(page)).filter((key) => key.startsWith(`${STORAGE_KEYS.cart}.`))).toEqual([]);
 
     await page.getByRole('link', { name: 'Ver Cardápio' }).click();
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(storeUrl());
     await expect(searchBox(page)).toBeVisible();
   });
 

@@ -3,30 +3,24 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 // Importar o AppModule já carrega o .env (ConfigModule.forRoot) para process.env
 import { AppModule } from '../app.module';
-import { isProduction } from '../config/env';
 import { User } from '../users/entities/user.entity';
-import { DEFAULT_USERS } from './seeds/default-users';
-import { seedDefaultUsers } from './seeds/seed-default-users';
+import { ensureDemoStore } from './seeds/demo-store';
+import { defaultUsersFor, seedDefaultUsers } from './seeds/seed-default-users';
+import {
+  SEED_REFUSED_IN_PRODUCTION,
+  seedAllowed,
+  seedIncludesSuperadmin,
+} from './seeds/seed-policy';
 
-// npm run seed — cria/restaura os usuários padrão e redefine as senhas documentadas no README.
-// Em produção (inclusive NODE_ENV vazio ou desconhecido) só roda com: npm run seed -- --force
+// npm run seed — cria/restaura os usuários padrão (development/test) e redefine as senhas documentadas no
+// README. Nunca roda em produção (inclusive NODE_ENV vazio ou desconhecido), nem com --force.
+// O superadmin de demonstração só entra com --with-superadmin ou SEED_DEMO_SUPERADMIN=true (test: padrão).
 async function main() {
-  if (isProduction()) {
-    if (!process.argv.includes('--force')) {
-      console.error(
-        [
-          'Seed recusado: o ambiente é de produção (NODE_ENV vazio ou desconhecido também conta).',
-          'Ele cria ou restaura contas com as senhas públicas do README e redefine as senhas delas.',
-          '- Em uma máquina de desenvolvimento, defina NODE_ENV=development no .env.',
-          '- Para recuperar o acesso em produção: npm run seed -- --force e troque as senhas logo em seguida.',
-        ].join('\n'),
-      );
-      process.exit(1);
-    }
-    console.warn(
-      '⚠ --force em produção: as contas padrão ficam com as senhas públicas do README. Troque-as em seguida.',
-    );
+  if (!seedAllowed()) {
+    console.error(SEED_REFUSED_IN_PRODUCTION);
+    process.exit(1);
   }
+  const includeSuperadmin = seedIncludesSuperadmin();
 
   // Este script faz o seed completo; o seed automático da subida fica desligado para o relatório sair fiel
   process.env.SEED_DEMO_USERS = 'false';
@@ -36,15 +30,31 @@ async function main() {
   });
   try {
     const repo = app.get<Repository<User>>(getRepositoryToken(User));
-    const report = await seedDefaultUsers(repo, { resetPasswords: true });
+    const { store, created } = await ensureDemoStore(repo.manager);
+    console.log(
+      `✔ loja da equipe demo: ${store.name} (/loja/${store.slug})${created ? ' — criada agora' : ''}`,
+    );
+    const report = await seedDefaultUsers(repo, {
+      resetPasswords: true,
+      storeId: store.id,
+      includeSuperadmin,
+    });
     report.forEach((line) => console.log(`✔ ${line}`));
     console.table(
-      DEFAULT_USERS.map(({ role, email, password }) => ({
-        perfil: role,
-        email,
-        senha: password,
-      })),
+      defaultUsersFor(includeSuperadmin).map(
+        ({ role, platformRole, email, password }) => ({
+          perfil: platformRole ?? role,
+          email,
+          senha: password,
+        }),
+      ),
     );
+    if (!includeSuperadmin) {
+      console.log(
+        'ℹ Superadmin de demonstração não incluído (papel global com senha pública). Para criá-lo nesta ' +
+          'máquina de desenvolvimento: npm run seed -- --with-superadmin (ou SEED_DEMO_SUPERADMIN=true).',
+      );
+    }
   } finally {
     await app.close();
   }

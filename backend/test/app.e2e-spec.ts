@@ -10,8 +10,9 @@ import { BRAND } from './../src/config/brand';
 
 /**
  * Sobe o AppModule completo, como em produção (mesma ValidationPipe e CORS do main.ts).
- * Precisa de um PostgreSQL acessível com as variáveis DB_* (do .env ou do ambiente);
- * para não usar o banco de desenvolvimento, rode com DB_DATABASE=<banco_de_teste>.
+ * Precisa de um PostgreSQL acessível com as variáveis DB_* (do .env ou do ambiente) e de um banco
+ * DESCARTÁVEL: a subida aplica as migrations (DB_MIGRATIONS_RUN). Rode com DB_DATABASE=<nome>_test
+ * (ex.: createdb comestra_test); qualquer outro nome é recusado para nunca migrar o banco de desenvolvimento.
  */
 describe('API (e2e)', () => {
   let app: INestApplication<App>;
@@ -23,6 +24,13 @@ describe('API (e2e)', () => {
   ).version;
 
   beforeAll(async () => {
+    const database = process.env.DB_DATABASE ?? '';
+    if (!/_(test|e2e)$/.test(database)) {
+      throw new Error(
+        `Recusado: DB_DATABASE="${database}" não termina com _test (ou _e2e). Este teste aplica migrations e só roda em banco descartável.`,
+      );
+    }
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -37,11 +45,11 @@ describe('API (e2e)', () => {
     await app?.close();
   });
 
-  it('GET /health responde status, nome e versão', () => {
-    return request(app.getHttpServer())
-      .get('/health')
-      .expect(200)
-      .expect({ status: 'ok', name: BRAND.name, version: packageVersion });
+  it('GET /health responde só { status: "ok" } (sem nome nem versão)', async () => {
+    const res = await request(app.getHttpServer()).get('/health').expect(200);
+    expect(res.body).toEqual({ status: 'ok' });
+    expect(res.text).not.toContain(packageVersion);
+    expect(res.text).not.toContain(BRAND.name);
   });
 
   it('rota protegida sem token → 401 no formato do contrato', () => {

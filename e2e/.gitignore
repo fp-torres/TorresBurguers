@@ -3,4 +3,7 @@ test-results/
 playwright-report/
 blob-report/
 .uploads/
+.uploads-*/
+test-results-*/
+playwright-report-*/
 .auth/

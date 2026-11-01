@@ -1,0 +1,18 @@
+# Contexto de build da imagem do site (docker compose build web).
+# Sem dependências da máquina (binários do Windows), builds antigos nem arquivos .env locais: o endereço da
+# API do build vem do argumento VITE_API_URL (docker-compose.yml).
+
+node_modules
+dist
+dist-*
+*.tsbuildinfo
+.env
+.env.*
+*.log
+npm-debug.log*
+.git
+.vscode
+.idea
+README.md
+Dockerfile
+.dockerignore

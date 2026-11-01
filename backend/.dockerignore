@@ -1,0 +1,36 @@
+# Contexto de build da imagem da API (docker compose build api).
+# Só entram package.json, package-lock.json, os tsconfig, nest-cli.json e src/: nada de dependências da
+# máquina (binários do Windows), builds antigos, imagens enviadas nem segredos.
+
+# Dependências e builds locais
+node_modules
+dist
+dist-*
+coverage
+*.tsbuildinfo
+
+# Segredos e configuração local (as variáveis do container vêm do .env.docker da raiz)
+.env
+.env.*
+.temp
+
+# Imagens enviadas (no Docker ficam no volume "uploads")
+uploads
+.uploads*
+
+# Testes, relatórios e ferramentas
+test
+test-results*
+playwright-report*
+scripts
+*.log
+npm-debug.log*
+
+# Outros
+.git
+.gitignore
+.vscode
+.idea
+README.md
+Dockerfile
+.dockerignore

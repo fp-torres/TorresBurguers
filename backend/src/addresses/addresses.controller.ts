@@ -11,7 +11,9 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { Request as HttpRequest } from 'express';
 import { ParseIdPipe } from '../common/pipes/parse-id.pipe';
+import { clientIpKey } from '../auth/link-token';
 import { AddressesService } from './addresses.service';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
@@ -26,10 +28,11 @@ interface AuthenticatedRequest {
 export class AddressesController {
   constructor(private readonly addressesService: AddressesService) {}
 
-  // Busca de CEP (proxy ViaCEP/BrasilAPI). Pública: usada também antes do login.
+  // Busca de CEP (proxy ViaCEP/BrasilAPI). Pública: usada também antes do login (limitada por IP).
   @Get('cep/:cep')
-  findCep(@Param('cep') cep: string) {
-    return this.addressesService.findCep(cep);
+  findCep(@Param('cep') cep: string, @Request() req: HttpRequest) {
+    // Limite por IP (CEP_LOOKUP) com a chave dos outros limites: IPv6 pela rede /64
+    return this.addressesService.findCep(cep, clientIpKey(req));
   }
 
   // --- Endereços do usuário logado ---

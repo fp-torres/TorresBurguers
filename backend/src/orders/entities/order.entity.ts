@@ -7,9 +7,12 @@ import {
   ManyToOne,
   OneToMany,
   JoinColumn,
+  Index,
+  type Relation,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { Address } from '../../addresses/entities/address.entity';
+import { Store } from '../../store/entities/store.entity';
 import { OrderItem } from './order-item.entity';
 import { OrderStatus, OrderType, PaymentStatus } from '../order.enums';
 import type { DeliveryAddressSnapshot } from '../order-snapshot';
@@ -18,9 +21,41 @@ import type { DeliveryAddressSnapshot } from '../order-snapshot';
 export { OrderStatus, OrderType, PaymentStatus };
 
 @Entity('orders')
+@Index('IDX_orders_store_created_at', ['store_id', 'created_at'])
+@Index('IDX_orders_store_status', ['store_id', 'status'])
+// Meus pedidos (cliente global, todas as lojas)
+@Index('IDX_orders_user_created_at', ['user', 'created_at'])
+// Número do pedido: único dentro da loja
+@Index('UQ_orders_store_number', ['store_id', 'number'], { unique: true })
+// Quadro de pedidos (encerrados nas últimas 24 h) e quadro do entregador (também cobre a FK driver_id):
+// migration PerformanceIndexes
+@Index('IDX_orders_store_updated_at', ['store_id', 'updated_at'])
+@Index('IDX_orders_driver_updated_at', ['driver', 'updated_at'])
+// Pedidos abertos: índice parcial (store_id, created_at) WHERE status NOT IN ('DONE', 'CANCELED') OR
+// payment_status = 'REFUND_PENDING', criado pela migration PerformanceIndexes.
+// synchronize:false porque o TypeORM não compara o WHERE de forma estável (recriaria o índice a cada subida).
+@Index('IDX_orders_store_open', { synchronize: false })
 export class Order {
   @PrimaryGeneratedColumn()
   id: number;
+
+  /** Loja do pedido: a equipe só enxerga os pedidos da própria loja. */
+  @Column({ type: 'int' })
+  store_id: number;
+
+  /**
+   * Número do pedido NA LOJA (1, 2, 3...), sem buracos: é o "Pedido #N" das telas. O id é global e
+   * continua sendo a chave das rotas (e do app mobile), mas não é mostrado ao cliente (revelaria o
+   * volume das outras lojas). Atribuído pelo banco em TODO insert (gatilho TRG_orders_assign_number:
+   * pago na entrega, criado pelo pagamento aprovado ou por SQL) e imutável (TRG_orders_number_immutable).
+   * Por isso a API nunca o envia (insert/update: false); depois do save, recarregue o pedido para lê-lo.
+   */
+  @Column({ type: 'int', insert: false, update: false })
+  number: number;
+
+  @ManyToOne(() => Store, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'store_id', foreignKeyConstraintName: 'FK_orders_store' })
+  store?: Relation<Store>;
 
   @Column({
     type: 'enum',

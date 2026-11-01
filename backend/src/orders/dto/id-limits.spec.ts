@@ -3,6 +3,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate, type ValidationError } from 'class-validator';
 import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { ParsePaymentIdPipe } from '../../payment/parse-payment-id.pipe';
+import { CreatePixPaymentDto } from '../../payment/dto/create-payment.dto';
 import { AssignDriverDto } from './assign-driver.dto';
 import { CreateOrderDto, QuoteOrderDto } from './create-order.dto';
 
@@ -122,6 +123,37 @@ describe('limites dos ids (400 em vez de erro 500 do Postgres)', () => {
       ['driverId'],
     );
     expect(await errorsOf(AssignDriverDto, { driverId: MAX_INT })).toEqual([]);
+  });
+
+  it('o corpo nunca escolhe a loja: storeId, store_id e storeSlug são recusados (como na API, forbidNonWhitelisted)', async () => {
+    const strict = { whitelist: true, forbidNonWhitelisted: true };
+    for (const extra of [
+      { storeId: 2 },
+      { store_id: 2 },
+      { storeSlug: 'outra-loja' },
+    ]) {
+      const order = await validate(
+        plainToInstance(CreateOrderDto, {
+          items: [item()],
+          type: 'TAKEOUT',
+          paymentMethod: 'MONEY',
+          ...extra,
+        }),
+        strict,
+      );
+      expect(failedPaths(order)).toEqual(Object.keys(extra));
+
+      const payment = await validate(
+        plainToInstance(CreatePixPaymentDto, {
+          order: { items: [item()], type: 'TAKEOUT', ...extra },
+          ...extra,
+        }),
+        strict,
+      );
+      expect(failedPaths(payment).sort()).toEqual(
+        [Object.keys(extra)[0], `order.${Object.keys(extra)[0]}`].sort(),
+      );
+    }
   });
 
   it('ids na URL: pedidos usam integer; pagamentos aceitam bigint', () => {

@@ -3,25 +3,26 @@ import {
   Controller,
   Post,
   UploadedFile,
-  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import { Roles } from '../auth/roles.decorator';
-import { RolesGuard } from '../auth/roles.guard';
+import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { CurrentTenant, StaffRoute } from '../tenancy';
+import type { TenantContext } from '../tenancy';
 import { UserRole } from '../users/entities/user.entity';
-import { OptimizeImagePipe } from './pipes/optimize-image.pipe';
+import { withOptimizedImage } from './pipes/optimize-image.pipe';
 import { ImageFileInterceptor } from './uploads/image-upload';
+import { storeFilePrefix } from './uploads/store-files';
 
 @ApiTags('uploads')
-@ApiBearerAuth()
 @Controller('uploads')
 export class UploadController {
-  /** Envia uma imagem avulsa (JPG, PNG ou WebP até 5 MB). Ela é otimizada e salva como .webp. */
+  /**
+   * Envia uma imagem avulsa da loja (JPG, PNG ou WebP até 5 MB), otimizada e salva como .webp com o
+   * prefixo da loja (s<id>-compressed-...). Devolve só o nome do arquivo (servido em /uploads/<nome>),
+   * que o cadastro de produtos e adicionais DESTA loja aceita no campo "image".
+   */
   @Post()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @StaffRoute(UserRole.ADMIN)
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -33,13 +34,19 @@ export class UploadController {
     },
   })
   @UseInterceptors(ImageFileInterceptor('file'))
-  uploadFile(@UploadedFile(OptimizeImagePipe) file?: Express.Multer.File) {
+  uploadFile(
+    @CurrentTenant() tenant: TenantContext,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
     if (!file) {
       throw new BadRequestException(
         'Nenhuma imagem enviada. Envie o arquivo no campo "file".',
       );
     }
-    // Nome do arquivo otimizado (ex.: compressed-<data>-<código>.webp), servido em /uploads/<nome>
-    return { filename: file.filename };
+    return withOptimizedImage(
+      file,
+      (filename) => Promise.resolve({ filename: filename as string }),
+      { prefix: storeFilePrefix(tenant.storeId) },
+    );
   }
 }

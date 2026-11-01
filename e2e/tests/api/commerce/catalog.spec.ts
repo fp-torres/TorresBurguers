@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import { uid } from '../../../support/api';
+import { demoStore, uid } from '../../../support/api';
+import { E2E } from '../../../support/env';
 import {
   Actors,
   GIF_1PX,
@@ -21,6 +22,7 @@ import {
   ids,
   placeOrder,
   softDeleteProduct,
+  updateProduct,
   type Actor,
   type Json,
 } from './helpers';
@@ -68,6 +70,25 @@ test.describe('Catálogo: produtos e adicionais', () => {
     expect(found, 'produto ativo no cardápio').toBeTruthy();
     expect(ids(found.allowed_addons)).toEqual(ids([addonA, addonB]));
     expect(list.some((p) => p.id === trashed.id), 'produto da lixeira fora do cardápio').toBe(false);
+  });
+
+  test('cardápio pela rota da loja (/stores/<slug>/products e /addons) é o mesmo das rotas antigas (loja padrão)', async () => {
+    const product = await createProduct(admin.ctx, { allowed_addons_ids: [addonA.id] });
+    const scoped = `/stores/${E2E.demoStoreSlug}`;
+    const [legacyProducts, scopedProducts, legacyAddons, scopedAddons] = await Promise.all([
+      getProducts(anon),
+      anon.get(`${scoped}/products`).then((res) => res.json()),
+      getAddons(anon),
+      anon.get(`${scoped}/addons`).then((res) => res.json()),
+    ]);
+    expect(ids(scopedProducts)).toEqual(ids(legacyProducts));
+    expect(ids(scopedAddons)).toEqual(ids(legacyAddons));
+    expect(scopedProducts.some((p: Json) => p.id === product.id)).toBe(true);
+
+    const one = await anon.get(`${scoped}/products/${product.id}`);
+    await expectStatus(one, 200);
+    expect(ids((await one.json()).allowed_addons)).toEqual([addonA.id]);
+    await expectNestError(await anon.get('/stores/loja-que-nao-existe-e2e/products'), 404);
   });
 
   test('GET /products/:id é público e traz os adicionais permitidos', async () => {
@@ -120,7 +141,8 @@ test.describe('Catálogo: produtos e adicionais', () => {
     expectMoney(product.price, 29.9, 'price');
     expect(product.ingredients).toEqual(['Pão brioche', 'Blend 180g']);
     expect(ids(product.allowed_addons)).toEqual([addonA.id]);
-    expect(product.image, 'nome do arquivo salvo (sem pasta)').toMatch(/^[\w-][\w.-]*\.webp$/);
+    const store = await demoStore();
+    expect(product.image, 'nome do arquivo salvo (sem pasta), com o prefixo da loja').toMatch(new RegExp(`^s${store.id}-[\\w.-]+\\.webp$`));
 
     const image = await anon.get(`/uploads/${product.image}`);
     expect(image.status(), 'imagem servida em /uploads').toBe(200);
@@ -247,6 +269,38 @@ test.describe('Catálogo: produtos e adicionais', () => {
     expect((await getProducts(anon)).some((p) => p.name === name), 'nada foi criado').toBe(false);
   });
 
+  test('campo "image" só aceita arquivo da própria loja (s<id>-), URL https:// ou o valor atual (400 nos demais)', async () => {
+    const store = await demoStore();
+    const name = `Imagem Ref ${uid('ir')}`;
+    const base = { name, price: 10, category: 'bebidas' };
+    const orphan = 'compressed-1700000000000-abcd1234.webp';
+    for (const image of ['http://exemplo.com/foto.png', orphan, `s${store.id + 1000}-${orphan}`, '/uploads/foto.webp']) {
+      await expectNestError(await admin.ctx.post('/products', { data: { ...base, image } }), 400, /Imagem inválida/);
+    }
+    expect((await getProducts(anon)).some((p) => p.name === name), 'nada foi criado').toBe(false);
+
+    // Arquivo enviado pela própria loja (POST /uploads) e URL https:// são aceitos
+    const upload = await admin.ctx.post('/uploads', { multipart: { file: { name: 'foto.png', mimeType: 'image/png', buffer: PNG_1PX } } });
+    await expectStatus(upload, 201);
+    const { filename } = await upload.json();
+    expect(filename).toMatch(new RegExp(`^s${store.id}-`));
+    const own = await createProduct(admin.ctx, { image: filename });
+    expect(own.image).toBe(filename);
+    const external = await createProduct(admin.ctx, { image: 'https://cdn.exemplo.com/burger.png' });
+    expect(external.image).toBe('https://cdn.exemplo.com/burger.png');
+
+    // Reenviar o valor atual é aceito; trocar por um arquivo sem dono ou de outra loja, não
+    expect((await updateProduct(admin.ctx, own.id, { image: filename, price: 11 })).image).toBe(filename);
+    for (const image of [orphan, `s${store.id + 1000}-${orphan}`]) {
+      await expectNestError(await admin.ctx.patch(`/products/${own.id}`, { data: { image } }), 400, /Imagem inválida/);
+    }
+    expect((await (await anon.get(`/products/${own.id}`)).json()).image).toBe(filename);
+
+    // Adicionais seguem a mesma regra
+    await expectNestError(await admin.ctx.post('/addons', { data: { name: `Img ${uid('ai')}`, price: 1, image: 'http://exemplo.com/a.png' } }), 400);
+    await expectNestError(await admin.ctx.post('/addons', { data: { name: `Img ${uid('ai')}`, price: 1, image: orphan } }), 400);
+  });
+
   test('imagem que não é JPG/PNG/WebP é recusada com 400 e o produto não é criado', async () => {
     const name = `Imagem Falsa ${uid('img')}`;
     const fd = form(
@@ -302,6 +356,63 @@ test.describe('Catálogo: produtos e adicionais', () => {
     expect(after.image).toMatch(/\.webp$/);
     expect(after.image).not.toBe(product.image);
     expect((await anon.get(`/uploads/${after.image}`)).status()).toBe(200);
+  });
+
+  test('a imagem trocada de produto ou adicional sai do disco, a menos que outro cadastro ainda a use', async () => {
+    const png = () => ({ blob: fileBlob(PNG_1PX, 'image/png'), name: 'foto.png' });
+    const served = async (file: string) => (await anon.get(`/uploads/${file}`)).status();
+
+    // Dois produtos com o mesmo arquivo da loja (o segundo pelo campo "image")
+    const created = await admin.ctx.post('/products', {
+      multipart: form(
+        [
+          ['name', `Imagem trocada ${uid('img')}`],
+          ['price', '10'],
+          ['category', 'bebidas'],
+        ],
+        png(),
+      ),
+    });
+    await expectStatus(created, 201);
+    const first = await created.json();
+    const shared = first.image as string;
+    const twin = await createProduct(admin.ctx, { image: shared });
+    expect(twin.image).toBe(shared);
+
+    // O primeiro troca a foto: o arquivo continua, porque o outro produto ainda o usa
+    const replaced = await admin.ctx.patch(`/products/${first.id}`, { multipart: form([], png()) });
+    await expectStatus(replaced, 200);
+    const firstNew = (await replaced.json()).image as string;
+    expect(firstNew).not.toBe(shared);
+    expect(await served(shared), 'arquivo ainda usado por outro produto').toBe(200);
+
+    // O outro tira a imagem: ninguém mais usa o arquivo e ele sai do disco
+    await updateProduct(admin.ctx, twin.id, { image: null });
+    expect(await served(shared), 'arquivo sem nenhum uso').toBe(404);
+    expect(await served(firstNew), 'a foto nova continua').toBe(200);
+
+    // Adicional: mesma regra
+    const addonCreated = await admin.ctx.post('/addons', {
+      multipart: form(
+        [
+          ['name', `Adicional com foto ${uid('ad')}`],
+          ['price', '2'],
+        ],
+        png(),
+      ),
+    });
+    await expectStatus(addonCreated, 201);
+    const addon = await addonCreated.json();
+    const addonReplaced = await admin.ctx.patch(`/addons/${addon.id}`, { multipart: form([], png()) });
+    await expectStatus(addonReplaced, 200);
+    const addonNew = (await addonReplaced.json()).image as string;
+    expect(addonNew).not.toBe(addon.image);
+    expect(await served(addon.image), 'foto antiga do adicional').toBe(404);
+    expect(await served(addonNew), 'foto nova do adicional').toBe(200);
+
+    await softDeleteProduct(admin.ctx, first.id);
+    await softDeleteProduct(admin.ctx, twin.id);
+    await deleteAddon(admin.ctx, addon.id);
   });
 
   test('GIF e SVG são recusados com 400 mesmo declarados como imagem', async () => {

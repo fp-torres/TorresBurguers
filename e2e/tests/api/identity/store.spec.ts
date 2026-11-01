@@ -1,9 +1,11 @@
 import { test, expect, type APIRequestContext, type APIResponse } from '@playwright/test';
+import { E2E } from '../../../support/env';
 import {
   bearer,
   body,
   createAddress,
   createProduct,
+  demoStore,
   expectError,
   newApi,
   newClient,
@@ -154,6 +156,104 @@ test.describe('Status da loja (GET/PATCH /store/status)', () => {
   }
 });
 
+const PUBLIC_PROFILE_KEYS = [
+  'address',
+  'closing_message',
+  // Público de propósito (onda 2): a vitrine avisa se a loja entrega fora das zonas cadastradas
+  'delivers_outside_zones',
+  'delivery_enabled',
+  'description',
+  'email',
+  'id',
+  'is_open',
+  'logo',
+  'name',
+  'opening_hours',
+  'opening_message',
+  'ordering_available',
+  'payments',
+  'phone',
+  'primary_color',
+  'slug',
+  'takeout_enabled',
+  'takeout_estimate',
+  'time_zone',
+  'unavailable_message',
+];
+
+test.describe('Vitrine por loja (GET /stores/<slug> e /stores/<slug>/status)', () => {
+  test('GET /stores/<slug>/status é público e tem as mesmas 4 chaves e a mesma loja de GET /store/status (loja padrão)', async ({ request }) => {
+    const store = await demoStore();
+    const [scoped, legacy] = await Promise.all([request.get(`/stores/${E2E.demoStoreSlug}/status`), request.get('/store/status')]);
+    expect(scoped.status()).toBe(200);
+    const scopedBody = await scoped.json();
+    expectStatusShape(scopedBody);
+    expect(scopedBody.id).toBe(store.id);
+    expect(await legacy.json()).toEqual(scopedBody);
+  });
+
+  test('a equipe lê pela rota antiga (com o token) o status da própria loja', async ({ request }) => {
+    const store = await demoStore();
+    for (const key of ['admin', 'employee', 'kitchen'] as const) {
+      const session = await sessionOf(request, key);
+      const res = await request.get('/store/status', { headers: bearer(session.token) });
+      expect(res.status()).toBe(200);
+      const payload = await res.json();
+      expectStatusShape(payload);
+      expect(payload.id, key).toBe(store.id);
+    }
+  });
+
+  test('loja inexistente → 404 no perfil, no status, no cardápio e na compra', async ({ request }) => {
+    const client = await sessionOf(request, 'client');
+    for (const path of ['/stores/loja-que-nao-existe-e2e', '/stores/loja-que-nao-existe-e2e/status', '/stores/loja-que-nao-existe-e2e/products']) {
+      await expectError(await request.get(path), 404);
+    }
+    await expectError(
+      await request.post('/stores/loja-que-nao-existe-e2e/orders/quote', {
+        headers: bearer(client.token),
+        data: { items: [{ productId: 1, quantity: 1 }], type: 'TAKEOUT' },
+      }),
+      404,
+    );
+  });
+
+  test('perfil público da loja demo: identidade, endereço de retirada e entrega com as zonas da plataforma (loja padrão), sem segredos', async ({ request }) => {
+    const res = await request.get(`/stores/${E2E.demoStoreSlug}`);
+    expect(res.status()).toBe(200);
+    const text = await res.text();
+    const profile = JSON.parse(text);
+    expect(Object.keys(profile).sort(), 'perfil montado por lista de campos permitidos').toEqual(PUBLIC_PROFILE_KEYS);
+    expect(profile).toMatchObject({
+      slug: E2E.demoStoreSlug,
+      name: 'Lanchonete Demo',
+      takeout_enabled: true,
+      ordering_available: true,
+      unavailable_message: null,
+    });
+    // O endereço de retirada vem do perfil da loja
+    expect(profile.address).toMatchObject({ street: 'Av. Rio Branco', number: '156', neighborhood: 'Centro', city: 'Rio de Janeiro', state: 'RJ' });
+    // Loja padrão sem zonas próprias: entrega com as zonas da plataforma
+    expect(profile.delivery_enabled).toBe(true);
+    expect(Object.keys(profile.payments).sort()).toEqual(['mp_public_key', 'online_enabled']);
+    expect(text, 'credenciais e dados internos nunca saem no perfil').not.toMatch(/access_token|encrypted|owner|legal_name|document|account_status/i);
+
+    const fallback = await request.get('/stores/default');
+    expect(fallback.status()).toBe(200);
+    expect((await fallback.json()).slug, 'DEFAULT_STORE_SLUG = loja demo').toBe(E2E.demoStoreSlug);
+  });
+
+  test('o diretório de lojas (GET /stores) lista a loja demo, paginado', async ({ request }) => {
+    const res = await request.get('/stores?pageSize=100');
+    expect(res.status()).toBe(200);
+    const page = await res.json();
+    expect(Object.keys(page).sort()).toEqual(['items', 'page', 'pageSize', 'total']);
+    const demo = page.items.find((item: { slug: string }) => item.slug === E2E.demoStoreSlug);
+    expect(demo).toMatchObject({ name: 'Lanchonete Demo' });
+    expect(JSON.stringify(page.items)).not.toMatch(/access_token|encrypted/i);
+  });
+});
+
 // ÚNICO teste da suíte que fecha a loja. Tudo é preparado antes; a janela fechada dura
 // só as requisições verificadas, e a loja é reaberta no finally.
 test.describe.serial('Loja fechada', () => {
@@ -203,7 +303,8 @@ test.describe.serial('Loja fechada', () => {
         });
       }
 
-      const [status, quote, order, pix, card] = await Promise.all([
+      const scoped = `/stores/${E2E.demoStoreSlug}`;
+      const [status, quote, order, pix, card, storeStatus, profile, storeQuote, storeOrder] = await Promise.all([
         request.get('/store/status').then(capture),
         request.post('/orders/quote', { headers: bearer(client.token), data: orderBody }).then(capture),
         request
@@ -216,8 +317,15 @@ test.describe.serial('Loja fechada', () => {
             data: { order: orderBody, token: 'tok-e2e-loja-fechada', paymentMethodId: 'master', docNumber: '12345678909' },
           })
           .then(capture),
+        // A vitrine da loja (rotas por loja) vê o mesmo status
+        request.get(`${scoped}/status`).then(capture),
+        request.get(scoped).then(capture),
+        request.post(`${scoped}/orders/quote`, { headers: bearer(client.token), data: orderBody }).then(capture),
+        request
+          .post(`${scoped}/orders`, { headers: bearer(client.token), data: { ...orderBody, paymentMethod: 'MONEY' } })
+          .then(capture),
       ]);
-      closedResults = { status, quote, order, pix, card };
+      closedResults = { status, quote, order, pix, card, storeStatus, profile, storeQuote, storeOrder };
     } finally {
       // Reabre com o ADMIN (e, se falhar, tenta de novo/usa o atendente) restaurando as mensagens
       let reopened = false;
@@ -264,6 +372,12 @@ test.describe.serial('Loja fechada', () => {
     expect.soft(JSON.stringify(order.payload)).toMatch(/fechad/i);
     expect.soft(pix.status, `POST /payment/pix com loja fechada: ${JSON.stringify(pix.payload)}`).toBe(400);
     expect.soft(card.status, `POST /payment/card com loja fechada: ${JSON.stringify(card.payload)}`).toBe(400);
+
+    const { storeStatus, profile, storeQuote, storeOrder } = closedResults;
+    expect.soft(storeStatus.payload, 'GET /stores/<slug>/status com a loja fechada').toEqual(status.payload);
+    expect.soft(profile.payload, 'perfil público com a loja fechada').toMatchObject({ is_open: false, closing_message: closingMessage });
+    expect.soft(storeQuote.payload, 'quote na rota da loja').toMatchObject({ store_open: false, total: 32 });
+    expect.soft(storeOrder.status, `POST /stores/<slug>/orders com loja fechada: ${JSON.stringify(storeOrder.payload)}`).toBe(400);
 
     // Reaberta: status restaurado, quote volta a store_open:true e o pedido passa
     const after = await currentStatus(request);

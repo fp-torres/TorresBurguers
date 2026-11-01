@@ -1,6 +1,17 @@
 import { Logger } from '@nestjs/common';
-import { corsOrigins } from './app-setup';
 import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { corsOrigins } from './app-setup';
+import { BRAND } from './brand';
+import {
+  dbMigrationsRun,
   dbSynchronize,
   demoUsersSeedMode,
   envFlag,
@@ -79,9 +90,12 @@ describe('config', () => {
       },
     );
 
-    it('DB_SYNCHRONIZE: padrão ligado só em development/test; o valor explícito decide', () => {
-      expect(dbSynchronize({ NODE_ENV: 'development' })).toBe(true);
-      expect(dbSynchronize({ NODE_ENV: 'test' })).toBe(true);
+    it('DB_SYNCHRONIZE: padrão desligado em todos os ambientes (schema por migrations); o valor explícito decide', () => {
+      expect(dbSynchronize({ NODE_ENV: 'development' })).toBe(false);
+      expect(dbSynchronize({ NODE_ENV: 'test' })).toBe(false);
+      expect(
+        dbSynchronize({ NODE_ENV: 'development', DB_SYNCHRONIZE: 'true' }),
+      ).toBe(true);
       expect(dbSynchronize({})).toBe(false);
       expect(dbSynchronize({ NODE_ENV: 'production' })).toBe(false);
       expect(
@@ -90,6 +104,12 @@ describe('config', () => {
       expect(
         dbSynchronize({ NODE_ENV: 'development', DB_SYNCHRONIZE: 'false' }),
       ).toBe(false);
+    });
+
+    it('DB_MIGRATIONS_RUN: padrão ligado em todos os ambientes; false desliga', () => {
+      expect(dbMigrationsRun({})).toBe(true);
+      expect(dbMigrationsRun({ NODE_ENV: 'production' })).toBe(true);
+      expect(dbMigrationsRun({ DB_MIGRATIONS_RUN: 'false' })).toBe(false);
     });
 
     it('usuários padrão: criados em development/test, nunca em produção', () => {
@@ -116,17 +136,52 @@ describe('config', () => {
       expect(
         environmentWarnings({ NODE_ENV: 'test', DB_SYNCHRONIZE: 'true' }),
       ).toEqual([]);
-      expect(environmentWarnings({ NODE_ENV: 'production' })).toEqual([]);
+      const KEY = Buffer.alloc(32, 7).toString('base64');
+      expect(
+        environmentWarnings({
+          NODE_ENV: 'production',
+          CREDENTIALS_ENCRYPTION_KEY: KEY,
+        }),
+      ).toEqual([]);
 
-      expect(environmentWarnings({})).toEqual([
+      expect(environmentWarnings({ CREDENTIALS_ENCRYPTION_KEY: KEY })).toEqual([
         expect.stringContaining('NODE_ENV não definido'),
       ]);
-      expect(environmentWarnings({ NODE_ENV: 'prod' })).toEqual([
-        expect.stringContaining('NODE_ENV="prod"'),
+      expect(
+        environmentWarnings({
+          NODE_ENV: 'prod',
+          CREDENTIALS_ENCRYPTION_KEY: KEY,
+        }),
+      ).toEqual([expect.stringContaining('NODE_ENV="prod"')]);
+      expect(
+        environmentWarnings({
+          NODE_ENV: 'production',
+          DB_SYNCHRONIZE: 'on',
+          CREDENTIALS_ENCRYPTION_KEY: KEY,
+        }),
+      ).toEqual([expect.stringContaining('DB_SYNCHRONIZE ligado em produção')]);
+    });
+
+    it('avisos da subida: chave de credenciais ausente ou inválida em produção', () => {
+      expect(environmentWarnings({ NODE_ENV: 'production' })).toEqual([
+        expect.stringContaining('CREDENTIALS_ENCRYPTION_KEY não definida'),
       ]);
       expect(
-        environmentWarnings({ NODE_ENV: 'production', DB_SYNCHRONIZE: 'on' }),
-      ).toEqual([expect.stringContaining('DB_SYNCHRONIZE ligado em produção')]);
+        environmentWarnings({
+          NODE_ENV: 'production',
+          CREDENTIALS_ENCRYPTION_KEY: 'curta-demais',
+        }),
+      ).toEqual([
+        expect.stringContaining('CREDENTIALS_ENCRYPTION_KEY inválida'),
+      ]);
+      expect(
+        environmentWarnings({
+          NODE_ENV: 'production',
+          CREDENTIALS_ENCRYPTION_KEY: 'a'.repeat(64),
+        }),
+      ).toEqual([]);
+      // Em development/test não há avisos (a chave fixa de desenvolvimento é usada)
+      expect(environmentWarnings({ NODE_ENV: 'development' })).toEqual([]);
     });
   });
 
@@ -183,11 +238,79 @@ describe('config', () => {
       );
     });
 
-    it('em development/test sem JWT_SECRET usa um segredo fixo (o mesmo para assinar e verificar)', () => {
-      const first = jwtSecret({ NODE_ENV: 'development' });
+    it('em test sem JWT_SECRET usa um segredo fixo (o mesmo para assinar e verificar)', () => {
+      const first = jwtSecret({ NODE_ENV: 'test' });
       expect(first).toBeTruthy();
-      expect(jwtSecret({ NODE_ENV: 'test' })).toBe(first);
       expect(jwtSecret({ NODE_ENV: 'test', JWT_SECRET: '' })).toBe(first);
+    });
+
+    describe('development sem JWT_SECRET', () => {
+      let dir: string;
+
+      beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'jwt-dev-secret-'));
+      });
+
+      afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
+      });
+
+      const devEnv = (file: string): NodeJS.ProcessEnv => ({
+        NODE_ENV: 'development',
+        JWT_DEV_SECRET_FILE: file,
+      });
+
+      it('NÃO é derivado do nome público da marca (ninguém de fora consegue forjar um token)', () => {
+        const file = join(dir, 'segredo');
+        const secret = jwtSecret(devEnv(file));
+        expect(secret).not.toBe(`${BRAND.slug}-dev-jwt-secret`);
+        expect(secret).not.toContain(BRAND.slug);
+        expect(secret.length).toBeGreaterThanOrEqual(MIN_JWT_SECRET_LENGTH);
+        // Cada instalação tem o seu
+        expect(jwtSecret(devEnv(join(dir, 'outra-maquina')))).not.toBe(secret);
+      });
+
+      it('é aleatório por instalação e guardado fora do Git: o mesmo entre reinícios (as sessões não caem)', () => {
+        const file = join(dir, 'pasta-nova', 'segredo');
+        const secret = jwtSecret(devEnv(file));
+        expect(readFileSync(file, 'utf8')).toBe(secret);
+        expect(jwtSecret(devEnv(file))).toBe(secret);
+        // Outra execução da API (sem cache) lê o mesmo arquivo
+        const saved = join(dir, 'ja-existe');
+        writeFileSync(saved, 'b'.repeat(MIN_JWT_SECRET_LENGTH));
+        expect(jwtSecret(devEnv(saved))).toBe(
+          'b'.repeat(MIN_JWT_SECRET_LENGTH),
+        );
+      });
+
+      it('arquivo com segredo curto demais é trocado por um novo', () => {
+        const file = join(dir, 'curto');
+        writeFileSync(file, 'curto');
+        const secret = jwtSecret(devEnv(file));
+        expect(secret.length).toBeGreaterThanOrEqual(MIN_JWT_SECRET_LENGTH);
+        expect(readFileSync(file, 'utf8')).toBe(secret);
+      });
+
+      it('sem conseguir gravar: segredo aleatório só desta execução, com aviso (nunca o fixo)', () => {
+        const blocker = join(dir, 'arquivo-comum');
+        writeFileSync(blocker, 'x');
+        const file = join(blocker, 'segredo'); // pasta dentro de um arquivo: não dá para criar
+        const secret = jwtSecret(devEnv(file));
+        expect(secret).not.toBe(`${BRAND.slug}-dev-jwt-secret`);
+        expect(secret.length).toBeGreaterThanOrEqual(MIN_JWT_SECRET_LENGTH);
+        expect(jwtSecret(devEnv(file))).toBe(secret);
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('não foi possível guardar'),
+        );
+      });
+
+      it('JWT_SECRET definido continua tendo prioridade (nada é gravado)', () => {
+        const file = join(dir, 'segredo');
+        expect(
+          jwtSecret({ ...devEnv(file), JWT_SECRET: 'segredo-do-env' }),
+        ).toBe('segredo-do-env');
+        expect(existsSync(file)).toBe(false);
+      });
     });
   });
 

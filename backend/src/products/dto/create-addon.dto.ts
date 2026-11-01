@@ -19,7 +19,7 @@ import { IMAGE_REF_RULES, MAX_PRICE } from './create-product.dto';
 /** Categoria padrão dos adicionais (mesmo default da coluna). */
 export const DEFAULT_ADDON_CATEGORY = 'geral';
 
-/** Cadastro de adicional (JSON). */
+/** Cadastro de adicional — JSON ou multipart (FormData, imagem opcional no campo "file"). */
 export class CreateAddonDto {
   @ApiProperty({ example: 'Bacon extra', maxLength: 60 })
   @Transform(({ value }) => trimString(value))
@@ -74,7 +74,8 @@ export class CreateAddonDto {
 
   @ApiPropertyOptional({
     nullable: true,
-    description: 'Nome de um arquivo enviado em POST /uploads ou URL http(s).',
+    description:
+      'Nome de um arquivo enviado por esta loja em POST /uploads ou URL https://. Se a requisição trouxer o arquivo no campo "file", ele prevalece.',
   })
   @Transform(({ value }) => toImageRef(value))
   @IsOptional()

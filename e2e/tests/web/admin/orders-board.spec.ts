@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { E2E } from '../../../support/env';
 import { signInAs } from '../../../support/web';
 import type { DefaultUserKey } from '../../../support/users';
 import {
@@ -9,6 +10,7 @@ import {
   boardColumn,
   money,
   orderCard,
+  orderCardHeading,
   pageHeading,
   toast,
   trackApiFailures,
@@ -26,7 +28,9 @@ const BOARD_TITLES: Record<DefaultUserKey, string | RegExp> = {
   employee: 'Gestão de Pedidos',
   kitchen: /^Monitor da Cozinha/,
   courier: /^Painel de Entregas/,
+  // Clientes e o superadmin (contas sem loja) não têm quadro de pedidos
   client: '',
+  superadmin: '',
 };
 
 const RAW_CODES = /\b(MONEY|PIX_|CREDIT_CARD|DEBIT_CARD|DINHEIRO|CARTAO_\w+|PENDING|PREPARING|READY_FOR_PICKUP|DELIVERING|DONE|CANCELED|PAID|DELIVERY|TAKEOUT)\b/;
@@ -100,6 +104,9 @@ test.describe('Quadro de pedidos: cozinha', () => {
 
     const card = orderCard(page, order.id);
     await expect(card.getByText('Novo', { exact: true })).toBeVisible();
+    // Título do card: o número do pedido NA LOJA, não o id global
+    expect(order.number, 'número do pedido na resposta da API').toEqual(expect.any(Number));
+    await expect(orderCardHeading(card, order.number)).toBeVisible();
     await expect(card).toContainText(customer.name);
     await expect(card).toContainText(product.name);
     await expect(card.getByRole('button', { name: 'Cancelar Pedido' }), 'cozinha não cancela pedidos').toHaveCount(0);
@@ -221,37 +228,37 @@ test.describe('Quadro de pedidos: entregador', () => {
     await expect(orderCard(page, pending.id), 'pedido ainda na cozinha').toHaveCount(0);
   });
 
-  test('entregador não vê ações numa entrega atribuída a outro entregador', async ({ page }) => {
+  // O entregador lê só a própria etapa (docs/saas/arquitetura.md §4.3): as entregas prontas sem entregador e
+  // as dele. Uma entrega pronta sem entregador serve de controle (o quadro carregou) nos dois testes abaixo
+  async function readyDelivery() {
+    const ready = await newOrder();
+    await kitchen.advance(ready.id, 'PREPARING', 'READY_FOR_PICKUP');
+    return ready;
+  }
+
+  test('entregador não vê a entrega atribuída a outro entregador', async ({ page }) => {
     const order = await newOrder();
     await kitchen.advance(order.id, 'PREPARING', 'READY_FOR_PICKUP');
     await admin.assign(order.id, otherCourier.id);
+    const control = await readyDelivery();
     await openBoard(page, 'courier');
 
-    const card = orderCard(page, order.id);
-    await expect(card.getByText('Em entrega', { exact: true })).toBeVisible();
-    await expect(card).toContainText(`Motoboy: ${otherCourier.name}`);
-    await expect(card.getByRole('button'), 'sem ações na entrega de outro entregador').toHaveCount(0);
+    await expect(orderCard(page, control.id), 'entrega pronta sem entregador (controle)').toBeVisible();
+    await expect(orderCard(page, order.id), 'entrega de outro entregador fora do quadro').toHaveCount(0);
+    await expect(page.getByText(`Motoboy: ${otherCourier.name}`)).toHaveCount(0);
   });
 
-  test('entregador não recebe "Confirmar Entrega" num pedido em entrega sem entregador definido (a API recusaria)', async ({ page }) => {
+  test('entregador não vê um pedido em entrega sem entregador definido (nem recebe ações que a API recusaria)', async ({ page }) => {
     const order = await newOrder();
     await admin.advance(order.id, 'PREPARING', 'READY_FOR_PICKUP', 'DELIVERING');
     expect((await admin.getOrder(order.id)).driver, 'pedido em entrega sem entregador').toBeNull();
+    const control = await readyDelivery();
     await openBoard(page, 'courier');
     const failures = trackApiFailures(page);
 
-    const card = orderCard(page, order.id);
-    await expect(card.getByText('Em entrega', { exact: true })).toBeVisible();
-    // Toda ação oferecida ao entregador precisa ser aceita pela API: se o botão aparece, ele é testado
-    const confirm = card.getByRole('button', { name: 'Confirmar Entrega' });
-    if ((await confirm.count()) > 0) {
-      const res = waitForApi(page, 'PATCH', `/orders/${order.id}`);
-      await confirm.click();
-      await res;
-      await page.waitForTimeout(500);
-    }
-    expect(failures, 'ação exibida ao entregador e recusada pela API').toEqual([]);
-    await expect(toast(page, /Somente o entregador responsável/)).toHaveCount(0);
+    await expect(orderCard(page, control.id), 'entrega pronta sem entregador (controle)').toBeVisible();
+    await expect(orderCard(page, order.id), 'pedido em entrega sem entregador fora do quadro').toHaveCount(0);
+    expect(failures, 'o quadro do entregador sem recusas da API').toEqual([]);
   });
 });
 
@@ -315,7 +322,8 @@ test.describe('Quadro de pedidos: atendente e administrador', () => {
     await card.getByRole('button', { name: 'Despachar (Logística)' }).click();
 
     const modal = page.getByRole('dialog', { name: 'Logística de Entrega' });
-    await expect(modal).toContainText(`#${order.id}`);
+    // Número do pedido NA LOJA (o id é interno)
+    await expect(modal).toContainText(`Pedido Principal: #${order.number}`);
     await expect(modal).toContainText(customer.neighborhood);
     const confirm = modal.getByRole('button', { name: 'CONFIRMAR DESPACHO' });
     await expect(confirm).toBeDisabled();
@@ -349,7 +357,7 @@ test.describe('Quadro de pedidos: atendente e administrador', () => {
     const modal = page.getByRole('dialog', { name: 'Logística de Entrega' });
     await expect(modal.getByText(`Sugestão: Mesmo Bairro (${neighbor.neighborhood})`)).toBeVisible();
     await expect(modal).toContainText(/Entregas Selecionadas:\s*1/);
-    await modal.getByText(new RegExp(`^#${second.id} - `)).click();
+    await modal.getByText(new RegExp(`^#${second.number} - `)).click();
     await expect(modal).toContainText(/Entregas Selecionadas:\s*2/);
     await modal.getByRole('button', { name: new RegExp(escapeRegExp(otherCourier.name)) }).click();
     await modal.getByRole('button', { name: 'CONFIRMAR DESPACHO' }).click();
@@ -455,7 +463,7 @@ test.describe('Quadro de pedidos: atendente e administrador', () => {
 });
 
 test.describe('Quadro de pedidos: dados antigos', () => {
-  const CORS_HEADERS = { 'access-control-allow-origin': 'http://localhost:5174', 'access-control-allow-credentials': 'true' };
+  const CORS_HEADERS = { 'access-control-allow-origin': E2E.webURL, 'access-control-allow-credentials': 'true' };
 
   function legacyOrder(id: number, overrides: Record<string, unknown>) {
     return {
@@ -533,5 +541,76 @@ test.describe('Quadro de pedidos: dados antigos', () => {
     await expect(done, 'pedido já pago não pede troco').not.toContainText('TROCO NECESSÁRIO');
 
     for (const card of [pending, canceled, done]) await expect(card).not.toContainText(RAW_CODES);
+  });
+
+  /** Serve GET /orders (quadro) com `orders` e conta as consultas. */
+  async function serveBoard(page: Page, orders: unknown[]): Promise<{ count: () => number }> {
+    let requests = 0;
+    await page.route(
+      (url) => url.href.startsWith(API_URL) && new URL(url.href).pathname === '/orders',
+      (route: Route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        requests += 1;
+        return route.fulfill({ status: 200, contentType: 'application/json', headers: CORS_HEADERS, body: JSON.stringify(orders) });
+      },
+    );
+    return { count: () => requests };
+  }
+
+  test('pagamento estornado no Mercado Pago sem o pedido cancelado aparece como "Estornado" com alerta para não entregar sem receber', async ({ page }) => {
+    const address = { street: 'Rua do Estorno', number: '7', neighborhood: 'Centro', city: 'Rio de Janeiro', state: 'RJ', complement: null };
+    await serveBoard(page, [
+      // Estorno/contestação feito no Mercado Pago com o pedido em preparo (payment_status REFUNDED, status não CANCELED)
+      legacyOrder(990013, { status: 'PREPARING', type: 'DELIVERY', payment_method: 'PIX', payment_status: 'REFUNDED', payment_id: 7713, address }),
+      // Cancelado com devolução: o caso comum, sem alerta
+      legacyOrder(990012, { status: 'CANCELED', payment_method: 'PIX', payment_status: 'REFUNDED', payment_id: 7712 }),
+      // Contestação depois da entrega
+      legacyOrder(990011, { status: 'DONE', payment_method: 'PIX', payment_status: 'REFUNDED', payment_id: 7711 }),
+    ]);
+    await openBoard(page, 'admin');
+
+    const banner = page.getByRole('alert').filter({ hasText: 'Pagamento estornado no Mercado Pago em 1 pedido(s) em andamento' });
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText('não entregue sem receber');
+
+    const reversed = orderCard(page, 990013);
+    await expect(reversed).toContainText('Estornado no Mercado Pago');
+    const alert = reversed.getByRole('alert');
+    await expect(alert).toContainText('PAGAMENTO ESTORNADO');
+    await expect(alert).toContainText('Não entregue sem receber de outra forma, ou cancele o pedido.');
+    await expect(reversed.getByRole('button', { name: 'Cancelar Pedido' }), 'a loja pode cancelar o pedido estornado').toBeVisible();
+
+    const canceled = orderCard(page, 990012);
+    await expect(canceled.getByText('Estornado', { exact: true })).toBeVisible();
+    await expect(canceled.getByRole('alert'), 'cancelado e estornado não tem alerta').toHaveCount(0);
+
+    const done = orderCard(page, 990011);
+    await expect(done.getByRole('alert')).toContainText('depois da entrega');
+
+    for (const card of [reversed, canceled, done]) await expect(card).not.toContainText(RAW_CODES);
+  });
+
+  test('o quadro pausa a consulta de 5 s com a aba oculta e atualiza na hora ao voltar', async ({ page }) => {
+    const board = await serveBoard(page, [legacyOrder(990021, { status: 'PENDING' })]);
+    await openBoard(page, 'admin');
+    await expect(orderCard(page, 990021)).toBeVisible();
+    await expect.poll(board.count, { message: 'consulta automática com a aba visível', timeout: 12_000 }).toBeGreaterThan(1);
+
+    const setVisibility = (state: 'hidden' | 'visible') =>
+      page.evaluate((value) => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => value });
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => value === 'hidden' });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }, state);
+
+    await setVisibility('hidden');
+    // Uma consulta que já tinha saído pode terminar logo depois de ocultar a aba
+    await page.waitForTimeout(500);
+    const hiddenCount = board.count();
+    await page.waitForTimeout(11_000);
+    expect(board.count(), 'nenhuma consulta com a aba oculta (mais de 2 ciclos de 5 s)').toBe(hiddenCount);
+
+    await setVisibility('visible');
+    await expect.poll(board.count, { message: 'atualiza ao voltar, sem esperar o intervalo', timeout: 2_000 }).toBeGreaterThan(hiddenCount);
   });
 });

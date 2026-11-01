@@ -1,35 +1,59 @@
 import { OrderStatus, OrderType, PaymentStatus } from './order.enums';
 import {
   DEFAULT_STORE_TIME_ZONE,
+  DELIVERY_DISABLED_MESSAGE,
+  DELIVERY_OUT_OF_AREA_MESSAGE,
   MAX_MONEY_CENTS,
+  REPORT_MAX_DAYS,
+  TAKEOUT_DISABLED_MESSAGE,
+  TAKEOUT_ESTIMATE,
+  ORDERS_PAGE_INVALID_MESSAGE,
   activeScopeSince,
+  addDaysToKey,
+  canStaffSeeOrder,
   chartWindowStart,
   checkAssign,
   checkCancel,
   checkStatusChange,
   countAddonIds,
+  dateKeyInZone,
+  dateKeysBetween,
   dayKeyInZone,
   deliveryEstimate,
+  deliveryEstimateAt,
   effectiveUnitPriceCents,
+  findDeliveryZone,
   formatBRL,
   fromCents,
   isInActiveScope,
   isOrderManager,
+  isSameDeliveryArea,
   isStaffRole,
   isValidTransition,
   lastDayKeys,
   needsRefundOnCancel,
   orderTotalLimitError,
+  orderTypeUnavailableMessage,
+  outsideZonesPolicy,
   parseDeliveryZones,
+  parseListPage,
   parseMoneyInput,
   parseOrdersScope,
+  parseReportRange,
   paymentStatusAfterRefund,
   priceLine,
   resolveChangeFor,
   resolveDeliveryZones,
+  resolveTimeZone,
   shouldMarkPaidOnStatus,
+  staffOrderScopes,
+  staffOrderView,
+  startOfDayInZone,
+  storeDeliveryZones,
   storeTimeZone,
+  takeoutEstimateFor,
   toCents,
+  zipCodeDigits,
   type StatusChangeInput,
 } from './order-rules';
 import { DEFAULT_DELIVERY_ZONES } from './delivery-zones.config';
@@ -246,6 +270,149 @@ describe('order-rules', () => {
     });
   });
 
+  describe('área de entrega: faixas de CEP e endereços fora das zonas', () => {
+    const config = parseDeliveryZones({
+      fallback: { fee: 9, time: '50 min' },
+      zones: [
+        { neighborhoods: ['Centro'], fee: 5, time: '30 min' },
+        {
+          zip_ranges: [
+            { from: '22010-000', to: '22099-999' },
+            { from: 22200000, to: '22299999' },
+          ],
+          fee: 7,
+          time: '40 min',
+        },
+      ],
+    });
+
+    it('faixas de CEP: normaliza para 8 dígitos e a zona pode não ter bairros', () => {
+      expect(config.zones[1]).toEqual({
+        neighborhoods: [],
+        zip_ranges: [
+          { from: '22010000', to: '22099999' },
+          { from: '22200000', to: '22299999' },
+        ],
+        fee: 7,
+        time: '40 min',
+      });
+      expect(config.outside_zones).toBeUndefined();
+    });
+
+    it('vale a primeira zona com o bairro OU com o CEP na faixa (limites inclusive)', () => {
+      expect(
+        findDeliveryZone(
+          { neighborhood: 'Botafogo', zipCode: '22250-040' },
+          config,
+        )?.fee,
+      ).toBe(7);
+      expect(
+        findDeliveryZone({ neighborhood: 'x', zipCode: '22010000' }, config)
+          ?.fee,
+      ).toBe(7);
+      expect(
+        findDeliveryZone({ neighborhood: 'x', zipCode: '22099999' }, config)
+          ?.fee,
+      ).toBe(7);
+      expect(
+        findDeliveryZone({ neighborhood: 'x', zipCode: '22100000' }, config),
+      ).toBeUndefined();
+      // Bairro da zona 1 com CEP da zona 2: a primeira zona da lista ganha
+      expect(
+        findDeliveryZone(
+          { neighborhood: 'centro', zipCode: '22041001' },
+          config,
+        )?.fee,
+      ).toBe(5);
+      // CEP inválido não casa com faixa nenhuma
+      expect(
+        findDeliveryZone({ neighborhood: 'x', zipCode: '220' }, config),
+      ).toBeUndefined();
+      expect(deliveryEstimate('x', null, config, '22041-001')).toEqual({
+        fee: 7,
+        time: '40 min',
+      });
+    });
+
+    it('outside_zones: "fallback" (padrão) paga a faixa padrão; "refuse" → null (a loja recusa)', () => {
+      const location = { neighborhood: 'Méier', zipCode: '20710000' };
+      expect(outsideZonesPolicy(config)).toBe('fallback');
+      expect(deliveryEstimateAt(location, config)).toEqual({
+        fee: 9,
+        time: '50 min',
+      });
+
+      const refusing = parseDeliveryZones({
+        ...config,
+        outside_zones: ' REFUSE ',
+      });
+      expect(refusing.outside_zones).toBe('refuse');
+      expect(outsideZonesPolicy(refusing)).toBe('refuse');
+      expect(deliveryEstimateAt(location, refusing)).toBeNull();
+      expect(deliveryEstimateAt({ neighborhood: 'Centro' }, refusing)).toEqual({
+        fee: 5,
+        time: '30 min',
+      });
+      // deliveryEstimate (sem a política) continua devolvendo a faixa padrão
+      expect(deliveryEstimate('Méier', null, refusing)).toEqual({
+        fee: 9,
+        time: '50 min',
+      });
+      expect(DELIVERY_OUT_OF_AREA_MESSAGE).toBe(
+        'Este endereço está fora da área de entrega da loja.',
+      );
+    });
+
+    it('"fallback": null vale como ausente (usa o da base)', () => {
+      const parsed = parseDeliveryZones(
+        { fallback: null, zones: [], outside_zones: 'refuse' },
+        DEFAULT_DELIVERY_ZONES,
+      );
+      expect(parsed.fallback).toEqual(DEFAULT_DELIVERY_ZONES.fallback);
+      expect(parsed.outside_zones).toBe('refuse');
+    });
+
+    it('recusa faixas e políticas inválidas com a explicação', () => {
+      const zone = { fee: 5, time: '30 min' };
+      for (const [raw, message] of [
+        [{ zones: [{ ...zone, zip_ranges: 'x' }] }, /zip_ranges/],
+        [{ zones: [{ ...zone, zip_ranges: [] }] }, /neighborhoods/],
+        [{ zones: [{ ...zone, zip_ranges: [{ from: '123' }] }] }, /8 dígitos/],
+        [
+          {
+            zones: [
+              { ...zone, zip_ranges: [{ from: '22099999', to: '22010000' }] },
+            ],
+          },
+          /menor ou igual/,
+        ],
+        [
+          {
+            zones: [
+              {
+                ...zone,
+                neighborhoods: ['Centro', ''],
+                zip_ranges: [{ from: '22010000', to: '22099999' }],
+              },
+            ],
+          },
+          /neighborhoods/,
+        ],
+        [{ zones: [], outside_zones: 'talvez' }, /outside_zones/],
+        [{ zones: [], outside_zones: true }, /outside_zones/],
+      ] as const) {
+        expect(() => parseDeliveryZones(raw)).toThrow(message);
+      }
+    });
+
+    it('CEP: só os 8 dígitos', () => {
+      expect(zipCodeDigits('22041-001')).toBe('22041001');
+      expect(zipCodeDigits(1001000)).toBe('01001000');
+      expect(zipCodeDigits('2204100')).toBeNull();
+      expect(zipCodeDigits(undefined)).toBeNull();
+    });
+  });
+
   describe('limite do total', () => {
     it('total acima de R$ 99.999.999,99 é recusado antes de cobrar', () => {
       expect(MAX_MONEY_CENTS).toBe(9_999_999_999);
@@ -303,6 +470,132 @@ describe('order-rules', () => {
       const result = resolveChangeFor('MONEY', 'R$ 20,00', 4590);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.message).toContain('R$ 45,90');
+    });
+
+    it('troco tem teto: até R$ 200,00 acima do total (a maior cédula)', () => {
+      // Pedido de R$ 35,00: até R$ 235,00
+      expect(resolveChangeFor('MONEY', 'R$ 235,00', 3500)).toEqual({
+        ok: true,
+        value: 'R$ 235,00',
+      });
+      expect(resolveChangeFor('MONEY', 'R$ 200,00', 3500)).toEqual({
+        ok: true,
+        value: 'R$ 200,00',
+      });
+      for (const raw of [
+        'R$ 235,01',
+        'R$ 2.000,00',
+        '999999999999999999999999999999',
+      ]) {
+        const result = resolveChangeFor('MONEY', raw, 3500);
+        expect(result).toEqual({
+          ok: false,
+          message:
+            'Valor para troco acima do permitido: informe até R$ 235,00 (no máximo R$ 200,00 acima do total do pedido).',
+        });
+      }
+    });
+  });
+
+  describe('o que cada perfil da equipe enxerga', () => {
+    const now = new Date('2026-10-24T15:00:00Z');
+    const recently = new Date('2026-10-24T10:00:00Z');
+    const longAgo = new Date('2026-10-20T10:00:00Z');
+    const {
+      PENDING,
+      PREPARING,
+      READY_FOR_PICKUP: READY,
+      DELIVERING,
+      DONE,
+      CANCELED,
+    } = OrderStatus;
+    const order = (
+      status: OrderStatus,
+      extra: Partial<{
+        type: OrderType;
+        driverId: number | null;
+        updated_at: Date;
+      }> = {},
+    ) => ({
+      status,
+      type: OrderType.DELIVERY,
+      driverId: null,
+      updated_at: recently,
+      ...extra,
+    });
+    const sees = (role: string, o: ReturnType<typeof order>) =>
+      canStaffSeeOrder(o, { id: 30, role }, now);
+
+    it('gestão vê todos; cozinha só preparo; entregador só entregas prontas e as próprias', () => {
+      expect(staffOrderScopes('ADMIN')).toBeNull();
+      expect(staffOrderScopes('EMPLOYEE')).toBeNull();
+      expect(staffOrderScopes('CLIENT')).toEqual([]);
+      for (const status of Object.values(OrderStatus)) {
+        expect(sees('ADMIN', order(status))).toBe(true);
+        expect(sees('EMPLOYEE', order(status, { driverId: 99 }))).toBe(true);
+        expect(sees('KITCHEN', order(status))).toBe(
+          status === PENDING || status === PREPARING,
+        );
+        expect(sees('CLIENT', order(status))).toBe(false);
+      }
+
+      // Entregador
+      expect(sees('COURIER', order(PENDING))).toBe(false);
+      expect(sees('COURIER', order(PREPARING))).toBe(false);
+      expect(sees('COURIER', order(READY))).toBe(true);
+      expect(sees('COURIER', order(READY, { type: OrderType.TAKEOUT }))).toBe(
+        false,
+      );
+      expect(sees('COURIER', order(READY, { driverId: 30 }))).toBe(true);
+      expect(sees('COURIER', order(READY, { driverId: 31 }))).toBe(false);
+      expect(sees('COURIER', order(DELIVERING, { driverId: 30 }))).toBe(true);
+      expect(sees('COURIER', order(DELIVERING, { driverId: 31 }))).toBe(false);
+      expect(sees('COURIER', order(DELIVERING))).toBe(false);
+      expect(sees('COURIER', order(DONE, { driverId: 30 }))).toBe(true);
+      expect(sees('COURIER', order(CANCELED, { driverId: 30 }))).toBe(true);
+      expect(
+        sees('COURIER', order(DONE, { driverId: 30, updated_at: longAgo })),
+      ).toBe(false);
+      expect(sees('COURIER', order(DONE, { driverId: 31 }))).toBe(false);
+    });
+
+    it('formato do pedido por perfil', () => {
+      expect(staffOrderView('ADMIN')).toBe('full');
+      expect(staffOrderView('EMPLOYEE')).toBe('full');
+      expect(staffOrderView('KITCHEN')).toBe('kitchen');
+      expect(staffOrderView('COURIER')).toBe('courier');
+    });
+  });
+
+  describe('páginas das listas', () => {
+    it('padrão: os 100 mais recentes; page/pageSize inteiros dentro dos limites', () => {
+      expect(parseListPage(undefined, undefined)).toEqual({
+        skip: 0,
+        take: 100,
+      });
+      expect(parseListPage('', '')).toEqual({ skip: 0, take: 100 });
+      expect(parseListPage('3', '20')).toEqual({ skip: 40, take: 20 });
+      expect(parseListPage('10000', '100')).toEqual({
+        skip: 999_900,
+        take: 100,
+      });
+      for (const [page, size] of [
+        ['0', undefined],
+        ['-1', undefined],
+        ['1.5', undefined],
+        ['abc', undefined],
+        ['10001', undefined],
+        [undefined, '0'],
+        [undefined, '101'],
+        [undefined, '1e2'],
+        [['1', '2'], undefined],
+        [2, undefined],
+      ] as Array<[unknown, unknown]>) {
+        expect(parseListPage(page, size)).toBeNull();
+      }
+      expect(ORDERS_PAGE_INVALID_MESSAGE).toBe(
+        'Paginação inválida: use page de 1 a 10000 e pageSize de 1 a 100.',
+      );
     });
   });
 
@@ -699,6 +992,309 @@ describe('order-rules', () => {
       expect(
         checkAssign({ status: READY_FOR_PICKUP, type: TAKEOUT }),
       ).toMatchObject({ ok: false, status: 400 });
+    });
+  });
+
+  describe('operação da loja', () => {
+    const both = { delivery_enabled: true, takeout_enabled: true };
+
+    it('entrega ou retirada desligada na loja → mensagem do 400 (só "true" libera)', () => {
+      expect(orderTypeUnavailableMessage(DELIVERY, both)).toBeNull();
+      expect(orderTypeUnavailableMessage(TAKEOUT, both)).toBeNull();
+      expect(
+        orderTypeUnavailableMessage(DELIVERY, {
+          ...both,
+          delivery_enabled: false,
+        }),
+      ).toBe(DELIVERY_DISABLED_MESSAGE);
+      expect(
+        orderTypeUnavailableMessage(TAKEOUT, {
+          ...both,
+          takeout_enabled: false,
+        }),
+      ).toBe(TAKEOUT_DISABLED_MESSAGE);
+      // A outra modalidade continua valendo
+      expect(
+        orderTypeUnavailableMessage(TAKEOUT, {
+          ...both,
+          delivery_enabled: false,
+        }),
+      ).toBeNull();
+      // Configuração ausente: falha fechada
+      expect(orderTypeUnavailableMessage(DELIVERY, {})).toBe(
+        DELIVERY_DISABLED_MESSAGE,
+      );
+    });
+
+    it('zonas da loja substituem as da plataforma; sem zonas próprias valem as da plataforma', () => {
+      const own = {
+        fallback: { fee: 9, time: '40-50 min' },
+        zones: [{ neighborhoods: ['Pinheiros'], fee: 6.5, time: '20-30 min' }],
+      };
+      const resolved = storeDeliveryZones(own, DEFAULT_DELIVERY_ZONES);
+      expect(resolved.error).toBeUndefined();
+      expect(deliveryEstimate('pinheiros', null, resolved.config)).toEqual({
+        fee: 6.5,
+        time: '20-30 min',
+      });
+      // Bairro da plataforma não vale para a loja com zonas próprias
+      expect(deliveryEstimate('Centro', null, resolved.config)).toEqual({
+        fee: 9,
+        time: '40-50 min',
+      });
+
+      expect(storeDeliveryZones(null, DEFAULT_DELIVERY_ZONES)).toEqual({
+        config: DEFAULT_DELIVERY_ZONES,
+      });
+      expect(storeDeliveryZones(undefined, DEFAULT_DELIVERY_ZONES)).toEqual({
+        config: DEFAULT_DELIVERY_ZONES,
+      });
+    });
+
+    it('zonas da loja sem "fallback" usam o da plataforma; zonas inválidas no banco → as da plataforma com o motivo', () => {
+      const partial = storeDeliveryZones(
+        { zones: [{ neighborhoods: ['Moema'], fee: 3, time: '15 min' }] },
+        DEFAULT_DELIVERY_ZONES,
+      );
+      expect(partial.config.fallback).toEqual(DEFAULT_DELIVERY_ZONES.fallback);
+
+      const broken = storeDeliveryZones(
+        { zones: [{ neighborhoods: [], fee: -1 }] },
+        DEFAULT_DELIVERY_ZONES,
+      );
+      expect(broken.config).toBe(DEFAULT_DELIVERY_ZONES);
+      expect(broken.error).toEqual(expect.any(String));
+    });
+
+    it('prazo da retirada: o da loja ou o padrão (sempre sem taxa)', () => {
+      expect(takeoutEstimateFor('10-15 min')).toEqual({
+        fee: 0,
+        time: '10-15 min',
+      });
+      expect(takeoutEstimateFor('  ')).toEqual(TAKEOUT_ESTIMATE);
+      expect(takeoutEstimateFor(null)).toEqual(TAKEOUT_ESTIMATE);
+      expect(takeoutEstimateFor(undefined)).toEqual(TAKEOUT_ESTIMATE);
+    });
+
+    it('pedidos próximos: mesmo bairro (nome inteiro) e, quando informada, a mesma cidade', () => {
+      const centro = { neighborhood: 'Centro', city: 'Rio de Janeiro' };
+      expect(
+        isSameDeliveryArea(centro, {
+          neighborhood: ' centro ',
+          city: 'rio de janeiro',
+        }),
+      ).toBe(true);
+      expect(isSameDeliveryArea(centro, { neighborhood: 'Centro' })).toBe(true);
+      expect(
+        isSameDeliveryArea(centro, {
+          neighborhood: 'Centro',
+          city: 'Niterói',
+        }),
+      ).toBe(false);
+      expect(
+        isSameDeliveryArea(centro, { neighborhood: 'Centro Histórico' }),
+      ).toBe(false);
+      expect(isSameDeliveryArea(centro, null)).toBe(false);
+      expect(
+        isSameDeliveryArea({ neighborhood: '' }, { neighborhood: '' }),
+      ).toBe(false);
+    });
+  });
+
+  describe('fuso da loja e períodos dos relatórios', () => {
+    it('fuso da loja válido vale; vazio ou inválido → America/Sao_Paulo', () => {
+      expect(resolveTimeZone('America/Manaus')).toBe('America/Manaus');
+      expect(resolveTimeZone(' Asia/Tokyo ')).toBe('Asia/Tokyo');
+      for (const invalid of [null, undefined, '', 'Lua/Base'])
+        expect(resolveTimeZone(invalid)).toBe(DEFAULT_STORE_TIME_ZONE);
+    });
+
+    it('datas AAAA-MM-DD no calendário da loja e somas de dias (virada de mês e de ano)', () => {
+      const lateNight = new Date('2026-10-11T02:30:00Z');
+      expect(dateKeyInZone(lateNight, 'America/Sao_Paulo')).toBe('2026-10-10');
+      expect(dateKeyInZone(lateNight, 'UTC')).toBe('2026-10-11');
+      expect(addDaysToKey('2026-12-31', 1)).toBe('2027-01-01');
+      expect(addDaysToKey('2024-03-01', -1)).toBe('2024-02-29');
+      expect(dateKeysBetween('2026-09-29', '2026-10-02')).toEqual([
+        '2026-09-29',
+        '2026-09-30',
+        '2026-10-01',
+        '2026-10-02',
+      ]);
+      expect(dateKeysBetween('2026-10-02', '2026-10-01')).toEqual([]);
+    });
+
+    it('meia-noite no fuso da loja (inclusive na troca de horário de verão)', () => {
+      expect(
+        startOfDayInZone('2026-10-01', 'America/Sao_Paulo').toISOString(),
+      ).toBe('2026-10-01T03:00:00.000Z');
+      expect(startOfDayInZone('2026-10-01', 'Asia/Tokyo').toISOString()).toBe(
+        '2026-09-30T15:00:00.000Z',
+      );
+      // Nova York: 08/03/2026 começa em EST (UTC−5); 09/03 já em EDT (UTC−4)
+      expect(
+        startOfDayInZone('2026-03-08', 'America/New_York').toISOString(),
+      ).toBe('2026-03-08T05:00:00.000Z');
+      expect(
+        startOfDayInZone('2026-03-09', 'America/New_York').toISOString(),
+      ).toBe('2026-03-09T04:00:00.000Z');
+    });
+
+    // Referência sem cache (o cálculo de antes): um formatador novo por instante
+    const referenceDateKey = (date: Date, timeZone: string) => {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(date);
+      const part = (type: string) =>
+        parts.find((item) => item.type === type)?.value;
+      return `${part('year')}-${part('month')}-${part('day')}`;
+    };
+
+    it('o cache de fusos dá o mesmo dia do cálculo direto, inclusive nas trocas de horário (30 min e 45 min)', () => {
+      const zones = [
+        'America/Sao_Paulo',
+        'America/New_York',
+        'Australia/Lord_Howe', // horário de verão de 30 min, trocado no meio da hora UTC
+        'Asia/Kathmandu', // UTC+5:45
+        'Pacific/Chatham', // UTC+12:45 / +13:45
+        'Europe/London',
+        'UTC',
+      ];
+      // A cada 7 min e 13 s por ~2 anos (inclui 2018, quando São Paulo ainda tinha horário de verão)
+      const instants: Date[] = [];
+      for (
+        let time = Date.UTC(2018, 9, 1);
+        time < Date.UTC(2019, 2, 1);
+        time += 433_000
+      )
+        instants.push(new Date(time));
+      for (
+        let time = Date.UTC(2026, 2, 1);
+        time < Date.UTC(2026, 11, 1);
+        time += 433_000
+      )
+        instants.push(new Date(time));
+      // Os segundos em volta das trocas de horário de 2026
+      for (const edge of [
+        '2026-03-08T07:00:00Z', // Nova York
+        '2026-11-01T06:00:00Z', // Nova York
+        '2026-04-04T15:00:00Z', // Lord Howe (02:00 → 01:30)
+        '2026-10-03T15:30:00Z', // Lord Howe (02:00 → 02:30)
+        '2026-03-29T01:00:00Z', // Londres
+      ]) {
+        const base = new Date(edge).getTime();
+        for (let delta = -2_000; delta <= 2_000; delta += 500)
+          instants.push(new Date(base + delta));
+      }
+
+      for (const zone of zones) {
+        const mismatches = instants.filter(
+          (date) => dateKeyInZone(date, zone) !== referenceDateKey(date, zone),
+        );
+        expect({ zone, mismatches }).toEqual({ zone, mismatches: [] });
+      }
+      // O formato "dd/MM" do gráfico sai do mesmo cálculo
+      const sample = new Date('2026-04-04T15:20:00Z');
+      const [, month, day] = referenceDateKey(
+        sample,
+        'Australia/Lord_Howe',
+      ).split('-');
+      expect(dayKeyInZone(sample, 'Australia/Lord_Howe')).toBe(
+        `${day}/${month}`,
+      );
+    });
+
+    it('converter 200 mil pedidos não formata instante a instante (antes: um Intl.DateTimeFormat novo por pedido, ~20 s)', () => {
+      // Contagem determinística (não depende da carga da máquina): o Intl só é chamado nas horas
+      // novas (2 vezes por hora UTC conferida), não a cada pedido
+      const formatToParts = jest.spyOn(
+        Intl.DateTimeFormat.prototype,
+        'formatToParts',
+      );
+      try {
+        const base = Date.UTC(2025, 10, 1);
+        const keys = new Set<string>();
+        // ~1 ano (200 mil instantes a cada 157 s) num fuso ainda não usado nos outros testes
+        for (let index = 0; index < 200_000; index++)
+          keys.add(
+            dateKeyInZone(new Date(base + index * 157_000), 'America/Manaus'),
+          );
+        expect(keys.size).toBeGreaterThan(360);
+        const hours = Math.ceil((200_000 * 157_000) / 3_600_000) + 1;
+        expect(formatToParts.mock.calls.length).toBeLessThanOrEqual(
+          2 * hours + 10,
+        );
+        expect(formatToParts.mock.calls.length).toBeLessThan(20_000);
+      } finally {
+        formatToParts.mockRestore();
+      }
+    });
+
+    it('instante inválido continua sendo erro (como antes)', () => {
+      expect(() =>
+        dateKeyInZone(new Date('invalida'), 'America/Sao_Paulo'),
+      ).toThrow(RangeError);
+    });
+
+    it('período do relatório: padrão dos últimos 30 dias; só "from" vai até hoje; só "to" pega os 30 dias até ele', () => {
+      // 11/10 02:00 UTC = 10/10 23:00 em São Paulo: "hoje" é 10/10 na loja
+      const now = new Date('2026-10-11T02:00:00Z');
+      const zone = 'America/Sao_Paulo';
+      expect(parseReportRange(undefined, undefined, now, zone)).toEqual({
+        ok: true,
+        from: '2026-09-11',
+        to: '2026-10-10',
+        days: 30,
+      });
+      expect(parseReportRange('2026-10-01', '', now, zone)).toEqual({
+        ok: true,
+        from: '2026-10-01',
+        to: '2026-10-10',
+        days: 10,
+      });
+      expect(parseReportRange(null, '2026-03-31', now, zone)).toEqual({
+        ok: true,
+        from: '2026-03-02',
+        to: '2026-03-31',
+        days: 30,
+      });
+      expect(parseReportRange('2026-10-05', '2026-10-05', now, zone)).toEqual({
+        ok: true,
+        from: '2026-10-05',
+        to: '2026-10-05',
+        days: 1,
+      });
+    });
+
+    it('período do relatório: até 366 dias (ano bissexto inteiro); formato, datas inexistentes e ordem errada → erro', () => {
+      const now = new Date('2026-10-11T12:00:00Z');
+      const zone = 'America/Sao_Paulo';
+      expect(
+        parseReportRange('2024-01-01', '2024-12-31', now, zone),
+      ).toMatchObject({ ok: true, days: REPORT_MAX_DAYS });
+      expect(parseReportRange('2024-01-01', '2025-01-01', now, zone)).toEqual({
+        ok: false,
+        message: `O período do relatório pode ter no máximo ${REPORT_MAX_DAYS} dias.`,
+      });
+      expect(parseReportRange('2026-10-05', '2026-10-01', now, zone)).toEqual({
+        ok: false,
+        message:
+          'A data inicial (from) não pode ser depois da data final (to).',
+      });
+      for (const [from, to] of [
+        ['2026-02-30', '2026-03-01'],
+        ['01/10/2026', '2026-10-02'],
+        ['2026-10-01', '2026-10-1'],
+        [['2026-10-01'], '2026-10-02'],
+        [20261001, '2026-10-02'],
+      ] as [unknown, unknown][]) {
+        const range = parseReportRange(from, to, now, zone);
+        expect(range.ok).toBe(false);
+        if (!range.ok) expect(range.message).toContain('AAAA-MM-DD');
+      }
     });
   });
 });

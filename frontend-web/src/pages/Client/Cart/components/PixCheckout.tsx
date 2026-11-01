@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { Copy, Info, Loader2, Timer, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { formatBRL } from '../checkout';
+import { copyText } from '../../../../utils/clipboard';
+import { formatCurrency } from '../../../../utils/format';
 
 interface PixCheckoutProps {
   /** Código "copia e cola" (também vira o QR Code). */
@@ -11,6 +12,8 @@ interface PixCheckoutProps {
   amount: number;
   /** Instante (ms) em que o código expira (enviado pelo servidor). */
   expiresAt: number;
+  /** Nome da loja que recebe o pagamento. */
+  storeName: string;
   /** PIX de teste do sandbox: aprovado automaticamente em alguns segundos. */
   simulation?: boolean;
   /** O cancelamento foi pedido e está sendo confirmado pelo servidor. */
@@ -25,26 +28,10 @@ function formatRemaining(ms: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-/** Copia texto mesmo fora de HTTPS (ex.: acesso pelo IP da rede), onde navigator.clipboard não existe. */
-async function copyText(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText && window.isSecureContext) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', '');
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
-  textarea.select();
-  const copied = document.execCommand('copy');
-  document.body.removeChild(textarea);
-  if (!copied) throw new Error('copy failed');
-}
-
-export default function PixCheckout({ copyPaste, amount, expiresAt, simulation, cancelling = false, onCancel }: PixCheckoutProps) {
+/** QR Code e "copia e cola" do PIX em andamento; o pedido é registrado pelo servidor quando o pagamento for confirmado. */
+export default function PixCheckout({ copyPaste, amount, expiresAt, storeName, simulation, cancelling = false, onCancel }: PixCheckoutProps) {
   const [now, setNow] = useState(() => Date.now());
+  const codeId = useId();
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
@@ -52,12 +39,8 @@ export default function PixCheckout({ copyPaste, amount, expiresAt, simulation, 
   }, []);
 
   async function handleCopy() {
-    try {
-      await copyText(copyPaste);
-      toast.success('Código PIX copiado!');
-    } catch {
-      toast.error('Não foi possível copiar. Selecione o código e copie manualmente.');
-    }
+    if (await copyText(copyPaste)) toast.success('Código PIX copiado!');
+    else toast.error('Não foi possível copiar. Selecione o código e copie manualmente.');
   }
 
   const expired = expiresAt <= now;
@@ -65,19 +48,20 @@ export default function PixCheckout({ copyPaste, amount, expiresAt, simulation, 
   return (
     <div className="flex flex-col items-center justify-center space-y-6 py-4 animate-in fade-in zoom-in duration-300">
       <div
-        className={`px-4 py-2 rounded-full font-bold flex items-center gap-2 ${expired ? 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300' : 'bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300'}`}
+        className={`px-4 py-2 rounded-full font-bold flex items-center gap-2 ${expired ? 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300' : 'bg-brand/10 text-brand-ink dark:text-brand-ink-dark'}`}
       >
-        <Timer size={18} />
+        <Timer size={18} aria-hidden="true" />
         {expired ? 'Código vencido. Conferindo o pagamento...' : `Expira em: ${formatRemaining(expiresAt - now)}`}
       </div>
 
       {/* QR Code sempre em fundo branco para a leitura pela câmera */}
       <div className="bg-white p-4 rounded-xl shadow-lg border-2 border-green-500">
-        <QRCodeSVG value={copyPaste} size={200} level="M" marginSize={2} />
+        <QRCodeSVG value={copyPaste} size={200} level="M" marginSize={2} title={`QR Code do PIX de ${formatCurrency(amount)} para ${storeName}`} />
       </div>
 
       <div className="text-center space-y-2">
-        <p className="text-2xl font-bold text-gray-800 dark:text-white">{formatBRL(amount)}</p>
+        <p className="text-2xl font-bold text-gray-800 dark:text-white">{formatCurrency(amount)}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">Pagamento para <b className="text-gray-700 dark:text-gray-200">{storeName}</b></p>
         <h3 className="font-bold text-gray-800 dark:text-white text-lg">Escaneie o QR Code</h3>
         <p className="text-gray-500 dark:text-gray-400 text-sm max-w-xs mx-auto">
           Abra o app do seu banco, escolha pagar com Pix e aponte a câmera — ou copie o código abaixo.
@@ -90,12 +74,13 @@ export default function PixCheckout({ copyPaste, amount, expiresAt, simulation, 
       </div>
 
       <div className="w-full">
+        <label htmlFor={codeId} className="sr-only">Código PIX copia e cola</label>
         <div className="relative">
           <input
+            id={codeId}
             readOnly
             value={copyPaste}
             onFocus={(event) => event.target.select()}
-            aria-label="Código PIX copia e cola"
             className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-500 dark:text-gray-300 text-xs p-3 rounded-lg pr-12 font-mono"
           />
           <button
@@ -104,7 +89,7 @@ export default function PixCheckout({ copyPaste, amount, expiresAt, simulation, 
             aria-label="Copiar código PIX"
             className="absolute right-1 top-1 bottom-1 bg-white dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 text-green-600 dark:text-green-400 px-3 rounded-md border border-gray-100 dark:border-slate-600 transition-colors"
           >
-            <Copy size={16} />
+            <Copy size={16} aria-hidden="true" />
           </button>
         </div>
         <p className="text-center text-xs text-green-600 dark:text-green-400 font-bold mt-2">
@@ -113,12 +98,12 @@ export default function PixCheckout({ copyPaste, amount, expiresAt, simulation, 
       </div>
 
       <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400" role="status">
-        <Loader2 size={16} className="animate-spin" />
+        <Loader2 size={16} className="animate-spin" aria-hidden="true" />
         Aguardando a confirmação do pagamento...
       </div>
 
       <div className="w-full bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl p-3 text-xs text-blue-800 dark:text-blue-200 flex items-start gap-2">
-        <Info size={16} className="shrink-0 mt-0.5" />
+        <Info size={16} className="shrink-0 mt-0.5" aria-hidden="true" />
         <p>
           Pode sair desta página com segurança: assim que o pagamento for confirmado, o pedido é registrado e aparece em{' '}
           <Link to="/my-orders" className="font-bold underline">Meus Pedidos</Link>. Não pague o mesmo código duas vezes.
@@ -131,7 +116,7 @@ export default function PixCheckout({ copyPaste, amount, expiresAt, simulation, 
         disabled={cancelling}
         className="text-red-500 dark:text-red-400 text-sm font-bold flex items-center gap-1 hover:bg-red-50 dark:hover:bg-red-900/20 px-3 py-2 rounded-lg transition-colors disabled:opacity-60"
       >
-        {cancelling ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} />} Cancelar pagamento
+        {cancelling ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <XCircle size={16} aria-hidden="true" />} Cancelar pagamento
       </button>
     </div>
   );

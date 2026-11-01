@@ -1,15 +1,17 @@
 import { expect, request, type APIRequestContext, type Locator, type Page, type Route } from '@playwright/test';
-import { E2E, STORAGE_KEYS } from '../../../support/env';
-import { authedContext, contextAs, signupClient, type Session } from '../../../support/api';
-import { useSession } from '../../../support/web';
+import { E2E, STORAGE_KEYS, cartKey } from '../../../support/env';
+import { authedContext, contextAs, demoStore, signupClient, type Session } from '../../../support/api';
+import { isStoreApiResponse, legacyApiPath, storeApi } from '../../../support/routes';
+import { storePath, storeUrl, useSession } from '../../../support/web';
 
 /**
  * Helpers da vitrine (área web-client): catálogo semeado pela API, clientes isolados
  * e atalhos de interface (busca, modal do produto, carrinho, resumo, simulação do status da loja).
+ * A vitrine é a da loja demo (/loja/<slug>), que chama as rotas da API por loja (/stores/<slug>/...).
  */
 
 export const API_URL = E2E.apiURL;
-export { STORAGE_KEYS, useSession };
+export { STORAGE_KEYS, cartKey, demoStore, isStoreApiResponse, storeApi, storePath, storeUrl, useSession };
 
 /** PNG 1x1 válido: imagem dos produtos semeados (o backend converte para .webp). */
 export const PNG_1PX = Buffer.from(
@@ -280,7 +282,7 @@ export async function waitForStoreOpen(timeout = 45_000): Promise<void> {
   const ctx = await request.newContext({ baseURL: API_URL });
   try {
     await expect
-      .poll(async () => (await (await ctx.get('/store/status')).json()).is_open, {
+      .poll(async () => (await (await ctx.get(`/stores/${E2E.demoStoreSlug}/status`)).json()).is_open, {
         timeout,
         message: 'a loja real precisa estar aberta para o checkout',
       })
@@ -306,9 +308,9 @@ export function cartLink(page: Page): Locator {
   return page.getByRole('link', { name: /^Carrinho/ });
 }
 
-/** Abre a vitrine e espera o cardápio terminar de carregar. */
+/** Abre a vitrine da loja demo (/loja/<slug>) e espera o cardápio terminar de carregar. */
 export async function openHome(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto(storePath());
   await expect(searchBox(page)).toBeVisible();
   await expect(menuSection(page).getByRole('button', { name: 'Tudo', exact: true })).toBeVisible();
 }
@@ -372,9 +374,23 @@ export async function addToCart(page: Page, name: string, options: AddOptions = 
 // Carrinho e checkout
 // ---------------------------------------------------------------------------
 
+/** Abre o carrinho da loja demo (/loja/<slug>/cart). */
 export async function openCart(page: Page): Promise<void> {
-  await page.goto('/cart');
+  await page.goto(storePath('cart'));
   await expect(page.getByRole('heading', { name: 'Carrinho', level: 1, exact: true })).toBeVisible();
+}
+
+/**
+ * Itens do carrinho da loja demo salvos no navegador ("comestra.cart.<storeId>" = { v, storeId, storeSlug, items }).
+ * Sem carrinho salvo (vazio), devolve [].
+ */
+export async function storedCartItems(page: Page): Promise<any[]> {
+  const store = await demoStore();
+  const raw = (await readStorage(page))[cartKey(store.id)];
+  if (!raw) return [];
+  const saved = JSON.parse(raw);
+  expect(saved, 'carrinho guardado por loja').toMatchObject({ v: 2, storeId: store.id, storeSlug: store.slug });
+  return saved.items;
 }
 
 /** Linha do carrinho: nome, personalizações, total da linha e botões de quantidade. */
@@ -394,20 +410,17 @@ export async function expectServerQuote(page: Page): Promise<void> {
   await expect(page.getByText('Subtotal', { exact: true })).toBeVisible({ timeout: 15_000 });
 }
 
-/** Espera a próxima resposta de POST /orders/quote (cujo corpo satisfaça `match`) e devolve o JSON. */
+/** Espera a próxima resposta do orçamento (POST /stores/<slug>/orders/quote, cujo corpo satisfaça `match`). */
 export function nextQuote(page: Page, match: (body: any) => boolean = () => true): Promise<any> {
   return page
-    .waitForResponse(
-      (r) => r.url() === `${API_URL}/orders/quote` && r.request().method() === 'POST' && match(r.request().postDataJSON()),
-      { timeout: 15_000 },
-    )
+    .waitForResponse((r) => isStoreApiResponse(r, 'POST', '/orders/quote') && match(r.request().postDataJSON()), { timeout: 15_000 })
     .then((r) => r.json());
 }
 
-/** Espera o POST /orders feito pela página e devolve status, corpo enviado e resposta. */
+/** Espera o POST /stores/<slug>/orders feito pela página e devolve status, corpo enviado e resposta. */
 export function nextOrderCreation(page: Page, timeout = 30_000): Promise<{ status: number; sent: any; order: any }> {
   return page
-    .waitForResponse((r) => r.url() === `${API_URL}/orders` && r.request().method() === 'POST', { timeout })
+    .waitForResponse((r) => isStoreApiResponse(r, 'POST', '/orders'), { timeout })
     .then(async (r) => ({ status: r.status(), sent: r.request().postDataJSON(), order: await r.json() }));
 }
 
@@ -429,13 +442,21 @@ export async function fillCard(page: Page, card: Partial<typeof TEST_CARD>): Pro
   }
 }
 
-/** Registra as chamadas de escrita feitas pela página (para provar que nada foi cobrado/criado). */
-export function trackRequests(page: Page, test: (method: string, path: string) => boolean): { method: string; path: string }[] {
-  const seen: { method: string; path: string }[] = [];
+/**
+ * Registra as chamadas feitas pela página (para provar que nada foi cobrado/criado). O caminho é registrado
+ * sem o prefixo da loja (/stores/<slug>/orders → /orders), para valer tanto para a rota da loja quanto a antiga;
+ * `fullPath` guarda o caminho chamado de fato.
+ */
+export function trackRequests(
+  page: Page,
+  test: (method: string, path: string) => boolean,
+): { method: string; path: string; fullPath: string }[] {
+  const seen: { method: string; path: string; fullPath: string }[] = [];
   page.on('request', (req) => {
     if (!req.url().startsWith(API_URL)) return;
-    const path = new URL(req.url()).pathname;
-    if (test(req.method(), path)) seen.push({ method: req.method(), path });
+    const fullPath = new URL(req.url()).pathname;
+    const path = legacyApiPath(fullPath);
+    if (test(req.method(), path)) seen.push({ method: req.method(), path, fullPath });
   });
   return seen;
 }
@@ -462,20 +483,25 @@ export interface StoreOverride {
 }
 
 /**
- * Intercepta GET /store/status (vitrine e carrinho) e POST /orders/quote (store_open),
+ * Intercepta o que a vitrine lê sobre a loja — o perfil (GET /stores/<slug>, com is_open e as mensagens),
+ * o status (GET /stores/<slug>/status ou a rota antiga /store/status) — e o orçamento (store_open),
  * buscando a resposta real e sobrescrevendo só o status. `set(null)` volta ao valor real.
  */
 export async function overrideStoreStatus(page: Page, initial: StoreOverride | null) {
   let current: StoreOverride | null = initial;
+  const profilePath = `/stores/${E2E.demoStoreSlug}`;
 
-  await page.route(`${API_URL}/store/status`, async (route: Route) => {
+  const overrideStatus = async (route: Route) => {
     if (route.request().method() !== 'GET' || !current) return route.continue();
     const response = await route.fetch();
+    if (!response.ok()) return route.fulfill({ response });
     const json = await response.json();
     await route.fulfill({ response, json: { ...json, ...current } });
-  });
+  };
+  await page.route((url) => url.origin === new URL(API_URL).origin && url.pathname === profilePath, overrideStatus);
+  await page.route(storeApi('/store/status'), overrideStatus);
 
-  await page.route(`${API_URL}/orders/quote`, async (route: Route) => {
+  await page.route(storeApi('/orders/quote'), async (route: Route) => {
     if (route.request().method() !== 'POST' || !current) return route.continue();
     const response = await route.fetch();
     if (!response.ok()) return route.fulfill({ response });
@@ -492,7 +518,7 @@ export async function overrideStoreStatus(page: Page, initial: StoreOverride | n
 
 /** A vitrine consulta o status a cada 30 s e quando a aba volta a ficar visível: força a consulta. */
 export async function refreshStoreStatus(page: Page): Promise<void> {
-  const response = page.waitForResponse((r) => r.url() === `${API_URL}/store/status` && r.request().method() === 'GET');
+  const response = page.waitForResponse((r) => isStoreApiResponse(r, 'GET', '/store/status'));
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await response;
 }

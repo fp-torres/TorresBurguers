@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { E2E } from '../../../support/env';
 import { signInAs } from '../../../support/web';
 import {
   API_URL,
@@ -189,14 +190,14 @@ test.describe('Equipe (administrador)', () => {
 
     await sidebar(page).getByRole('link', { name: 'Lixeira' }).click();
     await expect(pageHeading(page, 'Lixeira do Sistema')).toBeVisible({ timeout: 20_000 });
-    await page.getByRole('button', { name: 'Usuários' }).click();
+    await page.getByRole('tab', { name: /^Usuários/ }).click();
     const trashRow = tableRow(page, member.email);
     await expect(trashRow).toContainText(member.name);
     await expect(trashRow).toContainText('Cozinha');
     await expect(trashRow).not.toContainText('KITCHEN');
     await trashRow.getByRole('button', { name: 'Restaurar' }).click();
     const restore = page.getByRole('alertdialog', { name: 'Restaurar Item?' });
-    await expect(restore).toContainText(`O usuário "${member.name}" voltará a ter acesso ao sistema.`);
+    await expect(restore).toContainText(`O usuário "${member.name}" voltará a ter acesso ao painel da loja.`);
     const res = waitForApi(page, 'PATCH', `/users/${member.id}/restore`);
     await restore.getByRole('button', { name: 'Sim, Restaurar' }).click();
     expect((await res).status()).toBe(200);
@@ -208,18 +209,25 @@ test.describe('Equipe (administrador)', () => {
     await expect(roleCell(tableRow(page, member.email))).toHaveText('Cozinha', { timeout: 20_000 });
   });
 
-  test('perfis aparecem em português nas abas, na coluna Cargo e nas opções do formulário', async ({ page }) => {
+  test('perfis da equipe aparecem em português nas abas, na coluna Cargo e nas opções do formulário (sem clientes)', async ({ page }) => {
     await openTeam(page);
-    for (const label of ['Todos', 'Administradores', 'Atendentes', 'Cozinha', 'Entregadores', 'Clientes']) {
-      await expect(page.getByRole('button', { name: new RegExp(`^${label}\\s*\\d+$`) }), `aba ${label}`).toBeVisible();
+    const filters = page.getByRole('group', { name: 'Filtrar por perfil' });
+    // Abas com contador ("Todos (13)": os parênteses são só para leitores de tela)
+    for (const label of ['Todos', 'Administradores', 'Atendentes', 'Cozinha', 'Entregadores']) {
+      await expect(filters.getByRole('button', { name: new RegExp(`^${label}\\s*\\(?\\s*\\d+\\s*\\)?$`) }), `aba ${label}`).toBeVisible();
     }
+    // Clientes são contas globais da plataforma: não fazem parte da equipe
+    await expect(filters.getByRole('button', { name: /^Clientes/ })).toHaveCount(0);
+    await expect(tableRow(page, DEFAULT_USERS.client.email)).toHaveCount(0);
+    await expect(tableRow(page, DEFAULT_USERS.superadmin.email)).toHaveCount(0);
 
-    const expected = { admin: 'Administrador', employee: 'Atendente', kitchen: 'Cozinha', courier: 'Entregador', client: 'Cliente' } as const;
+    const expected = { admin: 'Administrador', employee: 'Atendente', kitchen: 'Cozinha', courier: 'Entregador' } as const;
     for (const [key, label] of Object.entries(expected) as [keyof typeof expected, string][]) {
       await expect(roleCell(tableRow(page, DEFAULT_USERS[key].email)), DEFAULT_USERS[key].email).toHaveText(label);
     }
     const roleTexts = await page.getByRole('row').locator('td:nth-child(3)').allInnerTexts();
     expect(roleTexts.filter((t) => /\b(ADMIN|EMPLOYEE|KITCHEN|COURIER|CLIENT)\b/.test(t)), 'códigos crus de perfil').toEqual([]);
+    expect(roleTexts.filter((t) => /Cliente/.test(t)), 'nenhum cliente na equipe').toEqual([]);
 
     await page.getByRole('button', { name: 'Novo Membro' }).click();
     await expect(fieldByLabel(memberDialog(page, 'Novo Membro'), 'Cargo / Função').locator('option')).toHaveText([
@@ -227,7 +235,6 @@ test.describe('Equipe (administrador)', () => {
       'Atendente (Gestão de Pedidos)',
       'Cozinha (Ver Pedidos)',
       'Entregador (Ver Entregas)',
-      'Cliente (Apenas Teste)',
     ]);
   });
 
@@ -242,7 +249,8 @@ test.describe('Equipe (administrador)', () => {
     expect(new Set(roleTexts.map((t) => t.trim()))).toEqual(new Set(['Entregador']));
 
     await page.getByRole('button', { name: /^Todos/ }).click();
-    const search = page.getByPlaceholder('Buscar por Nome ou ID...');
+    const search = page.getByRole('searchbox', { name: 'Buscar na equipe' });
+    await expect(search).toHaveAttribute('placeholder', 'Buscar por nome, e-mail ou ID...');
     await search.fill(member.name);
     await expect(page.getByRole('row').filter({ hasText: '@' })).toHaveCount(1);
     await search.fill(String(member.id));
@@ -283,5 +291,73 @@ test.describe('Equipe (administrador)', () => {
     await expect(toast(page, 'A senha precisa ter no mínimo 9 caracteres, uma letra maiúscula e um número ou símbolo.')).toBeVisible();
     await expect(dialog).toBeVisible();
     expect(writes, 'nenhuma escrita na API').toEqual([]);
+  });
+});
+
+test.describe('Equipe › convites (administrador)', () => {
+  const CORS_HEADERS = { 'access-control-allow-origin': E2E.webURL, 'access-control-allow-credentials': 'true' };
+  const isInvitations = (url: URL) => url.href.startsWith(API_URL) && url.pathname === '/store/invitations';
+
+  function invitation(id: number, overrides: Record<string, unknown> = {}) {
+    const now = Date.now();
+    return {
+      id,
+      store_id: 1,
+      email: `convite.${id}@e2e.test`,
+      role: 'ADMIN',
+      make_owner: false,
+      status: 'PENDING',
+      expires_at: new Date(now + 7 * 86_400_000).toISOString(),
+      accepted_at: null,
+      revoked_at: null,
+      created_at: new Date(now).toISOString(),
+      ...overrides,
+    };
+  }
+
+  test('convite de troca do responsável (criado pela plataforma) não oferece "Revogar"; os demais sim', async ({ page }) => {
+    const items = [invitation(990102, { make_owner: true }), invitation(990101, { role: 'EMPLOYEE' })];
+    await page.route(isInvitations, (route) =>
+      route.request().method() === 'GET'
+        ? route.fulfill({ status: 200, contentType: 'application/json', headers: CORS_HEADERS, body: JSON.stringify({ items, total: 2, page: 1, pageSize: 10 }) })
+        : route.continue(),
+    );
+    await openTeam(page);
+
+    const ownerRow = tableRow(page, 'convite.990102@e2e.test');
+    await expect(ownerRow).toContainText('Novo responsável pela loja');
+    await expect(ownerRow).toContainText('Criado pela plataforma');
+    await expect(ownerRow.getByRole('button', { name: /Revogar/ })).toHaveCount(0);
+
+    const employeeRow = tableRow(page, 'convite.990101@e2e.test');
+    await expect(employeeRow.getByRole('button', { name: 'Revogar o convite de convite.990101@e2e.test' })).toBeVisible();
+  });
+
+  test('limite diário de convites (429) aparece no formulário com a mensagem da API', async ({ page }) => {
+    const LIMIT = 'A loja atingiu o limite de convites das últimas 24 horas. Tente de novo amanhã.';
+    let posts = 0;
+    await page.route(isInvitations, (route) => {
+      // Preflight (OPTIONS) e a lista seguem para a API; o POST nunca chega ao servidor
+      if (route.request().method() !== 'POST') return route.continue();
+      posts += 1;
+      return route.fulfill({
+        status: 429,
+        contentType: 'application/json',
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ statusCode: 429, message: LIMIT, error: 'Too Many Requests' }),
+      });
+    });
+    await openTeam(page);
+    await page.getByRole('button', { name: 'Convidar por e-mail' }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Convidar por e-mail' });
+    await dialog.getByPlaceholder('pessoa@email.com').fill(uniqueEmail('wa-convite'));
+    await dialog.getByRole('button', { name: 'Criar convite' }).click();
+
+    await expect.poll(() => posts).toBe(1);
+    await expect(dialog.getByRole('alert')).toHaveText(LIMIT);
+    await expect(dialog, 'o formulário continua aberto').toBeVisible();
+    // Trocar o e-mail limpa o aviso
+    await dialog.getByPlaceholder('pessoa@email.com').fill(uniqueEmail('wa-convite2'));
+    await expect(dialog.getByRole('alert')).toHaveCount(0);
   });
 });

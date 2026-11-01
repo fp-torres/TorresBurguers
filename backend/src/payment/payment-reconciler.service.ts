@@ -14,6 +14,8 @@ export const RECONCILE_INTERVAL_MS = 60_000;
  * Conciliação periódica: a cada 60 s revê os pagamentos pendentes (Mercado Pago real) e os PIX do
  * sandbox que já passaram do prazo de aprovação, criando os pedidos dos que foram aprovados — mesmo
  * que o cliente tenha fechado o app e nenhuma notificação tenha chegado.
+ * Rotina do sistema: cobre todas as lojas, cada pagamento consultado com a credencial da própria loja
+ * (o problema de uma loja não interrompe as outras — ver PaymentService.reconcile).
  * Várias instâncias da API podem rodar juntas: a criação do pedido é idempotente (payment_id único).
  */
 @Injectable()

@@ -2,154 +2,100 @@ import {
   BadGatewayException,
   BadRequestException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DeepPartial, IsNull, Repository } from 'typeorm';
+import { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import { omitUndefined } from '../common/transforms';
-import { BRAND } from '../config/brand';
+import { AddressLocationService } from './address-location.service';
+import { CepLookupService, type CepLookupResult } from './cep-lookup.service';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { Address } from './entities/address.entity';
 
-/** Tempo máximo de espera por cada serviço de CEP. */
-const CEP_TIMEOUT_MS = 5000;
+export type { CepLookupResult } from './cep-lookup.service';
 
-/** Endereço do CEP no formato do ViaCEP (o que os front-ends já usam). */
-export interface CepLookupResult {
-  cep: string;
-  logradouro: string;
-  complemento: string;
-  bairro: string;
-  localidade: string;
-  uf: string;
-}
+/** Endereços ativos por conta (os excluídos não contam). */
+export const MAX_ADDRESSES_PER_USER = 20;
+/** Teto da lista GET /addresses (contas antigas podem ter mais que o limite de criação). */
+export const ADDRESSES_LIST_LIMIT = 100;
+export const ADDRESSES_LIMIT_MESSAGE = `Limite de endereços atingido: cada conta pode ter até ${MAX_ADDRESSES_PER_USER} endereços. Exclua um endereço que não usa mais para cadastrar outro.`;
 
-interface JsonResponse {
-  status: number;
-  data: Record<string, unknown> | null;
-}
-
-const text = (value: unknown): string =>
-  typeof value === 'string' ? value : '';
-
-const formatCep = (digits: string) =>
-  `${digits.slice(0, 5)}-${digits.slice(5)}`;
+export const CEP_INVALID_MESSAGE =
+  'CEP inválido. Informe os 8 dígitos (ex.: 22041-001).';
+export const CEP_NOT_FOUND_MESSAGE =
+  'CEP não encontrado. Confira o número ou preencha o endereço manualmente.';
+export const CEP_UNAVAILABLE_MESSAGE =
+  'Não foi possível consultar o CEP agora. Preencha o endereço manualmente.';
 
 @Injectable()
 export class AddressesService {
-  private readonly logger = new Logger(AddressesService.name);
-
   constructor(
     @InjectRepository(Address)
     private readonly addressRepository: Repository<Address>,
+    private readonly rateLimit: RateLimitService,
+    private readonly cepLookup: CepLookupService,
+    private readonly locations: AddressLocationService,
   ) {}
 
-  // --- BUSCA DE CEP (ViaCEP com fallback para a BrasilAPI) ---
+  // --- BUSCA DE CEP (ViaCEP com fallback para a BrasilAPI; ver CepLookupService) ---
 
   /**
-   * 400: CEP com formato inválido · 404: CEP inexistente · 502: serviços de CEP fora do ar.
+   * 400: CEP com formato inválido · 404: CEP inexistente · 502: serviços de CEP fora do ar ·
+   * 429: muitas consultas do mesmo IP (a rota é pública e repassa a consulta a serviços externos).
+   * clientIp: IP de quem chamou (ver common/request-meta.ts).
    */
-  async findCep(cep: string): Promise<CepLookupResult> {
+  async findCep(
+    cep: string,
+    clientIp: string | null = null,
+  ): Promise<CepLookupResult> {
     const digits = (cep ?? '').replace(/\D/g, '');
     if (digits.length !== 8) {
-      throw new BadRequestException(
-        'CEP inválido. Informe os 8 dígitos (ex.: 22041-001).',
-      );
+      throw new BadRequestException(CEP_INVALID_MESSAGE);
     }
+    this.rateLimit.consume('CEP_LOOKUP', clientIp ?? 'desconhecido');
 
-    let notFound = false;
-
-    // 1ª tentativa: ViaCEP (responde 200 com { erro: true } quando o CEP não existe)
-    try {
-      const { status, data } = await this.getJson(
-        `https://viacep.com.br/ws/${digits}/json/`,
-      );
-      if (status === 200 && data && !data.erro) {
-        return {
-          cep: formatCep(text(data.cep).replace(/\D/g, '') || digits),
-          logradouro: text(data.logradouro),
-          complemento: text(data.complemento),
-          bairro: text(data.bairro),
-          localidade: text(data.localidade),
-          uf: text(data.uf),
-        };
-      }
-      if (status === 200) notFound = true;
-      else this.logger.warn(`ViaCEP respondeu HTTP ${status}.`);
-    } catch (error) {
-      this.logger.warn(`ViaCEP indisponível: ${(error as Error).message}`);
-    }
-
-    // 2ª tentativa: BrasilAPI (responde 404 quando o CEP não existe)
-    try {
-      const { status, data } = await this.getJson(
-        `https://brasilapi.com.br/api/cep/v1/${digits}`,
-      );
-      if (status === 200 && data) {
-        return {
-          cep: formatCep(text(data.cep).replace(/\D/g, '') || digits),
-          logradouro: text(data.street),
-          complemento: '',
-          bairro: text(data.neighborhood),
-          localidade: text(data.city),
-          uf: text(data.state),
-        };
-      }
-      if (status === 404) notFound = true;
-      else this.logger.warn(`BrasilAPI respondeu HTTP ${status}.`);
-    } catch (error) {
-      this.logger.warn(`BrasilAPI indisponível: ${(error as Error).message}`);
-    }
-
-    if (notFound) {
-      throw new NotFoundException(
-        'CEP não encontrado. Confira o número ou preencha o endereço manualmente.',
-      );
-    }
-    throw new BadGatewayException(
-      'Não foi possível consultar o CEP agora. Preencha o endereço manualmente.',
-    );
-  }
-
-  private async getJson(url: string): Promise<JsonResponse> {
-    const response = await fetch(url, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': `${BRAND.slug}-api`,
-      },
-      signal: AbortSignal.timeout(CEP_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      return { status: response.status, data: null };
-    }
-    const data = (await response.json()) as unknown;
-    return {
-      status: response.status,
-      data:
-        data && typeof data === 'object'
-          ? (data as Record<string, unknown>)
-          : null,
-    };
+    const outcome = await this.cepLookup.lookup(digits, 'public');
+    if (outcome.status === 'found') return outcome.address;
+    if (outcome.status === 'not_found')
+      throw new NotFoundException(CEP_NOT_FOUND_MESSAGE);
+    throw new BadGatewayException(CEP_UNAVAILABLE_MESSAGE);
   }
 
   // --- ENDEREÇOS DO USUÁRIO LOGADO (endereço de outra pessoa → 404) ---
 
+  /**
+   * 429: muitas criações/edições da mesma conta (ADDRESS_WRITE) · 400: a conta já tem
+   * MAX_ADDRESSES_PER_USER endereços (os excluídos não contam). Limite "suave": duas criações
+   * simultâneas no limite exato podem passar por uma unidade (o limite de tentativas segura o resto).
+   * O bairro, a cidade e a UF do CEP são conferidos e guardados (canonical_*): a zona de entrega usa esses
+   * valores. Sem resposta do serviço de CEP, o endereço é salvo assim mesmo (neighborhood_source = MANUAL).
+   */
   async create(createAddressDto: CreateAddressDto, userId: number) {
+    this.rateLimit.consume('ADDRESS_WRITE', `user:${userId}`);
+    const active = await this.addressRepository.count({
+      where: { user: { id: userId }, deleted_at: IsNull() },
+    });
+    if (active >= MAX_ADDRESSES_PER_USER) {
+      throw new BadRequestException(ADDRESSES_LIMIT_MESSAGE);
+    }
+    const location = await this.locations.resolve(createAddressDto.zipCode);
     const address = this.addressRepository.create({
       ...omitUndefined(createAddressDto),
+      ...location,
       user: { id: userId },
     } as DeepPartial<Address>);
     const saved = await this.addressRepository.save(address);
     return this.findOne(saved.id, userId);
   }
 
+  /** Endereços da conta (os mais antigos primeiro), no máximo ADDRESSES_LIST_LIMIT. */
   findAll(userId: number) {
     return this.addressRepository.find({
       where: { user: { id: userId }, deleted_at: IsNull() },
       order: { id: 'ASC' },
+      take: ADDRESSES_LIST_LIMIT,
     });
   }
 
@@ -163,12 +109,34 @@ export class AddressesService {
     return address;
   }
 
+  /**
+   * Edição parcial. O CEP é conferido de novo quando muda, quando o endereço ainda não tinha sido conferido
+   * ou quando a última conferência pegou o serviço de CEP fora do ar. Nada mudou (corpo vazio ou os
+   * mesmos valores): devolve o endereço como está, sem gravar nem consultar o CEP de novo.
+   */
   async update(id: number, updateAddressDto: UpdateAddressDto, userId: number) {
+    this.rateLimit.consume('ADDRESS_WRITE', `user:${userId}`);
     const address = await this.findOne(id, userId);
+    const changes = omitUndefined(updateAddressDto) as Record<string, unknown>;
+    const current = address as unknown as Record<string, unknown>;
+    const changed = Object.entries(changes).some(
+      ([key, value]) => (current[key] ?? null) !== (value ?? null),
+    );
+    if (!changed) return address;
+    const zipChanged =
+      updateAddressDto.zipCode !== undefined &&
+      updateAddressDto.zipCode !== address.zipCode;
     this.addressRepository.merge(
       address,
       omitUndefined(updateAddressDto) as DeepPartial<Address>,
     );
+    if (
+      zipChanged ||
+      !address.cep_status ||
+      address.cep_status === 'UNAVAILABLE'
+    ) {
+      Object.assign(address, await this.locations.resolve(address.zipCode));
+    }
     await this.addressRepository.save(address);
     return this.findOne(id, userId);
   }

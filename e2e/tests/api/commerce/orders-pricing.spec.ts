@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import { uid } from '../../../support/api';
+import { demoStore, uid } from '../../../support/api';
+import { E2E } from '../../../support/env';
 import {
   Actors,
   OUT_OF_RANGE_ID,
@@ -44,11 +45,11 @@ test.describe('Pedidos: orçamento, validações e retrato de preços', () => {
 
   // Produtos
   let burger: Json; // 30,00 com promoção 25,00; permite A e B
-  let fries: Json; // 12,90 sem promoção; sem lista de adicionais (aceita qualquer um)
+  let fries: Json; // 12,90 sem promoção; permite A e Sache
   let restricted: Json; // 20,00; permite só A
   let unavailable: Json;
   let trashed: Json;
-  let cents: Json; // 19,99
+  let cents: Json; // 19,99; permite Sache
 
   let centro: Json;
   let otherAddress: Json;
@@ -75,7 +76,12 @@ test.describe('Pedidos: orçamento, validações e retrato de preços', () => {
       promotion_price: 25,
       allowed_addons_ids: [addA.id, addB.id],
     });
-    fries = await createProduct(admin.ctx, { name: `Fritas ${uid('fr')}`, price: 12.9, category: 'acompanhamentos' });
+    fries = await createProduct(admin.ctx, {
+      name: `Fritas ${uid('fr')}`,
+      price: 12.9,
+      category: 'acompanhamentos',
+      allowed_addons_ids: [addA.id, addCent.id],
+    });
     restricted = await createProduct(admin.ctx, {
       name: `Restrito ${uid('rs')}`,
       price: 20,
@@ -84,7 +90,12 @@ test.describe('Pedidos: orçamento, validações e retrato de preços', () => {
     unavailable = await createProduct(admin.ctx, { name: `Esgotado ${uid('un')}`, price: 10, available: false });
     trashed = await createProduct(admin.ctx, { name: `Lixeira ${uid('tr')}`, price: 10 });
     await softDeleteProduct(admin.ctx, trashed.id);
-    cents = await createProduct(admin.ctx, { name: `Centavos ${uid('ct')}`, price: 19.99, category: 'bebidas' });
+    cents = await createProduct(admin.ctx, {
+      name: `Centavos ${uid('ct')}`,
+      price: 19.99,
+      category: 'bebidas',
+      allowed_addons_ids: [addCent.id],
+    });
 
     centro = await createAddress(client.ctx, 'Centro');
     otherAddress = await createAddress(other.ctx, 'Centro');
@@ -207,7 +218,7 @@ test.describe('Pedidos: orçamento, validações e retrato de preços', () => {
     await expectNestError(await post(takeout([])), 400);
     await expectNestError(await post(takeout([{ productId: UNKNOWN_ID, quantity: 1 }])), 400, `#${UNKNOWN_ID}`);
     await expectNestError(await post(takeout([{ productId: unavailable.id, quantity: 1 }])), 400, unavailable.name);
-    await expectNestError(await post(takeout([{ productId: trashed.id, quantity: 1 }])), 400, trashed.name);
+    await expectNestError(await post(takeout([{ productId: trashed.id, quantity: 1 }])), 400, `Produto #${trashed.id} não encontrado.`);
     await expectNestError(await post(takeout([{ productId: restricted.id, quantity: 1, addonIds: [addB.id] }])), 400);
     await expectNestError(await post(takeout([{ productId: fries.id, quantity: 0 }])), 400);
     await expectNestError(await post({ items: [{ productId: fries.id, quantity: 1 }], type: 'DELIVERY' }), 400);
@@ -318,16 +329,18 @@ test.describe('Pedidos: orçamento, validações e retrato de preços', () => {
     await expectNestError(res, 400, unavailable.name);
   });
 
-  test('produto na lixeira é recusado com 400 citando o nome', async () => {
-    const res = await tryOrder(client.ctx, {
-      items: [
-        { productId: fries.id, quantity: 1 },
-        { productId: trashed.id, quantity: 1 },
-      ],
-      type: 'TAKEOUT',
-      paymentMethod: 'MONEY',
-    });
-    await expectNestError(res, 400, trashed.name);
+  test('produto na lixeira responde como um id inexistente (400 sem o nome, que só a equipe vê)', async () => {
+    const items = [
+      { productId: fries.id, quantity: 1 },
+      { productId: trashed.id, quantity: 1 },
+    ];
+    for (const res of [
+      await tryOrder(client.ctx, { ...takeout(items), paymentMethod: 'MONEY' }),
+      await postCommerce(client.ctx, '/orders/quote', takeout(items)),
+    ]) {
+      await expectNestError(res, 400, `Produto #${trashed.id} não encontrado.`);
+      expect(await res.text(), 'nome do item da lixeira').not.toContain(trashed.name);
+    }
   });
 
   test('adicional fora da lista permitida do produto é recusado (400)', async () => {
@@ -348,11 +361,34 @@ test.describe('Pedidos: orçamento, validações e retrato de preços', () => {
       });
       await expectNestError(res, 400);
     }
+    // Excluído: mesma resposta de um id inexistente (sem o nome)
+    const deleted = await tryOrder(client.ctx, {
+      items: [{ productId: fries.id, quantity: 1, addonIds: [addDel.id] }],
+      type: 'TAKEOUT',
+      paymentMethod: 'MONEY',
+    });
+    await expectNestError(deleted, 400, `Adicional #${addDel.id} não encontrado.`);
+    expect(await deleted.text()).not.toContain(addDel.name);
   });
 
-  test('produto sem lista de adicionais permitidos aceita adicionais disponíveis', async () => {
+  test('produto com a lista permitida aceita os adicionais dela', async () => {
     const q = await quote(client.ctx, takeout([{ productId: fries.id, quantity: 1, addonIds: [addA.id] }]));
     expect(q.items[0]).toMatchObject({ addonsTotal: 3.5, lineTotal: 16.4 });
+  });
+
+  test('produto sem adicionais configurados não aceita nenhum (como a vitrine e o painel): orçamento e pedido → 400', async () => {
+    const plain = await createProduct(admin.ctx, { name: `Refrigerante ${uid('rf')}`, price: 6, category: 'bebidas' });
+    expect(plain.allowed_addons ?? []).toEqual([]);
+    const items = [{ productId: plain.id, quantity: 1, addonIds: [addA.id, addA.id, addB.id] }];
+    for (const res of [
+      await postCommerce(client.ctx, '/orders/quote', takeout(items)),
+      await tryOrder(client.ctx, { ...takeout(items), paymentMethod: 'MONEY' }),
+    ]) {
+      await expectNestError(res, 400, `O produto "${plain.name}" não aceita adicionais.`);
+    }
+    // Sem adicionais, o produto vende normalmente
+    const q = await quote(client.ctx, takeout([{ productId: plain.id, quantity: 2 }]));
+    expect(q.items[0]).toMatchObject({ addonsTotal: 0, lineTotal: 12 });
   });
 
   test('quantidade 0, 51, negativa ou fracionada é recusada (400)', async () => {
@@ -407,6 +443,7 @@ test.describe('Pedidos: orçamento, validações e retrato de preços', () => {
       paymentMethod: 'MONEY',
     });
     expect(order.address).toBeNull();
+    expect(order.delivery_address).toBeNull();
     expect(order.delivery_fee).toBe(0);
     expectMoney(order.total_price, 12.9, 'total sem taxa');
   });
@@ -415,9 +452,41 @@ test.describe('Pedidos: orçamento, validações e retrato de preços', () => {
     const data = { items: [{ productId: fries.id, quantity: 1 }], type: 'TAKEOUT', paymentMethod: 'MONEY' };
     for (const actor of [admin, employee, kitchen, courier]) {
       await expectNestError(await actor.ctx.post('/orders', { data }), 403);
+      await expectNestError(await actor.ctx.post(`/stores/${E2E.demoStoreSlug}/orders`, { data }), 403);
       const mine = await myOrders(actor.ctx);
       expect(mine.every((o) => o.user?.id === actor.id), `${actor.session.user.role} sem pedidos alheios`).toBe(true);
     }
+  });
+
+  test('conta da plataforma (superadmin) não compra: orçamento e pedido → 403', async () => {
+    const superadmin = await actors.defaultUser('superadmin');
+    const body = { items: [{ productId: fries.id, quantity: 1 }], type: 'TAKEOUT' };
+    await expectNestError(await superadmin.ctx.post('/orders/quote', { data: body }), 403, /plataforma/i);
+    await expectNestError(await superadmin.ctx.post('/orders', { data: { ...body, paymentMethod: 'MONEY' } }), 403, /plataforma/i);
+    await expectNestError(
+      await superadmin.ctx.post(`/stores/${E2E.demoStoreSlug}/orders`, { data: { ...body, paymentMethod: 'MONEY' } }),
+      403,
+    );
+    expect(await myOrders(superadmin.ctx)).toEqual([]);
+  });
+
+  test('orçamento e pedido pela rota da loja (/stores/<slug>/orders) valem o mesmo da rota antiga (loja padrão)', async () => {
+    const store = await demoStore();
+    const input: QuoteInput = { items: [{ productId: burger.id, quantity: 2, addonIds: [addA.id] }], type: 'DELIVERY', addressId: centro.id };
+    const legacy = await quote(client.ctx, input);
+    const scopedRes = await postCommerce(client.ctx, `/stores/${E2E.demoStoreSlug}/orders/quote`, input);
+    await expectStatus(scopedRes, 200);
+    expect(await scopedRes.json()).toEqual(legacy);
+
+    const created = await postCommerce(client.ctx, `/stores/${E2E.demoStoreSlug}/orders`, { ...input, paymentMethod: 'MONEY' });
+    await expectStatus(created, 201);
+    const order = await created.json();
+    expect(order.store_id).toBe(store.id);
+    expect(order.store).toMatchObject({ id: store.id, slug: store.slug });
+    expectMoney(order.total_price, legacy.total, 'total do pedido = orçamento');
+
+    // Loja inexistente na rota → 404 (nada é orçado)
+    await expectNestError(await postCommerce(client.ctx, '/stores/loja-que-nao-existe-e2e/orders/quote', input), 404);
   });
 
   test('anônimo não faz pedidos (401)', async () => {
@@ -501,8 +570,14 @@ test.describe('Pedidos: orçamento, validações e retrato de preços', () => {
     });
     expect(order.total_price).toBe(88.4);
     expect(order.delivery_fee).toBe(7);
-    expect(order.address?.id).toBe(botafogo.id);
+    // Retrato do endereço de entrega; o endereço vivo do cadastro (global) não sai no pedido
+    expect(order.address).toBeNull();
+    expect(order.delivery_address).toMatchObject({ neighborhood: 'Botafogo', street: botafogo.street, number: botafogo.number });
     expect(order.user?.id).toBe(client.id);
+    // Pedido feito pela rota antiga = loja padrão (demo); o cliente recebe o resumo da loja
+    const store = await demoStore();
+    expect(order.store_id).toBe(store.id);
+    expect(order.store).toEqual({ id: store.id, slug: store.slug, name: store.name, logo: store.logo ?? null });
     expectNoPasswordFields(order);
 
     expect(order.items).toHaveLength(2);
@@ -546,6 +621,19 @@ test.describe('Pedidos: orçamento, validações e retrato de preços', () => {
       changeFor: 'Sem troco',
     });
     expect(noChange.change_for).toBeNull();
+  });
+
+  test('troco tem teto: até R$ 200,00 acima do total (a maior cédula); acima → 400 sem gravar', async () => {
+    const items = [{ productId: fries.id, quantity: 1 }]; // R$ 12,90 na retirada
+    const limit = await placeOrder(client.ctx, { items, type: 'TAKEOUT', paymentMethod: 'MONEY', changeFor: 'R$ 212,90' });
+    expect(limit.change_for).toBe('R$ 212,90');
+    for (const changeFor of ['R$ 212,91', 'R$ 2.000,00', '999999999999999999999999999999']) {
+      await expectNestError(
+        await tryOrder(client.ctx, { items, type: 'TAKEOUT', paymentMethod: 'MONEY', changeFor }),
+        400,
+        'Valor para troco acima do permitido: informe até R$ 212,90 (no máximo R$ 200,00 acima do total do pedido).',
+      );
+    }
   });
 
   test('pagamento na entrega (maquininha ou PIX na entrega, sem paymentId) fica pendente e sem troco', async () => {

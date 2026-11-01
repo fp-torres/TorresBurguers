@@ -3,12 +3,16 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   PrimaryColumn,
   UpdateDateColumn,
+  type Relation,
   type ValueTransformer,
 } from 'typeorm';
 import type { OrderSnapshot } from '../../orders/order-snapshot';
 import type { OrderType } from '../../orders/order.enums';
+import { Store } from '../../store/entities/store.entity';
 
 /** bigint e decimal chegam do Postgres como texto: na entidade ficam como number. */
 const numeric: ValueTransformer = {
@@ -44,13 +48,36 @@ export interface PixData {
  * pagamento é aprovado, o próprio servidor cria o pedido com esses dados.
  */
 @Entity('payments')
-@Index('UQ_payments_user_idempotency_key', ['user_id', 'idempotency_key'], {
-  unique: true,
-})
+// A mesma chave de idempotência do mesmo cliente só vale dentro da mesma loja
+@Index(
+  'UQ_payments_store_user_idempotency_key',
+  ['store_id', 'user_id', 'idempotency_key'],
+  { unique: true },
+)
+// Pagamentos ainda sem pedido (reservedOrderSlots, cobranças pendentes e conciliação): índices parciais
+// (store_id, created_at) e (created_at) WHERE order_id IS NULL, criados pela migration PerformanceIndexes.
+// synchronize:false porque o TypeORM não compara o WHERE de forma estável.
+@Index('IDX_payments_store_open', { synchronize: false })
+@Index('IDX_payments_open_created', { synchronize: false })
 export class Payment {
   /** Id no Mercado Pago (ou na faixa das simulações do sandbox, a partir de 900000000000000). */
   @PrimaryColumn({ type: 'bigint', transformer: numeric })
   id: number;
+
+  /**
+   * Loja que recebe o pagamento (pagamento do DELIVERY: consumidor → loja). As cobranças da
+   * assinatura SaaS (loja → plataforma) ficam em subscription_invoices, nunca aqui.
+   */
+  @Index('IDX_payments_store_id')
+  @Column({ type: 'int' })
+  store_id: number;
+
+  @ManyToOne(() => Store, { onDelete: 'RESTRICT' })
+  @JoinColumn({
+    name: 'store_id',
+    foreignKeyConstraintName: 'FK_payments_store',
+  })
+  store?: Relation<Store>;
 
   @Index()
   @Column({ type: 'int' })

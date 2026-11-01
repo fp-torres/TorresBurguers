@@ -22,6 +22,8 @@ export const API_URL = E2E.apiURL;
 export { DEFAULT_USERS, STORAGE_KEYS, uid, uniqueEmail };
 
 export type Role = 'ADMIN' | 'EMPLOYEE' | 'KITCHEN' | 'COURIER' | 'CLIENT';
+/** Perfis da equipe de uma loja (o ADMIN só cadastra estes; clientes se cadastram sozinhos). */
+export type StaffRole = Exclude<Role, 'CLIENT'>;
 export type OrderStatus = 'PENDING' | 'PREPARING' | 'READY_FOR_PICKUP' | 'DELIVERING' | 'DONE' | 'CANCELED';
 export type PaymentMethod = 'PIX' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'MONEY';
 
@@ -56,6 +58,8 @@ export interface ApiUser {
 
 export interface ApiOrder {
   id: number;
+  /** Número do pedido NA LOJA (o "#N" das telas). */
+  number: number;
   status: OrderStatus;
   type: 'DELIVERY' | 'TAKEOUT';
   payment_method: string;
@@ -155,10 +159,10 @@ export class StaffApi {
     return okJson<ApiProduct>(await this.ctx.patch(`/products/${id}`, { data }), `PATCH /products/${id}`);
   }
 
-  // --- Equipe (ADMIN) ---
+  // --- Equipe da loja (ADMIN) ---
 
   async createStaff(
-    role: Role,
+    role: StaffRole,
     overrides: Partial<{ name: string; email: string; password: string; phone: string }> = {},
   ): Promise<ApiUser & { password: string }> {
     const data = {
@@ -344,12 +348,16 @@ export function fieldByLabel(scope: Locator, label: string): Locator {
 }
 
 /**
- * Card de um pedido no quadro: o menor bloco que contém o título "#id" e o valor (R$).
- * Os cards não têm papel/rótulo acessível próprio (ex.: <article aria-labelledby>).
+ * Card de um pedido no quadro, pelo id do pedido (data-order-id). O título do card mostra o número do
+ * pedido NA LOJA ("#12"), não o id: confira com orderCardHeading.
  */
 export function orderCard(page: Page, id: number): Locator {
-  const heading = page.getByRole('heading', { name: new RegExp(`^#${id}\\b`) });
-  return page.locator('div').filter({ has: heading }).filter({ hasText: 'R$' }).last();
+  return page.locator(`[data-order-id="${id}"]`);
+}
+
+/** Título do card: "#<número do pedido na loja>" seguido do horário. */
+export function orderCardHeading(card: Locator, number: number): Locator {
+  return card.getByRole('heading', { name: new RegExp(`^#${number}\\b`) });
 }
 
 /** Cabeçalho de uma coluna do quadro de pedidos. */

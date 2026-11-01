@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import { uid } from '../../../support/api';
+import { demoStore, uid } from '../../../support/api';
+import { E2E } from '../../../support/env';
 import {
   Actors,
   UNKNOWN_ID,
@@ -165,14 +166,55 @@ test.describe('Pagamentos (sandbox) e verificação do pagamento no pedido', () 
   // Consulta de status
   // -------------------------------------------------------------------------
 
-  test('consulta de status: pagador e equipe podem; outro cliente 403; anônimo 401', async () => {
+  test('consulta de status: pagador, ADMIN e EMPLOYEE da loja podem; cozinha, entregador, outro cliente e a plataforma 404; anônimo 401', async () => {
     const payment = await payCard(payer.ctx, takeout(1));
-    for (const actor of [payer, admin, employee, kitchen, courier]) {
+    for (const actor of [payer, admin, employee]) {
       const status = await paymentStatus(actor.ctx, payment.id);
       expect(status, actor.session.user.role).toMatchObject({ id: payment.id, status: 'approved' });
     }
-    await expectNestError(await stranger.ctx.get(`/payment/status/${payment.id}`), 403);
+    // Rota da loja: mesma consulta para o pagador
+    const scoped = await payer.ctx.get(`/stores/${E2E.demoStoreSlug}/payment/status/${payment.id}`);
+    await expectStatus(scoped, 200);
+    expect(await scoped.json()).toMatchObject({ id: payment.id, status: 'approved' });
+
+    // Quem não é o pagador nem conduz os pedidos da loja (cozinha e entregador acompanham só a própria
+    // etapa do pedido, não cobranças): 404 uniforme (não confirma que o pagamento existe)
+    const superadmin = await actors.defaultUser('superadmin');
+    const unknown = await payer.ctx.get('/payment/status/123456789');
+    await expectNestError(unknown, 404);
+    const unknownMessage = (await unknown.json()).message;
+    for (const outsider of [kitchen, courier, stranger, superadmin]) {
+      const res = await outsider.ctx.get(`/payment/status/${payment.id}`);
+      await expectNestError(res, 404);
+      expect((await res.json()).message).toBe(unknownMessage);
+    }
+    await expectNestError(await payer.ctx.get(`/stores/loja-que-nao-existe-e2e/payment/status/${payment.id}`), 404);
     await expectStatus(await anon.get(`/payment/status/${payment.id}`), 401);
+  });
+
+  test('mesma idempotencyKey do mesmo cliente na loja devolve o mesmo pagamento (não cobra duas vezes)', async () => {
+    const key = `e2e-${uid('idem').replace(/[^A-Za-z0-9_-]/g, '')}`.slice(0, 64);
+    const first = await postCommerce(payer.ctx, '/payment/card', cardBody(takeout(1), { idempotencyKey: key }));
+    await expectStatus(first, 201);
+    const payment = await first.json();
+
+    // Repetir (pela rota antiga ou pela rota da loja: é a mesma loja) devolve o mesmo pagamento
+    for (const path of ['/payment/card', `/stores/${E2E.demoStoreSlug}/payment/card`]) {
+      const again = await postCommerce(payer.ctx, path, cardBody(takeout(1), { idempotencyKey: key }));
+      await expectStatus(again, 201);
+      expect((await again.json()).id, path).toBe(payment.id);
+    }
+    expect((await myOrders(payer.ctx)).filter((o) => o.payment_id === payment.id), 'um pedido só').toHaveLength(1);
+
+    // A chave é por cliente: outro cliente com a mesma chave tem o próprio pagamento
+    const otherBuyer = await actors.newClient('Outro Idempotencia');
+    const other = await postCommerce(otherBuyer.ctx, '/payment/card', cardBody(takeout(1), { idempotencyKey: key }));
+    await expectStatus(other, 201);
+    expect((await other.json()).id).not.toBe(payment.id);
+
+    // A mesma chave num PIX (outro tipo de pagamento) é recusada
+    const pix = await postCommerce(payer.ctx, '/payment/pix', { order: takeout(1), idempotencyKey: key });
+    await expectNestError(pix, 400, /idempotencyKey/);
   });
 
   test('consulta de pagamento desconhecido responde 404 e id inválido responde 400', async () => {
@@ -330,7 +372,29 @@ test.describe('Pagamentos (sandbox) e verificação do pagamento no pedido', () 
     for (const actor of [admin, employee, kitchen, courier]) {
       await expectNestError(await actor.ctx.post('/payment/card', { data: cardBody(takeout(1)) }), 403);
       await expectNestError(await actor.ctx.post('/payment/pix', { data: { order: takeout(1) } }), 403);
+      await expectNestError(await actor.ctx.post(`/stores/${E2E.demoStoreSlug}/payment/pix`, { data: { order: takeout(1) } }), 403);
     }
+  });
+
+  test('contas da plataforma (superadmin) não compram: cartão e PIX → 403', async () => {
+    const superadmin = await actors.defaultUser('superadmin');
+    await expectNestError(await superadmin.ctx.post('/payment/card', { data: cardBody(takeout(1)) }), 403, /plataforma/i);
+    await expectNestError(await superadmin.ctx.post('/payment/pix', { data: { order: takeout(1) } }), 403, /plataforma/i);
+    await expectNestError(
+      await superadmin.ctx.post(`/stores/${E2E.demoStoreSlug}/payment/card`, { data: cardBody(takeout(1)) }),
+      403,
+    );
+  });
+
+  test('pagamento pela rota da loja (/stores/<slug>/payment/card) cria o pedido pago naquela loja', async () => {
+    const store = await demoStore();
+    const res = await postCommerce(payer.ctx, `/stores/${E2E.demoStoreSlug}/payment/card`, cardBody(takeout(1)));
+    await expectStatus(res, 201);
+    const payment = await res.json();
+    expect(payment).toMatchObject({ status: 'approved', amount: 20 });
+    const order = await getOrder(payer.ctx, payment.orderId);
+    expect(order).toMatchObject({ payment_status: 'PAID', payment_id: payment.id, store_id: store.id });
+    expect(order.store).toMatchObject({ id: store.id, slug: store.slug });
   });
 
   test('valor enviado pelo cliente não é aceito (campos extras → 400)', async () => {

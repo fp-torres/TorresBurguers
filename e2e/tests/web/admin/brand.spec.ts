@@ -17,9 +17,12 @@ test.describe('Marca no painel', () => {
     const pages: [string, string | RegExp][] = [
       ['/dashboard', /^Dashboard/],
       ['/orders', 'Gestão de Pedidos'],
+      ['/customers', 'Clientes'],
       ['/products', 'Cardápio'],
       ['/users', 'Equipe'],
       ['/trash', 'Lixeira do Sistema'],
+      ['/settings', 'Configurações'],
+      ['/subscription', 'Plano e assinatura'],
     ];
     for (const [path, heading] of pages) {
       await page.goto(path);

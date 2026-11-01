@@ -11,10 +11,12 @@ import {
   cartLink,
   createAddress,
   createClient,
+  demoStore,
   expectServerQuote,
   fillCard,
   fulfillJson,
   getOrder,
+  isStoreApiResponse,
   listMyOrders,
   money,
   nextOrderCreation,
@@ -22,6 +24,7 @@ import {
   openCart,
   openHome,
   seedCatalog,
+  storeUrl,
   summaryValue,
   trackRequests,
   useSession,
@@ -55,7 +58,25 @@ async function cartAsClient(page: Page, client: TestClient, add: (page: Page) =>
   await openCart(page);
 }
 
+/** Prazo exibido no carrinho: "Prazo estimado: 30-40 min" (o rótulo é só para leitores de tela). */
+const estimate = (page: Page, time: string) => page.getByText(`Prazo estimado: ${time}`, { exact: true });
+
+/** Linha da confirmação do pedido (/loja/<slug>/order-success): "Pedido #12 · <loja>" (número do pedido NA LOJA). */
+async function confirmedOrderLine(page: Page, number: number) {
+  const store = await demoStore();
+  return page.getByText(`Pedido #${number} · ${store.name}`, { exact: true });
+}
+
 const payNowButton = (page: Page) => page.getByRole('button', { name: /^Pagar (com cartão|R\$)/ });
+
+/** Downloads do SDK do Mercado Pago (script de terceiros) feitos pela página. */
+function trackMercadoPagoSdk(page: Page): string[] {
+  const urls: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).hostname === 'sdk.mercadopago.com') urls.push(request.url());
+  });
+  return urls;
+}
 
 test.describe('Checkout: visitante precisa entrar', () => {
   test.beforeEach(async ({ page }) => {
@@ -72,7 +93,8 @@ test.describe('Checkout: visitante precisa entrar', () => {
     const dialog = page.getByRole('alertdialog', { name: 'Faça login' });
     await expect(dialog).toContainText('Para finalizar seu pedido, entre na sua conta');
     await dialog.getByRole('button', { name: 'Entrar' }).click();
-    await expect(page).toHaveURL(/\/signin$/);
+    // O login guarda o destino: o carrinho desta loja
+    await expect(page).toHaveURL(/\/signin\?redirect=%2Floja%2F/);
     expect(posts).toEqual([]);
   });
 
@@ -93,7 +115,7 @@ test.describe('Checkout: visitante precisa entrar', () => {
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Cancelar' }).click();
     await expect(dialog).toBeHidden();
-    await expect(page).toHaveURL(/\/cart$/);
+    await expect(page).toHaveURL(storeUrl('cart'));
     await expect(cartLine(page, catalog.drink.name)).toBeVisible();
     expect(posts).toEqual([]);
   });
@@ -155,7 +177,7 @@ test.describe('Checkout: endereço de entrega e cotação do servidor', () => {
     await expect(summaryValue(page, 'Subtotal')).toHaveText(brl(subtotal));
     await expect(summaryValue(page, 'Taxa de entrega')).toHaveText(brl(5));
     await expect(summaryValue(page, 'Total')).toHaveText(brl(money(subtotal, 5)));
-    await expect(page.getByText('30-40 min', { exact: true })).toBeVisible();
+    await expect(estimate(page, '30-40 min')).toBeVisible();
 
     const addresses = await (await client.api.get('/addresses')).json();
     expect(addresses).toHaveLength(1);
@@ -224,19 +246,20 @@ test.describe('Checkout: endereço de entrega e cotação do servidor', () => {
     await expect(page.getByText('UF inválida. Use a sigla do estado com 2 letras (ex.: RJ).').first()).toBeVisible();
     expect(posts).toHaveLength(0);
 
-    // "XX" passa no formato, mas a API recusa (UF inexistente) e o modal continua aberto
+    // "XX" tem o formato, mas não é um estado: o formulário recusa sem chamar a API (que também recusaria) e fica aberto
     await field.state.fill('XX');
-    const rejected = page.waitForResponse((r) => r.url() === `${API_URL}/addresses` && r.request().method() === 'POST');
     await field.save.click();
-    expect((await rejected).status()).toBe(400);
-    await expect(dialog).toBeVisible();
     await expect(page.getByText('UF inválida. Use a sigla do estado com 2 letras (ex.: RJ).').first()).toBeVisible();
+    await expect(dialog).toBeVisible();
+    expect(posts).toHaveLength(0);
 
     await field.state.fill('RJ');
+    const saved = page.waitForResponse((r) => r.url() === `${API_URL}/addresses` && r.request().method() === 'POST');
     await field.save.click();
+    expect((await saved).status()).toBe(201);
     await expect(dialog).toBeHidden();
     await expect(page.getByRole('radio', { name: /Rua Visconde de Pirajá, 100/ })).toBeChecked();
-    expect(posts).toHaveLength(2);
+    expect(posts).toHaveLength(1);
   });
 
   test('a cotação do servidor acompanha a quantidade, o bairro de entrega e a retirada', async ({ page }) => {
@@ -250,7 +273,7 @@ test.describe('Checkout: endereço de entrega e cotação do servidor', () => {
     await expectServerQuote(page);
     await expect(summaryValue(page, 'Taxa de entrega')).toHaveText('Grátis (retirada)');
     await expect(summaryValue(page, 'Total')).toHaveText(brl(catalog.drink.price));
-    await expect(page.getByText('15-20 min', { exact: true })).toBeVisible();
+    await expect(estimate(page, '15-20 min')).toBeVisible();
 
     // Entrega: primeiro endereço (Copacabana) já selecionado
     let quote = nextQuote(page, (body) => body.type === 'DELIVERY');
@@ -259,7 +282,7 @@ test.describe('Checkout: endereço de entrega e cotação do servidor', () => {
     expect(await quote).toMatchObject({ subtotal: 9.9, delivery_fee: 10, total: 19.9, estimated_delivery_time: '50-60 min' });
     await expect(summaryValue(page, 'Taxa de entrega')).toHaveText(brl(10));
     await expect(summaryValue(page, 'Total')).toHaveText(brl(19.9));
-    await expect(page.getByText('50-60 min', { exact: true })).toBeVisible();
+    await expect(estimate(page, '50-60 min')).toBeVisible();
 
     // + quantidade: novo orçamento
     quote = nextQuote(page, (body) => body.items?.[0]?.quantity === 2);
@@ -322,10 +345,11 @@ test.describe('Checkout: pagamento na entrega ou na retirada', () => {
     expect(sent).toMatchObject({ type: 'DELIVERY', paymentMethod: 'MONEY' });
     expect(sent.paymentId).toBeUndefined();
 
-    await expect(page).toHaveURL(/\/order-success$/);
+    await expect(page).toHaveURL(storeUrl('order-success'));
     await expect(page.getByRole('heading', { name: 'Pedido Confirmado! 🎉' })).toBeVisible();
-    await expect(page.getByText(`Pedido #${created.id}`, { exact: true })).toBeVisible();
-    await expect(page.getByText('Pedido realizado com sucesso!')).toBeVisible();
+    await expect(await confirmedOrderLine(page, created.number)).toBeVisible();
+    // O aviso traz o número do pedido NA LOJA (pago na entrega: já vem na resposta do POST /orders)
+    await expect(page.getByText(`Pedido #${created.number} realizado com sucesso!`)).toBeVisible();
     await expect(cartLink(page)).toHaveAccessibleName('Carrinho');
 
     // O pedido gravado tem o total da cotação e o retrato dos itens
@@ -340,7 +364,10 @@ test.describe('Checkout: pagamento na entrega ou na retirada', () => {
       delivery_fee: 5,
     });
     expect(String(order.change_for)).toMatch(/100[,.]00/);
-    expect(order.address).toMatchObject({ street: 'Rua do Rosário', number: '99', neighborhood: 'Centro' });
+    // Retrato do endereço de entrega no pedido (o endereço vivo do cadastro não sai: address = null)
+    expect(order.address).toBeNull();
+    expect(order.delivery_address).toMatchObject({ street: 'Rua do Rosário', number: '99', neighborhood: 'Centro' });
+    expect(order.store).toMatchObject({ slug: 'demo' });
     const burgerItem = order.items.find((item: any) => item.product?.id === catalog.burger.id);
     expect(burgerItem).toMatchObject({
       quantity: 1,
@@ -358,7 +385,7 @@ test.describe('Checkout: pagamento na entrega ou na retirada', () => {
     // Meus Pedidos
     await page.getByRole('link', { name: 'Meus Pedidos' }).click();
     await expect(page).toHaveURL(/\/my-orders$/);
-    const header = page.getByText(`Pedido #${created.id}`, { exact: true });
+    const header = page.getByText(`Pedido #${created.number}`, { exact: true });
     await expect(header).toBeVisible();
     await expect(page.getByText('Aguardando Confirmação', { exact: true })).toBeVisible();
     await expect(page.getByText(brl(total), { exact: true })).toBeVisible();
@@ -398,7 +425,7 @@ test.describe('Checkout: pagamento na entrega ou na retirada', () => {
     await expect(
       page.getByRole('alert').filter({ hasText: `O troco deve ser para um valor maior ou igual ao total (${brl(catalog.drink.price)}).` }),
     ).toBeVisible();
-    await expect(page).toHaveURL(/\/cart$/);
+    await expect(page).toHaveURL(storeUrl('cart'));
     expect(posts).toEqual([]);
     expect(await listMyOrders(client.api)).toEqual([]);
   });
@@ -426,7 +453,7 @@ test.describe('Checkout: pagamento na entrega ou na retirada', () => {
     await page.getByRole('button', { name: 'Finalizar Pedido' }).click();
     const { status, order: created } = await creation;
     expect(status, JSON.stringify(created)).toBe(201);
-    await expect(page.getByText(`Pedido #${created.id}`, { exact: true })).toBeVisible();
+    await expect(await confirmedOrderLine(page, created.number)).toBeVisible();
 
     const order = await getOrder(client.api, created.id);
     expect(order).toMatchObject({
@@ -439,10 +466,11 @@ test.describe('Checkout: pagamento na entrega ou na retirada', () => {
       change_for: null,
     });
     expect(order.address ?? null).toBeNull();
+    expect(order.delivery_address ?? null).toBeNull();
     expect(order.items.find((item: any) => item.product?.id === catalog.promo.id)).toMatchObject({ unit_price: 15 });
 
     await page.goto('/my-orders');
-    await page.getByText(`Pedido #${created.id}`, { exact: true }).click();
+    await page.getByText(`Pedido #${created.number}`, { exact: true }).click();
     await expect(page.getByText(/· Retirada$/)).toBeVisible();
     await expect(page.getByText('Cartão de crédito', { exact: true })).toBeVisible();
     await expect(page.getByText('Pagar na retirada', { exact: true })).toBeVisible();
@@ -465,7 +493,8 @@ test.describe('Checkout: pagamento online', () => {
     await expect(summaryValue(page, 'Total')).toHaveText(brl(total));
     await page.getByRole('button', { name: 'PIX', exact: true }).click();
 
-    const pixResponse = page.waitForResponse((r) => r.url() === `${API_URL}/payment/pix` && r.request().method() === 'POST');
+    // A vitrine paga na rota da loja (POST /stores/<slug>/payment/pix)
+    const pixResponse = page.waitForResponse((r) => isStoreApiResponse(r, 'POST', '/payment/pix'));
     // Contrato v2: pagamento online não faz POST /orders no navegador — o servidor cria o pedido na aprovação
     const orderPosts = trackRequests(page, (method, path) => method === 'POST' && path === '/orders');
     await page.getByRole('button', { name: new RegExp(`^Gerar PIX de ${brlPattern(total)}$`) }).click();
@@ -493,15 +522,15 @@ test.describe('Checkout: pagamento online', () => {
     await expect(page.getByRole('heading', { name: 'Pedido Confirmado! 🎉' })).toBeVisible({ timeout: 30_000 });
     const status = await (await client.api.get(`/payment/status/${pix.id}`)).json();
     expect(status).toMatchObject({ status: 'approved', orderId: expect.any(Number) });
-    const created = { id: status.orderId as number };
-    await expect(page.getByText(`Pedido #${created.id}`, { exact: true })).toBeVisible();
+    const created = await getOrder(client.api, status.orderId as number);
+    await expect(await confirmedOrderLine(page, created.number)).toBeVisible();
     expect(orderPosts, 'nenhum POST /orders no pagamento online').toEqual([]);
 
     const order = await getOrder(client.api, created.id);
     expect(order).toMatchObject({ payment_method: 'PIX', payment_status: 'PAID', payment_id: pix.id, total_price: total, delivery_fee: 7 });
 
     await page.getByRole('link', { name: 'Meus Pedidos' }).click();
-    await page.getByText(`Pedido #${created.id}`, { exact: true }).click();
+    await page.getByText(`Pedido #${created.number}`, { exact: true }).click();
     await expect(page.getByText('PIX', { exact: true })).toBeVisible();
     await expect(page.getByText('Pago online', { exact: true })).toBeVisible();
   });
@@ -515,7 +544,11 @@ test.describe('Checkout: pagamento online', () => {
     await page.getByRole('button', { name: 'PIX', exact: true }).click();
     await page.getByRole('button', { name: /^Gerar PIX de/ }).click();
     await expect(page.getByRole('heading', { name: 'Escaneie o QR Code' })).toBeVisible();
+    // O cancelamento pede confirmação (quem já pagou não deve cancelar); desistir mantém o PIX
     await page.getByRole('button', { name: 'Cancelar pagamento' }).click();
+    const confirm = page.getByRole('alertdialog', { name: 'Cancelar o PIX?' });
+    await expect(confirm).toContainText('nenhum pedido é criado');
+    await confirm.getByRole('button', { name: 'Cancelar PIX' }).click();
 
     await expect(page.getByText('Pagamento PIX cancelado. Nenhum pedido foi criado.')).toBeVisible();
     await expect(page.getByRole('button', { name: /^Gerar PIX de/ })).toBeVisible();
@@ -533,7 +566,7 @@ test.describe('Checkout: pagamento online', () => {
     const pixPosts = trackRequests(page, (method, path) => method === 'POST' && path === '/payment/pix');
 
     await page.getByRole('button', { name: 'PIX', exact: true }).click();
-    const pixResponse = page.waitForResponse((r) => r.url() === `${API_URL}/payment/pix` && r.request().method() === 'POST');
+    const pixResponse = page.waitForResponse((r) => isStoreApiResponse(r, 'POST', '/payment/pix'));
     await page.getByRole('button', { name: /^Gerar PIX de/ }).click();
     const pix = await (await pixResponse).json();
     await expect(page.getByRole('heading', { name: 'Escaneie o QR Code' })).toBeVisible();
@@ -546,7 +579,7 @@ test.describe('Checkout: pagamento online', () => {
     await expect(page.getByRole('heading', { name: 'Pedido Confirmado! 🎉' })).toBeVisible({ timeout: 30_000 });
     const status = await (await client.api.get(`/payment/status/${pix.id}`)).json();
     expect(status).toMatchObject({ status: 'approved', orderId: expect.any(Number) });
-    await expect(page.getByText(`Pedido #${status.orderId}`, { exact: true })).toBeVisible();
+    await expect(await confirmedOrderLine(page, (await getOrder(client.api, status.orderId)).number)).toBeVisible();
     expect(pixPosts, 'um único PIX gerado').toHaveLength(1);
     expect(await getOrder(client.api, status.orderId)).toMatchObject({ payment_status: 'PAID', payment_id: pix.id });
   });
@@ -562,7 +595,7 @@ test.describe('Checkout: pagamento online', () => {
     await expect(page.getByPlaceholder('MM/AA')).toHaveValue('11/30');
     await expect(page.getByPlaceholder('000.000.000-00')).toHaveValue('123.456.789-09');
 
-    const cardResponse = page.waitForResponse((r) => r.url() === `${API_URL}/payment/card` && r.request().method() === 'POST', { timeout: 45_000 });
+    const cardResponse = page.waitForResponse((r) => isStoreApiResponse(r, 'POST', '/payment/card'), { timeout: 45_000 });
     const orderPosts = trackRequests(page, (method, path) => method === 'POST' && path === '/orders');
     await page.getByRole('button', { name: new RegExp(`^Pagar ${brlPattern(catalog.drink.price)}$`) }).click();
 
@@ -578,9 +611,9 @@ test.describe('Checkout: pagamento online', () => {
     expect(typeof sentToCard.idempotencyKey).toBe('string');
 
     // O servidor cria o pedido na aprovação do cartão: nada de POST /orders no navegador
-    const created = { id: payment.orderId as number };
+    const created = await getOrder(client.api, payment.orderId as number);
     await expect(page.getByRole('heading', { name: 'Pedido Confirmado! 🎉' })).toBeVisible();
-    await expect(page.getByText(`Pedido #${created.id}`, { exact: true })).toBeVisible();
+    await expect(await confirmedOrderLine(page, created.number)).toBeVisible();
     expect(orderPosts, 'nenhum POST /orders no pagamento online').toEqual([]);
 
     expect(await getOrder(client.api, created.id)).toMatchObject({
@@ -590,7 +623,7 @@ test.describe('Checkout: pagamento online', () => {
       total_price: catalog.drink.price,
     });
     await page.goto('/my-orders');
-    await page.getByText(`Pedido #${created.id}`, { exact: true }).click();
+    await page.getByText(`Pedido #${created.number}`, { exact: true }).click();
     await expect(page.getByText('Cartão de crédito', { exact: true })).toBeVisible();
     await expect(page.getByText('Pago online', { exact: true })).toBeVisible();
   });
@@ -654,13 +687,45 @@ test.describe('Checkout: pagamento online', () => {
     await openHome(page);
     await addToCart(page, catalog.drink.name);
     const calls = trackRequests(page, (method, path) => path === '/orders/quote' || path === '/orders' || path.startsWith('/payment'));
+    const sdkRequests = trackMercadoPagoSdk(page);
     await openCart(page);
 
     await expect(page.getByText('Modo Administrativo')).toBeVisible();
     await expect(page.getByText('Você está logado como membro da equipe. A realização de pedidos está bloqueada.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Pagar na Retirada' })).toBeDisabled();
-    await expect(payNowButton(page)).toBeDisabled();
+    // Conta interna: o formulário de cartão nem monta (só o PIX, desabilitado, com o motivo)
+    const payment = page.getByRole('region', { name: 'Pagamento' });
+    await expect(payment.getByRole('button', { name: 'Cartão de Crédito' })).toHaveCount(0);
+    await expect(payment.getByRole('group', { name: 'Dados do cartão de crédito' })).toHaveCount(0);
+    await expect(payNowButton(page)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Gerar (PIX de|QR Code PIX)/ })).toBeDisabled();
     await expect(page.getByText('Contas da equipe não fazem pedidos pela loja.')).toBeVisible();
     expect(calls).toEqual([]);
+    // O SDK de terceiros não roda no mesmo documento que guarda o token da equipe
+    await expect(page.locator('script#mercadopago-sdk')).toHaveCount(0);
+    expect(sdkRequests).toEqual([]);
+  });
+
+  test('superadministrador no carrinho: compra bloqueada, sem formulário de cartão e sem o SDK do Mercado Pago', async ({ page }) => {
+    await signInAs(page, 'superadmin');
+    await openHome(page);
+    await addToCart(page, catalog.drink.name);
+    const calls = trackRequests(page, (method, path) => path === '/orders/quote' || path === '/orders' || path.startsWith('/payment'));
+    const sdkRequests = trackMercadoPagoSdk(page);
+    await openCart(page);
+
+    await expect(page.getByText('Modo Administrativo')).toBeVisible();
+    await expect(
+      page.getByText('Você está logado com uma conta da administração da plataforma. A realização de pedidos está bloqueada.'),
+    ).toBeVisible();
+    await expect(page.getByText('Contas da administração da plataforma não fazem pedidos. Use uma conta de cliente.')).toBeVisible();
+    const payment = page.getByRole('region', { name: 'Pagamento' });
+    await expect(payment.getByRole('button', { name: 'Cartão de Crédito' })).toHaveCount(0);
+    await expect(payment.getByRole('group', { name: 'Dados do cartão de crédito' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Gerar (PIX de|QR Code PIX)/ })).toBeDisabled();
+    await page.waitForLoadState('networkidle');
+    expect(calls, 'nenhuma cotação, pedido ou cobrança').toEqual([]);
+    await expect(page.locator('script#mercadopago-sdk')).toHaveCount(0);
+    expect(sdkRequests).toEqual([]);
   });
 });

@@ -1,30 +1,22 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FocusEvent, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type ChangeEvent, type FocusEvent, type FormEvent } from 'react';
 import toast from 'react-hot-toast';
 import { AlertCircle, CreditCard as CardIcon, Loader2, Lock } from 'lucide-react';
 import CreditCard from '../../../../components/CreditCard';
 import { maskCardNumber, maskCPF, maskDate } from '../../../../utils/masks';
-import api from '../../../../services/api';
+import { isValidCpf } from '../../../../utils/validation';
+import { isTestPublicKey } from '../../../../services/mercadoPago';
 import {
-  MP_PUBLIC_KEY,
-  PAYMENT_TIMEOUT_MS,
-  attemptKey,
-  cardRejectionMessage,
-  errorMessage,
-  formatBRL,
-  getMercadoPago,
-  isUncertainFailure,
-  lookupCreditMethod,
-  pollPaymentStatus,
-  preloadMercadoPago,
-  type CardPaymentResponse,
-  type MercadoPagoPaymentMethod,
-  type OrderPayload,
-  type PaymentAttempt,
+  attemptKey, cardRejectionMessage, errorMessage, getMercadoPago, isUncertainFailure, lookupCreditMethod, pollPaymentStatus, preloadMercadoPago, storeCheckoutApi, type CardPaymentResponse, type MercadoPagoPaymentMethod, type OrderPayload, type PaymentAttempt,
 } from '../checkout';
+import { formatCurrency } from '../../../../utils/format';
 
 type FocusField = 'number' | 'name' | 'expiry' | 'cvc' | '';
 
 interface PaymentFormProps {
+  /** Slug da loja da rota: o pagamento vai para POST /stores/:slug/payment/card. */
+  storeSlug: string;
+  /** Chave pública do Mercado Pago da loja (tokenização do cartão no navegador). */
+  publicKey: string;
   /** Total calculado pelo servidor (orçamento). */
   total: number | null;
   /** Pedido que será pago — o mesmo corpo do orçamento. */
@@ -45,7 +37,6 @@ interface PaymentFormProps {
 }
 
 const EMPTY_CARD = { number: '', name: '', expiry: '', cvc: '', docNumber: '' };
-const IS_TEST_KEY = MP_PUBLIC_KEY.startsWith('TEST-');
 const UNKNOWN_BRAND = 'credit_card';
 
 // Faixas de BIN (6 primeiros dígitos) da Elo. Algumas começam com 4 ou 5: são conferidas antes de Visa/Mastercard.
@@ -97,18 +88,6 @@ function isValidCardNumber(digits: string): boolean {
   return sum % 10 === 0;
 }
 
-function isValidCpf(value: string): boolean {
-  const cpf = value.replace(/\D/g, '');
-  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
-  const check = (length: number) => {
-    let sum = 0;
-    for (let i = 0; i < length; i++) sum += Number(cpf[i]) * (length + 1 - i);
-    const rest = (sum * 10) % 11;
-    return rest === 10 ? 0 : rest;
-  };
-  return check(9) === Number(cpf[9]) && check(10) === Number(cpf[10]);
-}
-
 /** MM/AA válido e ainda não vencido. */
 function isValidExpiry(expiry: string): boolean {
   const match = /^(\d{2})\/(\d{2})$/.exec(expiry);
@@ -120,14 +99,17 @@ function isValidExpiry(expiry: string): boolean {
   return year > now.getFullYear() || (year === now.getFullYear() && month >= now.getMonth() + 1);
 }
 
+const LABEL_CLASS = 'block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase';
+
 export default function PaymentForm({
-  total, payload, blockedReason, busy = false, onBeforePay, onConfirmTotal, onProcessingChange, onOrderCreated, onApprovedPending,
+  storeSlug, publicKey, total, payload, blockedReason, busy = false, onBeforePay, onConfirmTotal, onProcessingChange, onOrderCreated, onApprovedPending,
 }: PaymentFormProps) {
   const [card, setCard] = useState(EMPTY_CARD);
   const [focus, setFocus] = useState<FocusField>('');
   const [processing, setProcessing] = useState(false);
   const [statusText, setStatusText] = useState('');
   const [formError, setFormError] = useState('');
+  const fieldId = useId();
 
   // Trava contra clique duplo (o estado do React só atualiza no próximo render)
   const processingRef = useRef(false);
@@ -136,12 +118,14 @@ export default function PaymentForm({
   const attemptRef = useRef<PaymentAttempt | null>(null);
 
   useEffect(() => {
-    preloadMercadoPago();
-    return () => abortRef.current?.abort();
-  }, []);
+    preloadMercadoPago(publicKey);
+  }, [publicKey]);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const brand = detectCardBrand(card.number);
   const cvcLength = brand === 'amex' ? 4 : 3;
+  const isTestKey = isTestPublicKey(publicKey);
 
   function handleChange(event: ChangeEvent<HTMLInputElement>) {
     const { name, value } = event.target;
@@ -171,14 +155,14 @@ export default function PaymentForm({
     let method: MercadoPagoPaymentMethod | null = null;
     let cvc = cvcLength;
     if (brand === UNKNOWN_BRAND) {
-      method = await lookupCreditMethod(digits);
+      method = await lookupCreditMethod(publicKey, digits);
       if (!method) return { error: 'Bandeira não aceita. Use Visa, Mastercard, Elo, Amex ou Hipercard.', method: null };
       cvc = method.settings?.[0]?.security_code?.length || (method.id === 'amex' ? 4 : 3);
     }
     if (card.name.trim().length < 2) return { error: 'Informe o nome impresso no cartão.', method };
     if (!isValidExpiry(card.expiry)) return { error: 'Validade inválida ou cartão vencido.', method };
     if (card.cvc.length !== cvc) return { error: `O CVV deve ter ${cvc} dígitos.`, method };
-    if (!isValidCpf(card.docNumber)) return { error: 'CPF do titular inválido.', method };
+    if (!isValidCpf(card.docNumber.replace(/\D/g, ''))) return { error: 'CPF do titular inválido.', method };
     return { error: null, method };
   }
 
@@ -211,7 +195,8 @@ export default function PaymentForm({
       setStatusText('Processando pagamento...');
       const digits = card.number.replace(/\D/g, '');
       const [month, year] = card.expiry.split('/');
-      const mp = await getMercadoPago();
+      // Token criado com a chave pública da LOJA: o pagamento cai na conta Mercado Pago dela
+      const mp = await getMercadoPago(publicKey);
 
       let token: { id?: string };
       try {
@@ -229,7 +214,7 @@ export default function PaymentForm({
       }
       if (!token?.id) throw new Error('Não foi possível validar o cartão. Confira os dados.');
 
-      const paymentMethodId = (method ?? (await lookupCreditMethod(digits)))?.id ?? brand;
+      const paymentMethodId = (method ?? (await lookupCreditMethod(publicKey, digits)))?.id ?? brand;
 
       // Mesma tentativa (mesmo pedido) = mesma chave: repetir depois de uma falha de rede não cobra de novo
       const attempt = attemptKey(attemptRef.current, JSON.stringify(payload));
@@ -238,19 +223,15 @@ export default function PaymentForm({
       // O valor não é enviado: o servidor calcula a partir do pedido
       let data: CardPaymentResponse;
       try {
-        ({ data } = await api.post<CardPaymentResponse>(
-          '/payment/card',
-          {
-            order: payload,
-            token: token.id,
-            paymentMethodId,
-            installments: 1,
-            docType: 'CPF',
-            docNumber: card.docNumber.replace(/\D/g, ''),
-            idempotencyKey: attempt.key,
-          },
-          { timeout: PAYMENT_TIMEOUT_MS },
-        ));
+        data = await storeCheckoutApi(storeSlug).createCard({
+          order: payload,
+          token: token.id,
+          paymentMethodId,
+          installments: 1,
+          docType: 'CPF',
+          docNumber: card.docNumber.replace(/\D/g, ''),
+          idempotencyKey: attempt.key,
+        });
       } catch (error) {
         if (isUncertainFailure(error)) {
           throw new Error(
@@ -315,7 +296,8 @@ export default function PaymentForm({
   const working = processing || busy;
   const buttonDisabled = working || !!blockedReason;
   const inputClass =
-    'w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none transition-all dark:text-white disabled:opacity-60';
+    'w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-brand outline-none transition-all text-gray-900 dark:text-white disabled:opacity-60';
+  const errorId = `${fieldId}-error`;
 
   return (
     <div className="space-y-6">
@@ -328,12 +310,14 @@ export default function PaymentForm({
         issuer={issuerFor(brand)}
       />
 
-      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate aria-describedby={formError ? errorId : undefined}>
         <fieldset disabled={working} className="space-y-4">
+          <legend className="sr-only">Dados do cartão de crédito</legend>
           <div>
-            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">Número do Cartão</label>
+            <label htmlFor={`${fieldId}-number`} className={LABEL_CLASS}>Número do Cartão</label>
             <div className="relative">
               <input
+                id={`${fieldId}-number`}
                 type="text"
                 inputMode="numeric"
                 autoComplete="cc-number"
@@ -346,13 +330,14 @@ export default function PaymentForm({
                 maxLength={19}
                 required
               />
-              <CardIcon className="absolute left-3 top-3.5 text-gray-400 dark:text-gray-500" size={18} />
+              <CardIcon className="absolute left-3 top-3.5 text-gray-400 dark:text-gray-500" size={18} aria-hidden="true" />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">Nome no Cartão</label>
+            <label htmlFor={`${fieldId}-name`} className={LABEL_CLASS}>Nome no Cartão</label>
             <input
+              id={`${fieldId}-name`}
               type="text"
               autoComplete="cc-name"
               name="name"
@@ -368,8 +353,9 @@ export default function PaymentForm({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">Validade</label>
+              <label htmlFor={`${fieldId}-expiry`} className={LABEL_CLASS}>Validade</label>
               <input
+                id={`${fieldId}-expiry`}
                 type="text"
                 inputMode="numeric"
                 autoComplete="cc-exp"
@@ -384,9 +370,10 @@ export default function PaymentForm({
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">CVV</label>
+              <label htmlFor={`${fieldId}-cvc`} className={LABEL_CLASS}>CVV</label>
               <div className="relative">
                 <input
+                  id={`${fieldId}-cvc`}
                   type="password"
                   inputMode="numeric"
                   autoComplete="cc-csc"
@@ -399,14 +386,15 @@ export default function PaymentForm({
                   maxLength={brand === UNKNOWN_BRAND ? 4 : cvcLength}
                   required
                 />
-                <Lock className="absolute left-3 top-3.5 text-gray-400 dark:text-gray-500" size={18} />
+                <Lock className="absolute left-3 top-3.5 text-gray-400 dark:text-gray-500" size={18} aria-hidden="true" />
               </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">CPF do Titular</label>
+            <label htmlFor={`${fieldId}-doc`} className={LABEL_CLASS}>CPF do Titular</label>
             <input
+              id={`${fieldId}-doc`}
               type="text"
               inputMode="numeric"
               name="docNumber"
@@ -421,7 +409,8 @@ export default function PaymentForm({
           </div>
         </fieldset>
 
-        {IS_TEST_KEY && (
+        {/* Só com a chave de TESTE (sandbox) da loja: nada é cobrado de verdade */}
+        {isTestKey && (
           <p className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-800 rounded-lg p-3">
             Ambiente de testes: use o cartão <b>5031 4332 1540 6351</b>, validade <b>11/30</b>, CVV <b>123</b> e CPF <b>123.456.789-09</b>.
             Nenhum valor real é cobrado.
@@ -429,8 +418,8 @@ export default function PaymentForm({
         )}
 
         {formError && (
-          <div role="alert" className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm flex items-start gap-2">
-            <AlertCircle size={18} className="shrink-0 mt-0.5" />
+          <div id={errorId} role="alert" className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm flex items-start gap-2">
+            <AlertCircle size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
             <span>{formError}</span>
           </div>
         )}
@@ -442,11 +431,11 @@ export default function PaymentForm({
         >
           {working ? (
             <>
-              <Loader2 size={18} className="animate-spin" /> {statusText || 'Aguarde...'}
+              <Loader2 size={18} className="animate-spin" aria-hidden="true" /> {statusText || 'Aguarde...'}
             </>
           ) : (
             <>
-              <Lock size={18} /> {total !== null ? `Pagar ${formatBRL(total)}` : 'Pagar com cartão'}
+              <Lock size={18} aria-hidden="true" /> {total !== null ? `Pagar ${formatCurrency(total)}` : 'Pagar com cartão'}
             </>
           )}
         </button>

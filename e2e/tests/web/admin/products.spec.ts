@@ -63,7 +63,7 @@ test.describe('Cardápio (administrador)', () => {
     const name = `Burger WA ${uid('p')}`;
     const newAddonName = `Molho WA ${uid('m')}`;
     await openProducts(page);
-    await page.getByRole('button', { name: 'Novo Produto' }).click();
+    await page.getByRole('button', { name: 'Novo Produto' }).first().click(); // o do cabeçalho (a lista vazia tem outro)
     const dialog = productDialog(page, 'Novo Produto');
     await expect(dialog).toBeVisible();
 
@@ -127,7 +127,7 @@ test.describe('Cardápio (administrador)', () => {
   test('produto com um único adicional selecionado fica ligado exatamente a esse adicional', async ({ page }) => {
     const name = `Unico WA ${uid('p')}`;
     await openProducts(page);
-    await page.getByRole('button', { name: 'Novo Produto' }).click();
+    await page.getByRole('button', { name: 'Novo Produto' }).first().click(); // o do cabeçalho (a lista vazia tem outro)
     const dialog = productDialog(page, 'Novo Produto');
     await fieldByLabel(dialog, 'Nome').fill(name);
     await fieldByLabel(dialog, 'Preço').fill('1500');
@@ -361,7 +361,7 @@ test.describe('Cardápio (administrador)', () => {
   test('formulário de produto exige nome e preço e não envia nada à API enquanto inválido', async ({ page }) => {
     await openProducts(page);
     const writes = trackApiWrites(page);
-    await page.getByRole('button', { name: 'Novo Produto' }).click();
+    await page.getByRole('button', { name: 'Novo Produto' }).first().click(); // o do cabeçalho (a lista vazia tem outro)
     const dialog = productDialog(page, 'Novo Produto');
     const submit = dialog.getByRole('button', { name: 'Criar Produto' });
 
@@ -386,7 +386,7 @@ test.describe('Cardápio (administrador)', () => {
   test('preço promocional maior ou igual ao preço é recusado antes de enviar', async ({ page }) => {
     await openProducts(page);
     const writes = trackApiWrites(page);
-    await page.getByRole('button', { name: 'Novo Produto' }).click();
+    await page.getByRole('button', { name: 'Novo Produto' }).first().click(); // o do cabeçalho (a lista vazia tem outro)
     const dialog = productDialog(page, 'Novo Produto');
     await fieldByLabel(dialog, 'Nome').fill(`Promo inválida ${uid('p')}`);
     await fieldByLabel(dialog, 'Preço').fill('2000');
@@ -402,7 +402,7 @@ test.describe('Cardápio (administrador)', () => {
 
   test('arquivo que não é imagem é recusado pelo seletor de imagem do produto', async ({ page }, testInfo) => {
     await openProducts(page);
-    await page.getByRole('button', { name: 'Novo Produto' }).click();
+    await page.getByRole('button', { name: 'Novo Produto' }).first().click(); // o do cabeçalho (a lista vazia tem outro)
     const dialog = productDialog(page, 'Novo Produto');
     const chooserPromise = page.waitForEvent('filechooser');
     await dialog.getByText('Alterar Imagem').click();
@@ -415,7 +415,7 @@ test.describe('Cardápio (administrador)', () => {
     const product = await createProduct({ name: `SemFoto WA ${uid('p')}`, price: 10 });
     await openProducts(page);
 
-    await page.getByRole('button', { name: 'Novo Produto' }).click();
+    await page.getByRole('button', { name: 'Novo Produto' }).first().click(); // o do cabeçalho (a lista vazia tem outro)
     const createDialog = productDialog(page, 'Novo Produto');
     const chooserPromise = page.waitForEvent('filechooser');
     await createDialog.getByText('Alterar Imagem').click();

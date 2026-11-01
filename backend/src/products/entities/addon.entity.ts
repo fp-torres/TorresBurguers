@@ -3,12 +3,26 @@ import {
   PrimaryGeneratedColumn,
   Column,
   DeleteDateColumn,
-} from 'typeorm'; // <--- Importado
+  Index,
+  JoinColumn,
+  ManyToOne,
+  type Relation,
+} from 'typeorm';
+import { Store } from '../../store/entities/store.entity';
 
 @Entity('addons')
 export class Addon {
   @PrimaryGeneratedColumn()
   id: number;
+
+  /** Loja dona do adicional: um produto só aceita adicionais da própria loja. */
+  @Index('IDX_addons_store_id')
+  @Column({ type: 'int' })
+  store_id: number;
+
+  @ManyToOne(() => Store, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'store_id', foreignKeyConstraintName: 'FK_addons_store' })
+  store?: Relation<Store>;
 
   @Column()
   name: string;
@@ -28,7 +42,7 @@ export class Addon {
   @Column({ default: 'geral' })
   category: string;
 
-  // --- NOVA COLUNA PARA SOFT DELETE ---
+  // Soft delete (lixeira)
   @DeleteDateColumn()
   deleted_at: Date;
 }

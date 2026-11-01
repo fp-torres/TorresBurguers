@@ -1,7 +1,12 @@
+import { toDate, type DateInput } from './dates';
+
 // --- FORMATADORES FIXOS EM pt-BR ---
 // Não dependem do idioma do navegador (um navegador em inglês mostraria "1:05 PM").
 
 const currencyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const compactCurrencyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 1 });
+const integerFormatter = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
+const compactNumberFormatter = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
 const timeFormatter = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' });
 const dateTimeFormatter = new Intl.DateTimeFormat('pt-BR', {
   day: '2-digit',
@@ -11,18 +16,28 @@ const dateTimeFormatter = new Intl.DateTimeFormat('pt-BR', {
   minute: '2-digit',
 });
 
-type DateInput = string | number | Date | null | undefined;
-
-function toDate(value: DateInput): Date | null {
-  if (value === null || value === undefined || value === '') return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 /** Valor em reais: 25.9 → "R$ 25,90". Valores inválidos viram R$ 0,00. */
 export function formatCurrency(value: number | string | null | undefined): string {
   const amount = Number(value);
   return currencyFormatter.format(Number.isFinite(amount) ? amount : 0);
+}
+
+/** Eixo de valores em reais: "R$ 1,2 mil". */
+export function formatCompactCurrency(value: unknown): string {
+  const amount = Number(value);
+  return compactCurrencyFormatter.format(Number.isFinite(amount) ? amount : 0);
+}
+
+/** Quantidade inteira com separador de milhar: 1234 → "1.234". */
+export function formatInteger(value: unknown): string {
+  const amount = Number(value);
+  return integerFormatter.format(Number.isFinite(amount) ? amount : 0);
+}
+
+/** Eixo de quantidades: "1,2 mil". */
+export function formatCompactNumber(value: unknown): string {
+  const amount = Number(value);
+  return compactNumberFormatter.format(Number.isFinite(amount) ? amount : 0);
 }
 
 /** Hora e minuto: "13:05". */

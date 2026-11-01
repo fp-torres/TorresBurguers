@@ -6,6 +6,9 @@ export const MAX_ITEM_QUANTITY = 50;
 /** Tamanho máximo da observação de um item (mesmo limite da API). */
 export const MAX_OBSERVATION_LENGTH = 300;
 
+/** Adicionais por unidade de um item, somando as repetições ([Bacon, Bacon] = 2) — mesmo limite da API. */
+export const MAX_ADDONS_PER_ITEM = 50;
+
 /** Categorias de produto aceitas pela API (enum ProductCategory), com o nome exibido. */
 export const PRODUCT_CATEGORIES = [
   { id: 'hamburgueres', label: 'Hambúrgueres' },

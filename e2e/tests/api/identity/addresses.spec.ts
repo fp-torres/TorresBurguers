@@ -339,7 +339,7 @@ test.describe('Busca de CEP (GET /addresses/cep/:cep) — pública', () => {
 });
 
 test.describe('Endereço usado em pedido', () => {
-  test('excluir endereço usado em pedido não falha e o pedido continua exibindo o endereço', async ({ request }) => {
+  test('pedido guarda o retrato do endereço: editar ou excluir o endereço depois não muda o pedido', async ({ request }) => {
     const client = await newClient(request);
     const address = await createAddress(request, client.token, { neighborhood: 'Centro', street: 'Rua do Pedido Antigo' });
     const order = await createOrder(request, client.token, {
@@ -349,7 +349,13 @@ test.describe('Endereço usado em pedido', () => {
       paymentMethod: 'MONEY',
     });
     createdOrders.push(order.id);
-    expect(order.address?.id).toBe(address.id);
+    // Com o retrato (delivery_address), o endereço vivo do cadastro (global, do cliente) não sai no pedido
+    expect(order.address).toBeNull();
+    expect(order.delivery_address).toMatchObject({ street: 'Rua do Pedido Antigo', neighborhood: 'Centro', number: ADDRESS.number });
+
+    // O cliente muda o endereço do cadastro: o pedido continua com o endereço da época
+    const edit = await request.patch(`/addresses/${address.id}`, { headers: bearer(client.token), data: { street: 'Rua Nova do Cliente' } });
+    expect(edit.status(), await edit.text()).toBe(200);
 
     const del = await request.delete(`/addresses/${address.id}`, { headers: bearer(client.token) });
     expect(del.status(), await del.text()).toBe(200);
@@ -357,14 +363,16 @@ test.describe('Endereço usado em pedido', () => {
     expect(list.map((x: { id: number }) => x.id)).not.toContain(address.id);
 
     const own = await (await request.get(`/orders/${order.id}`, { headers: bearer(client.token) })).json();
-    expect(own.address).toMatchObject({ id: address.id, street: 'Rua do Pedido Antigo', neighborhood: 'Centro' });
+    expect(own.address).toBeNull();
+    expect(own.delivery_address).toMatchObject({ street: 'Rua do Pedido Antigo', neighborhood: 'Centro' });
 
     const history = await (await request.get('/orders/my-orders', { headers: bearer(client.token) })).json();
-    expect(history.find((o: { id: number }) => o.id === order.id)?.address?.street).toBe('Rua do Pedido Antigo');
+    expect(history.find((o: { id: number }) => o.id === order.id)?.delivery_address?.street).toBe('Rua do Pedido Antigo');
 
     const admin = await sessionOf(request, 'admin');
     const staffView = await (await request.get(`/orders/${order.id}`, { headers: bearer(admin.token) })).json();
-    expect(staffView.address?.street).toBe('Rua do Pedido Antigo');
+    expect(staffView.address).toBeNull();
+    expect(staffView.delivery_address?.street).toBe('Rua do Pedido Antigo');
   });
 
   test('endereço excluído não recebe pedidos novos (quote e pedido → 404)', async ({ request }) => {

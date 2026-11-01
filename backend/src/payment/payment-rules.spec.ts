@@ -1,13 +1,19 @@
 import {
   amountMatches,
+  canonicalJson,
   cardOrderMethod,
   describeMercadoPagoError,
+  externalReferenceFor,
   externalReferenceUserId,
   isFinalPaymentStatus,
   isSimulatedPaymentId,
+  isTestAccessToken,
   mercadoPagoDate,
+  mercadoPagoIdempotencyKey,
+  parseExternalReference,
   parseWebhookPaymentId,
   paymentKindFor,
+  pixMinutesFor,
   resolvePaymentMode,
   simulatedPixProgress,
   splitPayerName,
@@ -16,6 +22,36 @@ import {
 const DEV = { NODE_ENV: 'development' };
 
 describe('payment-rules', () => {
+  describe('canonicalJson (mesmo carrinho de um PIX pendente)', () => {
+    it('ignora a ordem das chaves (jsonb) e campos ausentes; a ordem dos itens e os valores contam', () => {
+      const sent = {
+        items: [{ productId: 1, quantity: 2, addonIds: [3, 4] }],
+        type: 'DELIVERY',
+        addressId: 9,
+      };
+      const stored = {
+        type: 'DELIVERY',
+        addressId: 9,
+        items: [{ addonIds: [3, 4], quantity: 2, productId: 1 }],
+      };
+      expect(canonicalJson(sent)).toBe(canonicalJson(stored));
+      expect(canonicalJson({ ...sent, observation: undefined })).toBe(
+        canonicalJson(stored),
+      );
+      expect(canonicalJson({ ...sent, addressId: 10 })).not.toBe(
+        canonicalJson(stored),
+      );
+      expect(
+        canonicalJson({
+          ...sent,
+          items: [{ productId: 1, quantity: 2, addonIds: [4, 3] }],
+        }),
+      ).not.toBe(canonicalJson(stored));
+      expect(canonicalJson(null)).toBe('null');
+      expect(canonicalJson('a"b')).toBe('"a\\"b"');
+    });
+  });
+
   describe('resolvePaymentMode', () => {
     it('em development/test sem PAYMENT_SANDBOX: sandbox quando não há token ou o token é de teste', () => {
       expect(resolvePaymentMode(DEV).sandbox).toBe(true);
@@ -229,8 +265,50 @@ describe('payment-rules', () => {
     expect(externalReferenceUserId('comestra-cliente-42-1791732193705')).toBe(
       42,
     );
+    expect(
+      externalReferenceUserId('comestra-loja-3-cliente-42-1791732193705'),
+    ).toBe(42);
     expect(externalReferenceUserId('outra-coisa')).toBeNull();
     expect(externalReferenceUserId(undefined)).toBeNull();
+  });
+
+  it('referência externa com a loja: formato novo e leitura dos dois formatos', () => {
+    const reference = externalReferenceFor('comestra', 3, 42, 1791732193705);
+    expect(reference).toBe('comestra-loja-3-cliente-42-1791732193705');
+    expect(reference.length).toBeLessThanOrEqual(120);
+    expect(parseExternalReference(reference)).toEqual({
+      storeId: 3,
+      userId: 42,
+    });
+    // Pagamentos da versão de loja única (sem a loja na referência)
+    expect(parseExternalReference('comestra-cliente-42-1791732193705')).toEqual(
+      { storeId: null, userId: 42 },
+    );
+    expect(parseExternalReference('pedido-123')).toBeNull();
+    expect(parseExternalReference(null)).toBeNull();
+  });
+
+  it('chave de idempotência do Mercado Pago: derivada de loja + cliente + chave, estável e no formato UUID', () => {
+    const key = mercadoPagoIdempotencyKey(1, 7, 'tentativa-0001');
+    expect(key).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    // A mesma tentativa repete a mesma chave (o Mercado Pago não cobra duas vezes)
+    expect(mercadoPagoIdempotencyKey(1, 7, 'tentativa-0001')).toBe(key);
+    // Outra loja, outro cliente ou outra chave → outra cobrança
+    expect(mercadoPagoIdempotencyKey(2, 7, 'tentativa-0001')).not.toBe(key);
+    expect(mercadoPagoIdempotencyKey(1, 8, 'tentativa-0001')).not.toBe(key);
+    expect(mercadoPagoIdempotencyKey(1, 7, 'tentativa-0002')).not.toBe(key);
+    expect(key).not.toContain('tentativa');
+  });
+
+  it('credenciais de teste e prazo do PIX com o Mercado Pago de verdade', () => {
+    expect(isTestAccessToken('TEST-123')).toBe(true);
+    expect(isTestAccessToken(' TEST-123')).toBe(true);
+    expect(isTestAccessToken('APP_USR-123')).toBe(false);
+    expect(pixMinutesFor({ pixExpirationMinutes: 5 }, true)).toBe(30);
+    expect(pixMinutesFor({ pixExpirationMinutes: 5 }, false)).toBe(5);
+    expect(pixMinutesFor({ pixExpirationMinutes: 45 }, true)).toBe(45);
   });
 
   it('extrai o id do pagamento das notificações do Mercado Pago (webhook e IPN)', () => {

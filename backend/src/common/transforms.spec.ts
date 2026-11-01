@@ -1,5 +1,6 @@
 import {
   emptyToNull,
+  IMAGE_REF_PATTERN,
   omitUndefined,
   parseDecimal,
   toBoolean,
@@ -72,7 +73,36 @@ describe('transforms (FormData → tipos do DTO)', () => {
     expect(emptyToNull('  ')).toBeNull();
     expect(emptyToNull(' Oi ')).toBe('Oi');
     expect(toImageRef('/uploads/foto.webp')).toBe('foto.webp');
+    expect(toImageRef('uploads/s12-compressed-1.webp')).toBe(
+      's12-compressed-1.webp',
+    );
     expect(toImageRef('')).toBeNull();
+    expect(toImageRef('null')).toBeNull();
+    expect(toImageRef(undefined)).toBeUndefined();
+  });
+
+  it('IMAGE_REF_PATTERN: nome de arquivo simples ou URL https:// (http:// e caminhos não)', () => {
+    for (const ok of [
+      'foto.webp',
+      's12-compressed-1760000000000-ab12cd34.webp',
+      '1770667391414-269457043.jpg',
+      'https://cdn.exemplo.com/fotos/x-burger.png?w=800',
+      'HTTPS://CDN.EXEMPLO.COM/X.PNG',
+    ]) {
+      expect(IMAGE_REF_PATTERN.test(ok)).toBe(true);
+    }
+    for (const bad of [
+      'http://cdn.exemplo.com/foto.png',
+      '../../etc/passwd',
+      'pasta/foto.webp',
+      '.env',
+      'javascript:alert(1)',
+      'data:image/png;base64,AAAA',
+      'foto com espaço.png',
+      'https://',
+    ]) {
+      expect(IMAGE_REF_PATTERN.test(bad)).toBe(false);
+    }
   });
 
   it('omitUndefined remove só as chaves ausentes', () => {

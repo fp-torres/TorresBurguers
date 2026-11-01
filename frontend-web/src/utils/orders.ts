@@ -39,6 +39,15 @@ export function isOnlinePayment(order: Pick<Order, 'payment_id'>): boolean {
 
 type PaymentInfo = Pick<Order, 'payment_status' | 'payment_id' | 'type'> & { status?: string };
 
+/**
+ * Pagamento online desfeito no Mercado Pago (estorno ou contestação feitos lá) sem o pedido ter sido cancelado:
+ * payment_status REFUNDED com o pedido em andamento ou concluído. A loja não vai receber por esse pagamento, então
+ * não deve entregar o pedido sem cobrar de outra forma. Cancelado e estornado é o cancelamento comum (com devolução).
+ */
+export function isPaymentReversed(order: PaymentInfo): boolean {
+  return order.payment_status === 'REFUNDED' && !!order.status && order.status !== 'CANCELED';
+}
+
 /** Rótulos comuns à equipe e ao cliente (pago, estornos e falha); null quando depende de quem lê. */
 function settledPaymentLabel(order: PaymentInfo): string | null {
   switch (order.payment_status) {
@@ -60,6 +69,8 @@ function settledPaymentLabel(order: PaymentInfo): string | null {
  * pago, estornado, estorno pendente, não cobrado ou a cobrar na entrega/retirada.
  */
 export function paymentStatusLabel(order: PaymentInfo): string {
+  // Estorno ou contestação no Mercado Pago com o pedido ainda valendo: em destaque para a equipe não entregar sem receber
+  if (isPaymentReversed(order)) return 'Estornado no Mercado Pago';
   const settled = settledPaymentLabel(order);
   if (settled) return settled;
   if (order.status === 'CANCELED') return 'Não cobrado';
@@ -80,6 +91,7 @@ export function customerPaymentStatusLabel(order: PaymentInfo): string {
 export type PaymentTone = 'paid' | 'refunded' | 'alert' | 'pending' | 'none';
 
 export function paymentStatusTone(order: PaymentInfo): PaymentTone {
+  if (isPaymentReversed(order)) return 'alert';
   switch (order.payment_status) {
     case 'PAID':
       return 'paid';

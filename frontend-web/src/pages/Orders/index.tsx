@@ -1,18 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
-  Clock, CheckCircle, XCircle, AlertTriangle, ShieldAlert, RotateCcw,
+  Clock, CheckCircle, XCircle, AlertTriangle, ShieldAlert, RotateCcw, Undo2,
   MapPin, User, AlertCircle, ChefHat, Bike, Bell, ExternalLink, Navigation, Banknote, Package, RefreshCw
 } from 'lucide-react';
-import { orderService, type Order, type OrderItem, type OrderStatus } from '../../services/orderService';
+import { orderLabel, orderService, type Order, type OrderItem, type OrderStatus } from '../../services/orderService';
 import { getApiErrorMessage, getApiErrorStatus } from '../../services/api';
 import ConfirmModal from '../../components/ConfirmModal';
 import DriverModal from '../../components/Driver/DriverModal';
 import StoreToggle from '../../components/StoreToggle';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePolling } from '../../hooks/usePolling';
 import { isOrderManager, roleLabel } from '../../utils/roles';
 import {
-  addonSummary, addressAreaLine, addressStreetLine, isCashPayment, isOrderPaid, isRefundableOnCancel, isTerminalStatus,
+  addonSummary, addressAreaLine, addressStreetLine, isCashPayment, isOrderPaid, isPaymentReversed, isRefundableOnCancel, isTerminalStatus,
   mapsSearchUrl, orderAddress, orderItemName, orderStatusLabel, paymentMethodLabel, paymentStatusLabel, paymentStatusTone,
   type PaymentTone,
 } from '../../utils/orders';
@@ -86,6 +87,8 @@ export default function Orders() {
   const canManage = isOrderManager(userRole);
   const isKitchen = userRole === 'KITCHEN';
   const isCourier = userRole === 'COURIER';
+  // Sessão de suporte: o quadro é só para consulta (a API recusa qualquer alteração)
+  const readOnly = !!user?.support_session;
 
   // Cada consulta recebe um número e só a mais recente é aplicada (respostas fora de ordem não fazem
   // um card voltar de coluna). A consulta automática não começa com outra consulta ou ação em andamento.
@@ -93,6 +96,8 @@ export default function Orders() {
   const loadInFlight = useRef(false);
   const actionsInFlight = useRef(0);
   const forbidden = useRef(false);
+  // Última resposta aplicada: a consulta de 5 s que volta igual não re-renderiza o quadro inteiro
+  const lastSnapshot = useRef<string | null>(null);
 
   const loadOrders = useCallback(async (trigger: 'poll' | 'manual' = 'manual') => {
     if (trigger === 'poll' && (loadInFlight.current || actionsInFlight.current > 0 || forbidden.current)) return;
@@ -102,7 +107,11 @@ export default function Orders() {
       // Pedidos em andamento + concluídos/cancelados das últimas 24 h (o histórico completo fica fora do quadro)
       const data = await orderService.getActive();
       if (requestId !== requestSeq.current) return;
-      setOrders([...data].sort((a, b) => b.id - a.id));
+      const snapshot = JSON.stringify(data);
+      if (snapshot !== lastSnapshot.current) {
+        lastSnapshot.current = snapshot;
+        setOrders([...data].sort((a, b) => b.id - a.id));
+      }
       setLoadError(null);
       forbidden.current = false;
     } catch (error) {
@@ -120,16 +129,29 @@ export default function Orders() {
     }
   }, [refreshUser]);
 
-  useEffect(() => {
-    loadOrders();
-    const interval = setInterval(() => loadOrders('poll'), POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [loadOrders]);
+  // Primeira carga na hora e depois a cada 5 s; pausa com a aba oculta e atualiza ao voltar
+  usePolling(() => loadOrders('poll'), POLL_INTERVAL_MS, { immediate: true });
+
+  /**
+   * Erro de uma ação no quadro. 403: o perfil (ou a situação da loja) mudou e a sessão é conferida;
+   * 404: o pedido não existe nesta loja (ou saiu dela) — não é troca de perfil, só recarrega o quadro.
+   */
+  function handleActionError(error: unknown, fallback: string) {
+    const status = getApiErrorStatus(error);
+    if (status === 404) {
+      toast.error('Este pedido não foi encontrado nesta loja. O quadro foi atualizado.');
+      return;
+    }
+    toast.error(getApiErrorMessage(error, fallback));
+    if (status === 403) void refreshUser();
+  }
 
   /** Ação no quadro: descarta consultas em andamento (trariam o status anterior) e recarrega no fim. */
   async function runAction(change: (order: Order) => Order, orderId: number, action: () => Promise<void>) {
     actionsInFlight.current += 1;
     requestSeq.current += 1;
+    // O quadro deixa de ser igual à última resposta: a próxima consulta sempre é aplicada (desfaz o otimista se a ação falhar)
+    lastSnapshot.current = null;
     // Atualização otimista (feedback visual imediato)
     setOrders(prev => prev.map(o => o.id === orderId ? change(o) : o));
     try {
@@ -155,7 +177,7 @@ export default function Orders() {
         toast.success(STATUS_MESSAGES[newStatus] || 'Status atualizado');
       } catch (error) {
         // Mostra o motivo do backend (ex.: transição inválida ou perfil sem permissão)
-        toast.error(getApiErrorMessage(error, 'Erro ao atualizar status.'));
+        handleActionError(error, 'Erro ao atualizar status.');
       }
     });
   }
@@ -170,7 +192,7 @@ export default function Orders() {
         const canceled = await orderService.cancel(order.id);
         toast.success(canceledToast(canceled));
       } catch (error) {
-        toast.error(getApiErrorMessage(error, 'Não foi possível cancelar o pedido.'));
+        handleActionError(error, 'Não foi possível cancelar o pedido.');
       }
     });
   }
@@ -198,6 +220,8 @@ export default function Orders() {
   const allCanceled = orders.filter(o => o.status === 'CANCELED');
   const refundPendingOrders = allCanceled.filter(o => o.payment_status === 'REFUND_PENDING');
   const canceledOrders = [...refundPendingOrders, ...allCanceled.filter(o => o.payment_status !== 'REFUND_PENDING').slice(0, 5)];
+  // Pagamento desfeito no Mercado Pago (estorno ou contestação) com o pedido ainda em andamento: a loja não vai receber
+  const reversedOrders = orders.filter(o => isPaymentReversed(o) && !isTerminalStatus(o.status));
 
   // Regras de Visibilidade das Colunas (Administrador e Atendente veem todas)
   const showNew = canManage || isKitchen;
@@ -215,6 +239,7 @@ export default function Orders() {
       canManage={canManage}
       isKitchen={isKitchen}
       isCourier={isCourier}
+      readOnly={readOnly}
       currentUserId={user?.id}
       onUpdateStatus={updateStatus}
       onDispatch={openDriverModal}
@@ -284,7 +309,19 @@ export default function Orders() {
           <AlertTriangle size={18} className="shrink-0 mt-0.5" />
           <p>
             <span className="font-bold">Estorno pendente em {refundPendingOrders.length} pedido(s) cancelado(s)</span>
-            {' '}({refundPendingOrders.map(o => `#${o.id}`).join(', ')}). O Mercado Pago não confirmou a devolução: conclua o estorno pelo painel do Mercado Pago.
+            {' '}({refundPendingOrders.map(o => orderLabel(o)).join(', ')}). O Mercado Pago não confirmou a devolução: conclua o estorno pelo painel do Mercado Pago.
+          </p>
+        </div>
+      )}
+
+      {/* Estorno ou contestação feitos no Mercado Pago com o pedido em andamento: não entregar sem receber */}
+      {reversedOrders.length > 0 && (
+        <div role="alert" className="flex items-start gap-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-3 rounded-2xl text-sm shrink-0">
+          <Undo2 size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
+          <p>
+            <span className="font-bold">Pagamento estornado no Mercado Pago em {reversedOrders.length} pedido(s) em andamento</span>
+            {' '}({reversedOrders.map(o => orderLabel(o)).join(', ')}). O valor foi devolvido ao cliente (estorno ou contestação):
+            não entregue sem receber de outra forma{canManage ? ', ou cancele o pedido' : ''}.
           </p>
         </div>
       )}
@@ -412,6 +449,8 @@ interface OrderCardProps {
   canManage: boolean;
   isKitchen: boolean;
   isCourier: boolean;
+  /** Sessão de suporte: sem botões de ação. */
+  readOnly: boolean;
   currentUserId?: number;
   onUpdateStatus: (id: number, status: OrderStatus) => void;
   onDispatch: (order: Order) => void;
@@ -429,7 +468,7 @@ function StatusBadgeText({ order }: { order: Order }) {
 }
 
 // --- CARD DO PEDIDO (componente próprio: não é recriado a cada atualização do quadro) ---
-function OrderCard({ order, canManage, isKitchen, isCourier, currentUserId, onUpdateStatus, onDispatch, onCancel }: OrderCardProps) {
+function OrderCard({ order, canManage, isKitchen, isCourier, readOnly, currentUserId, onUpdateStatus, onDispatch, onCancel }: OrderCardProps) {
   const isDelivery = order.type === 'DELIVERY';
   const totalOrder = Number(order.total_price);
   // Endereço salvo no pedido (retrato); pedidos antigos usam o endereço cadastrado
@@ -443,9 +482,13 @@ function OrderCard({ order, canManage, isKitchen, isCourier, currentUserId, onUp
   const changeForValue = isCashPayment(order.payment_method) ? parseMoney(order.change_for) : 0;
   const changeToReturn = changeForValue > 0 ? Math.max(0, changeForValue - totalOrder) : 0;
   const showChangeAlert = changeForValue > 0 && !isOrderPaid(order) && order.status !== 'CANCELED' && (canManage || isCourier);
+  // Estorno ou contestação no Mercado Pago sem o pedido ter sido cancelado
+  const paymentReversed = isPaymentReversed(order);
+  const reversedActive = paymentReversed && !isTerminalStatus(order.status);
 
   // RENDERIZAÇÃO DOS BOTÕES DE AÇÃO (só as transições permitidas ao perfil logado)
   const renderActions = () => {
+    if (readOnly) return null;
     // 1. PENDENTE -> PREPARANDO
     if (order.status === 'PENDING' && (canManage || isKitchen)) {
       return (
@@ -505,12 +548,16 @@ function OrderCard({ order, canManage, isKitchen, isCourier, currentUserId, onUp
   };
 
   return (
-    <div className="bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col gap-3 min-w-[300px]">
+    <div
+      data-order-id={order.id}
+      className={`bg-white dark:bg-slate-800 border rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col gap-3 min-w-[300px] ${reversedActive ? 'border-red-300 dark:border-red-800 ring-1 ring-red-200 dark:ring-red-900/60' : 'border-gray-100 dark:border-slate-700'}`}
+    >
       {/* Header do Card */}
       <div className="flex justify-between items-start gap-2 border-b border-gray-50 dark:border-slate-700 pb-3">
         <div className="min-w-0">
-          <h3 className="font-bold text-gray-800 dark:text-white text-lg flex items-center gap-2">
-            #{order.id}
+          {/* Número do pedido NA LOJA; o id interno (rotas, suporte) fica no title */}
+          <h3 className="font-bold text-gray-800 dark:text-white text-lg flex items-center gap-2" title={`ID interno ${order.id}`}>
+            {orderLabel(order)}
             <span className="text-xs font-normal text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-slate-700 px-2 py-0.5 rounded-full border border-gray-100 dark:border-slate-600">
               {formatTime(order.created_at)}
             </span>
@@ -538,7 +585,7 @@ function OrderCard({ order, canManage, isKitchen, isCourier, currentUserId, onUp
              {paymentMethodLabel(order.payment_method)}
            </span>
            <span className={`text-[10px] font-bold flex items-center gap-1 ${PAYMENT_TONE_CLASSES[paymentStatusTone(order)]}`}>
-             {order.payment_status === 'REFUND_PENDING' && <AlertTriangle size={10} />}
+             {(order.payment_status === 'REFUND_PENDING' || paymentReversed) && <AlertTriangle size={10} aria-hidden="true" />}
              {paymentStatusLabel(order)}
            </span>
          </div>
@@ -546,6 +593,20 @@ function OrderCard({ order, canManage, isKitchen, isCourier, currentUserId, onUp
            {formatCurrency(order.total_price)}
          </span>
       </div>
+
+      {/* Pagamento desfeito no Mercado Pago (estorno ou contestação): a loja não recebe por este pedido */}
+      {paymentReversed && (
+        <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 rounded-xl text-red-800 dark:text-red-300">
+          <div className="flex items-center gap-2 font-bold text-sm mb-1">
+            <Undo2 size={18} aria-hidden="true" /> PAGAMENTO ESTORNADO
+          </div>
+          <p className="text-xs">
+            {reversedActive
+              ? `O pagamento online foi desfeito no Mercado Pago (estorno ou contestação). Não entregue sem receber de outra forma${canManage ? ', ou cancele o pedido' : ''}.`
+              : 'O pagamento online foi desfeito no Mercado Pago (estorno ou contestação) depois da entrega. Confira no painel do Mercado Pago.'}
+          </p>
+        </div>
+      )}
 
       {/* Alerta de Troco */}
       {showChangeAlert && (
@@ -584,6 +645,11 @@ function OrderCard({ order, canManage, isKitchen, isCourier, currentUserId, onUp
                <Navigation size={14}/> Abrir no Google Maps <ExternalLink size={10}/>
              </a>
            )}
+         </div>
+      ) : isDelivery && isKitchen ? (
+         // A cozinha não recebe o endereço do cliente (só precisa saber que é entrega)
+         <div className="bg-orange-50 dark:bg-orange-900/20 p-2 rounded-lg text-xs text-orange-700 dark:text-orange-300 font-bold text-center border border-orange-100 dark:border-orange-800">
+           <Bike size={14} className="inline mr-1"/> Entrega (delivery)
          </div>
       ) : isDelivery ? (
          <div className="bg-red-50 dark:bg-red-900/20 p-2 rounded-lg text-xs text-red-700 dark:text-red-300 font-bold text-center border border-red-100 dark:border-red-800">
@@ -630,7 +696,7 @@ function OrderCard({ order, canManage, isKitchen, isCourier, currentUserId, onUp
       {/* Footer: Botões de Ação */}
       <div className="pt-2 mt-auto">
         {renderActions()}
-        {!isTerminalStatus(order.status) && canManage && (
+        {!isTerminalStatus(order.status) && canManage && !readOnly && (
            <button onClick={() => onCancel(order)} className="w-full text-center text-red-400 hover:text-red-600 dark:hover:text-red-300 text-xs hover:underline mt-2">
              Cancelar Pedido
            </button>

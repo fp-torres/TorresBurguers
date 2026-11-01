@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { E2E } from '../../../support/env';
 import { bearer, body } from './helpers';
 
 const ALLOWED_KEYS = ['type', 'title', 'message', 'subtitle', 'coupon', 'theme', 'details'];
@@ -58,5 +59,17 @@ test.describe('Banner de promoções (público)', () => {
     const res = await request.get('/promotions/banner', { headers: bearer('token-invalido') });
     expect(res.status()).toBe(200);
     expect(await res.text()).not.toMatch(/torres/i);
+  });
+
+  test('GET /stores/<slug>/promotions/banner (vitrine da loja) segue o mesmo contrato; loja inexistente → 404', async ({ request }) => {
+    const res = await request.get(`/stores/${E2E.demoStoreSlug}/promotions/banner`);
+    expect(res.status(), await res.text()).toBe(200);
+    const banner = await res.json();
+    expectBannerShape(banner);
+    expect(banner.coupon, 'banner sem cupom').toBeUndefined();
+    expect(JSON.stringify(banner)).not.toMatch(/torres/i);
+
+    const missing = await request.get('/stores/loja-que-nao-existe-e2e/promotions/banner');
+    expect(missing.status()).toBe(404);
   });
 });

@@ -1,5 +1,6 @@
 import {
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
@@ -23,9 +24,13 @@ export class OrderItem {
   @PrimaryGeneratedColumn()
   id: number;
 
+  // O Postgres não indexa a FK sozinho: listas de pedidos e relatórios fazem join por ela
+  @Index('IDX_order_items_order_id')
   @ManyToOne(() => Order, (order) => order.items, { onDelete: 'CASCADE' })
   order: Order;
 
+  // FK sem índice fazia seq scan em order_items na exclusão de produto (migration PerformanceIndexes)
+  @Index('IDX_order_items_product_id')
   @ManyToOne(() => Product)
   product: Product;
 

@@ -1,81 +1,137 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Facebook, Instagram, Twitter, MapPin, Phone, Mail, Clock } from 'lucide-react';
-import BrandLogo from '../BrandLogo';
-import { BRAND, STORE_INFO } from '../../config/brand';
+import { Clock, Mail, MapPin, Navigation, Phone, Store as StoreIcon } from 'lucide-react';
+import BrandLogo, { BrandMark } from '../BrandLogo';
+import StoreLogo from '../BrandLogo/StoreLogo';
+import { BRAND } from '../../config/brand';
+import type { PublicStoreProfile } from '../../services/publicStoreService';
+import {
+  formatStorePhone, groupOpeningHours, phoneHref, storeAddressLines, storeMapUrl, weekdayInTimeZone,
+} from '../../services/storefrontDisplay';
+import { storePath } from '../../utils/lastStore';
 
-export default function ClientFooter() {
+interface ClientFooterProps {
+  /** Loja da vitrine: rodapé com endereço, contato e horários dela. Sem loja: rodapé da plataforma. */
+  store?: PublicStoreProfile | null;
+}
+
+/** Rodapé da vitrine (identidade da LOJA) ou das páginas da conta (identidade da plataforma). */
+export default function ClientFooter({ store }: ClientFooterProps) {
+  return store ? <StoreFooter store={store} /> : <PlatformFooter />;
+}
+
+function StoreFooter({ store }: { store: PublicStoreProfile }) {
   const currentYear = new Date().getFullYear();
+  const address = storeAddressLines(store.address);
+  const mapUrl = storeMapUrl(store.address);
+  const phone = formatStorePhone(store.phone);
+  const tel = phoneHref(store.phone);
+  const hours = groupOpeningHours(store.opening_hours);
+  const today = weekdayInTimeZone(store.time_zone);
+  const hasContact = !!address || !!phone || !!store.email;
 
   return (
-    // Fundo branco no Light, Slate-950 no Dark
-    <footer className="bg-white dark:bg-slate-950 pt-16 pb-8 border-t-4 border-orange-600 transition-colors">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-12">
+    <footer className="bg-white dark:bg-slate-950 pt-12 pb-8 border-t-4 border-brand transition-colors">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 mb-10">
 
-          <div className="space-y-6">
-            <BrandLogo size={44} />
-            <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
-              O autêntico sabor artesanal. Ingredientes selecionados, carne suculenta e receitas exclusivas.
-            </p>
-            <div className="flex gap-4">
-              <SocialLink label="Instagram" icon={<Instagram size={20} />} />
-              <SocialLink label="Facebook" icon={<Facebook size={20} />} />
-              <SocialLink label="Twitter" icon={<Twitter size={20} />} />
-            </div>
+          <div className="space-y-4">
+            <Link to={storePath(store.slug)} className="inline-flex items-center gap-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+              <StoreLogo name={store.name} logo={store.logo} size={44} decorative />
+              <span className="text-xl font-extrabold text-gray-900 dark:text-white wrap-break-word">{store.name}</span>
+            </Link>
+            {store.description && (
+              <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">{store.description}</p>
+            )}
           </div>
 
-          <div>
-            <h4 className="text-gray-900 dark:text-white font-bold mb-6 text-lg">Navegação</h4>
+          <nav aria-labelledby="footer-nav-title">
+            <h2 id="footer-nav-title" className="text-gray-900 dark:text-white font-bold mb-4 text-lg">Navegação</h2>
             <ul className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
-              <FooterLink to="/" label="Cardápio Completo" />
-              <FooterLink to="/cart" label="Meu Carrinho" />
-              <FooterLink to="/my-orders" label="Acompanhar Pedidos" />
-              <FooterLink to="/signin" label="Login / Cadastro" />
+              <FooterLink to={storePath(store.slug)} label="Cardápio" />
+              <FooterLink to={storePath(store.slug, 'cart')} label="Meu carrinho" />
+              <FooterLink to="/my-orders" label="Acompanhar pedidos" />
+              <FooterLink to="/" label="Outros estabelecimentos" />
             </ul>
+          </nav>
+
+          <div>
+            <h2 className="text-gray-900 dark:text-white font-bold mb-4 text-lg">Atendimento</h2>
+            {hasContact ? (
+              <ul className="space-y-4 text-sm text-gray-600 dark:text-gray-400">
+                {address && (
+                  <li className="flex items-start gap-3">
+                    <MapPin size={20} className="text-brand-ink dark:text-brand-ink-dark shrink-0 mt-0.5" aria-hidden="true" />
+                    <div>
+                      <span className="sr-only">Endereço: </span>
+                      {address.street && <span className="block">{address.street}</span>}
+                      {address.area && <span className="block">{address.area}</span>}
+                      {address.zip && <span className="block">{address.zip}</span>}
+                      {mapUrl && (
+                        <a href={mapUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-1 text-xs font-bold text-brand-ink dark:text-brand-ink-dark hover:underline">
+                          <Navigation size={12} aria-hidden="true" /> Ver no mapa<span className="sr-only"> (abre em nova aba)</span>
+                        </a>
+                      )}
+                    </div>
+                  </li>
+                )}
+                {phone && (
+                  <li className="flex items-center gap-3">
+                    <Phone size={20} className="text-brand-ink dark:text-brand-ink-dark shrink-0" aria-hidden="true" />
+                    {tel ? (
+                      <a href={tel} className="hover:underline"><span className="sr-only">Telefone: </span>{phone}</a>
+                    ) : (
+                      <span><span className="sr-only">Telefone: </span>{phone}</span>
+                    )}
+                  </li>
+                )}
+                {store.email && (
+                  <li className="flex items-center gap-3 min-w-0">
+                    <Mail size={20} className="text-brand-ink dark:text-brand-ink-dark shrink-0" aria-hidden="true" />
+                    <a href={`mailto:${store.email}`} className="hover:underline break-all"><span className="sr-only">E-mail: </span>{store.email}</a>
+                  </li>
+                )}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400">A loja ainda não informou endereço e contato.</p>
+            )}
           </div>
 
-          {/* CONTATO + HORÁRIO */}
           <div>
-            <h4 className="text-gray-900 dark:text-white font-bold mb-6 text-lg">Atendimento</h4>
-            <ul className="space-y-4 text-sm text-gray-600 dark:text-gray-400">
-              <li className="flex items-start gap-3 group">
-                <MapPin size={20} className="text-orange-600 shrink-0 mt-0.5" />
-                <span>{STORE_INFO.addressLine}<br />{STORE_INFO.cityLine}</span>
-              </li>
-              <li className="flex items-start gap-3 group">
-                <Clock size={20} className="text-orange-600 shrink-0 mt-0.5" />
-                <div>
-                  <span className="block font-bold text-gray-900 dark:text-white">{STORE_INFO.openingDays}</span>
-                  <span>{STORE_INFO.openingHours}</span>
-                </div>
-              </li>
-              <li className="flex items-center gap-3 group">
-                <Phone size={20} className="text-orange-600 shrink-0" />
-                <span>{STORE_INFO.phone}</span>
-              </li>
-            </ul>
-          </div>
-
-          {/* FALE CONOSCO (e-mail de suporte da configuração da marca) */}
-          <div>
-            <h4 className="text-gray-900 dark:text-white font-bold mb-6 text-lg">Fale Conosco</h4>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Dúvidas sobre um pedido, sugestões ou problemas com a sua conta? Escreva para a gente.
-            </p>
-            <a
-              href={`mailto:${BRAND.supportEmail}`}
-              className="inline-flex items-center gap-2 bg-gray-50 dark:bg-slate-900 text-gray-800 dark:text-gray-100 px-4 py-2.5 rounded-lg border border-gray-200 dark:border-slate-800 text-sm font-medium hover:border-orange-500 hover:text-orange-600 dark:hover:text-orange-400 transition-colors break-all"
-            >
-              <Mail size={18} className="text-orange-600 shrink-0" /> {BRAND.supportEmail}
-            </a>
+            <h2 className="text-gray-900 dark:text-white font-bold mb-4 text-lg flex items-center gap-2">
+              <Clock size={18} className="text-brand-ink dark:text-brand-ink-dark" aria-hidden="true" /> Horários
+            </h2>
+            {hours.length > 0 ? (
+              <dl className="space-y-2 text-sm">
+                {hours.map((line) => {
+                  const isToday = line.dayIndexes.includes(today);
+                  return (
+                    <div key={line.days} className={`flex flex-wrap justify-between gap-x-3 gap-y-0.5 ${isToday ? 'font-bold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}`}>
+                      <dt>
+                        {line.days}
+                        {isToday && <span className="ml-1.5 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-brand/10 text-brand-ink dark:text-brand-ink-dark">Hoje</span>}
+                      </dt>
+                      <dd className={line.closed ? 'text-gray-400 dark:text-gray-500' : undefined}>{line.hours}</dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Horários não informados. O selo do topo mostra se a loja está aberta agora.</p>
+            )}
           </div>
         </div>
 
-        <div className="border-t border-gray-100 dark:border-slate-800 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-gray-500 dark:text-gray-500">
-          <p>&copy; {currentYear} {BRAND.name}. Todos os direitos reservados.</p>
-          <div className="flex gap-6">
-             <Link to="/login" className="hover:text-orange-600 transition-colors">Área do Funcionário</Link>
+        <div className="border-t border-gray-100 dark:border-slate-800 pt-6 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+          <p>&copy; {currentYear} {store.name}</p>
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
+            <Link to="/" className="inline-flex items-center gap-1.5 hover:text-gray-800 dark:hover:text-gray-200 transition-colors">
+              Pedidos online por
+              <span className="inline-flex items-center gap-1 font-bold text-gray-700 dark:text-gray-200">
+                <BrandMark size={14} /> {BRAND.name}
+              </span>
+            </Link>
+            <Link to="/login" className="hover:text-gray-800 dark:hover:text-gray-200 transition-colors">Área do lojista</Link>
           </div>
         </div>
       </div>
@@ -83,10 +139,38 @@ export default function ClientFooter() {
   );
 }
 
-function FooterLink({ to, label }: { to: string, label: string }) {
-  return <li><Link to={to} className="hover:text-orange-600 transition-colors flex items-center gap-2"><span className="w-1 h-1 bg-orange-600 rounded-full"></span>{label}</Link></li>;
+function PlatformFooter() {
+  const currentYear = new Date().getFullYear();
+  return (
+    <footer className="bg-white dark:bg-slate-950 border-t border-gray-100 dark:border-slate-800 transition-colors">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 text-sm text-gray-500 dark:text-gray-400">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <BrandLogo size={28} />
+          <nav aria-label="Links da plataforma" className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+            <Link to="/" className="inline-flex items-center gap-1.5 hover:text-orange-700 dark:hover:text-orange-400 transition-colors">
+              <StoreIcon size={14} aria-hidden="true" /> Estabelecimentos
+            </Link>
+            <Link to="/cadastrar-loja" className="font-bold text-orange-700 dark:text-orange-400 hover:underline">Cadastre seu estabelecimento</Link>
+            <Link to="/login" className="hover:text-orange-700 dark:hover:text-orange-400 transition-colors">Área do lojista</Link>
+            <a href={`mailto:${BRAND.supportEmail}`} className="inline-flex items-center gap-1.5 hover:text-orange-700 dark:hover:text-orange-400 transition-colors break-all">
+              <Mail size={14} aria-hidden="true" className="shrink-0" />{BRAND.supportEmail}
+            </a>
+          </nav>
+        </div>
+        <p className="text-center md:text-left text-xs border-t border-gray-100 dark:border-slate-800 pt-4">
+          &copy; {currentYear} {BRAND.name}. Todos os direitos reservados.
+        </p>
+      </div>
+    </footer>
+  );
 }
 
-function SocialLink({ icon, label }: { icon: ReactNode, label: string }) {
-  return <a href="#" aria-label={label} title={label} onClick={(e) => e.preventDefault()} className="bg-gray-100 dark:bg-slate-900 p-2.5 rounded-lg hover:bg-orange-600 hover:text-white text-gray-500 dark:text-gray-400 transition-all border border-transparent dark:border-slate-800">{icon}</a>;
+function FooterLink({ to, label }: { to: string; label: ReactNode }) {
+  return (
+    <li>
+      <Link to={to} className="hover:text-brand-ink dark:hover:text-brand-ink-dark transition-colors flex items-center gap-2">
+        <span className="w-1 h-1 bg-brand rounded-full" aria-hidden="true" />{label}
+      </Link>
+    </li>
+  );
 }

@@ -163,7 +163,7 @@ export function toIntArray(value: unknown): unknown {
 }
 
 /**
- * Referência de imagem salva no banco: nome de arquivo de /uploads ou URL http(s).
+ * Referência de imagem salva no banco: nome de arquivo de /uploads ou URL https.
  * "/uploads/foto.webp" → "foto.webp"; vazio/"null" → null (remove a imagem).
  */
 export function toImageRef(value: unknown): unknown {
@@ -171,8 +171,12 @@ export function toImageRef(value: unknown): unknown {
   return typeof text === 'string' ? text.replace(/^\/?uploads\//, '') : text;
 }
 
-/** Nome de arquivo simples (sem pastas) ou URL http(s). */
-export const IMAGE_REF_PATTERN = /^(https?:\/\/\S+|[\w-][\w.-]*)$/;
+/**
+ * Formato da referência de imagem: nome de arquivo simples (sem pastas) ou URL https://.
+ * http:// é recusado (conteúdo misto/sem criptografia na vitrine). A posse do arquivo (prefixo
+ * da loja) é conferida no serviço: ver common/uploads/store-files.ts → isAllowedStoreImageRef.
+ */
+export const IMAGE_REF_PATTERN = /^(https:\/\/\S+|[\w-][\w.-]*)$/i;
 
 /** Cópia do objeto sem as chaves cujo valor é undefined (campos não enviados no PATCH). */
 export function omitUndefined<T extends object>(input: T): Partial<T> {

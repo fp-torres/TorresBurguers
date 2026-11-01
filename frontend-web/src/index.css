@@ -1,6 +1,26 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
+/*
+ * Cor da marca da LOJA na vitrine (/loja/:slug).
+ * A vitrine grava --store-brand* no <html> a partir de primary_color (validada #RRGGBB; ver
+ * services/storefrontDisplay.ts → brandCssVariables). Sem cor da loja — e fora da vitrine —
+ * valem os valores padrão abaixo, que são o laranja da plataforma.
+ * "inline": as classes usam var(--store-brand...) diretamente, então a cor muda na hora em que a
+ * variável muda (sem depender de onde o tema foi declarado).
+ *
+ * Classes geradas: bg-brand, hover:bg-brand-hover, text-brand-contrast (texto sobre a cor),
+ * text-brand-ink dark:text-brand-ink-dark (texto na cor da loja com contraste AA), border-brand,
+ * ring-brand, bg-brand/10 (fundo suave) etc.
+ */
+@theme inline {
+  --color-brand: var(--store-brand, #ea580c);
+  --color-brand-hover: var(--store-brand-hover, #c2410c);
+  --color-brand-contrast: var(--store-brand-contrast, #ffffff);
+  --color-brand-ink: var(--store-brand-ink, #c2410c);
+  --color-brand-ink-dark: var(--store-brand-ink-dark, #fb923c);
+}
+
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;

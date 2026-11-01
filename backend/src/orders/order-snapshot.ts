@@ -43,6 +43,11 @@ export interface OrderItemSnapshot {
 }
 
 export interface OrderSnapshot {
+  /**
+   * Loja do orçamento (produtos, adicionais, taxas). Ausente nos pagamentos anteriores às várias
+   * lojas: nesses, vale a loja do próprio pagamento (payments.store_id).
+   */
+  storeId?: number;
   type: OrderType;
   addressId: number | null;
   deliveryAddress: DeliveryAddressSnapshot | null;
@@ -55,6 +60,8 @@ export interface OrderSnapshot {
 
 /** Dados do pedido que não vêm do orçamento. */
 export interface OrderMeta {
+  /** Loja do pedido: a da vitrine (pago na entrega) ou a do pagamento (pago online). */
+  storeId: number;
   userId: number;
   paymentMethod: string;
   paymentStatus: PaymentStatus;
@@ -91,6 +98,7 @@ export function addressSnapshot(
 /** Orçamento validado → retrato serializável (vai para o pedido ou fica guardado no pagamento). */
 export function toOrderSnapshot(priced: PricedOrder): OrderSnapshot {
   return {
+    storeId: priced.storeId,
     type: priced.type,
     addressId: priced.address?.id ?? null,
     deliveryAddress: addressSnapshot(priced.address),
@@ -118,6 +126,9 @@ export function isOrderSnapshot(value: unknown): value is OrderSnapshot {
   if (!value || typeof value !== 'object') return false;
   const snapshot = value as Partial<OrderSnapshot>;
   return (
+    // storeId é opcional (retratos antigos), mas quando existe precisa ser um id válido
+    (snapshot.storeId === undefined ||
+      (Number.isInteger(snapshot.storeId) && snapshot.storeId > 0)) &&
     (snapshot.type === OrderType.DELIVERY ||
       snapshot.type === OrderType.TAKEOUT) &&
     Array.isArray(snapshot.items) &&
@@ -144,6 +155,7 @@ export function buildOrder(
   const keepAddress =
     snapshot.addressId !== null && (!existing || existing.addressExists);
   return {
+    store_id: meta.storeId,
     user: { id: meta.userId },
     status: OrderStatus.PENDING,
     payment_status: meta.paymentStatus,

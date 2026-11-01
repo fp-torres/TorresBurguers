@@ -39,12 +39,18 @@ export function toPromotionPrice(value: unknown): unknown {
 
 const CATEGORIES = Object.values(ProductCategory).join(', ');
 
-/** Referência de imagem: nome de arquivo enviado em POST /uploads ou URL http(s). */
+/**
+ * Mensagem única das referências de imagem recusadas: formato inválido, http://, caminho ou
+ * arquivo que não foi enviado pela loja (o serviço confere a posse; ver isAllowedStoreImageRef).
+ */
+export const INVALID_IMAGE_REF_MESSAGE =
+  'Imagem inválida: envie o arquivo pelo painel (campo "file" ou POST /uploads) ou informe uma URL https://.';
+
+/** Referência de imagem: nome de arquivo enviado pela loja em POST /uploads ou URL https://. */
 export const IMAGE_REF_RULES = {
   maxLength: 500,
   pattern: IMAGE_REF_PATTERN,
-  invalid:
-    'Imagem inválida: informe o nome de um arquivo enviado em /uploads ou uma URL http(s).',
+  invalid: INVALID_IMAGE_REF_MESSAGE,
   tooLong: 'Referência de imagem muito longa.',
 };
 
@@ -126,7 +132,7 @@ export class CreateProductDto {
   @ApiPropertyOptional({
     nullable: true,
     description:
-      'Nome de um arquivo enviado em POST /uploads ou URL http(s). Se a requisição trouxer o arquivo no campo "file", ele prevalece.',
+      'Nome de um arquivo enviado por esta loja em POST /uploads ou URL https://. Se a requisição trouxer o arquivo no campo "file", ele prevalece.',
   })
   @Transform(({ value }) => toImageRef(value))
   @IsOptional()

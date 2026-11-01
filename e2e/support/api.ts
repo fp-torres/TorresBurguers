@@ -2,9 +2,59 @@ import { request, expect, type APIRequestContext, type APIResponse } from '@play
 import { E2E } from './env';
 import { DEFAULT_USERS, type DefaultUserKey } from './users';
 
+/** Resumo da loja na sessão (SessionUser.store): null para clientes e para a administração da plataforma. */
+export interface SessionStore {
+  id: number;
+  slug: string;
+  name: string;
+  logo: string | null;
+  primary_color: string | null;
+  account_status: string;
+}
+
 export interface Session {
   token: string;
-  user: { id: number; name: string; email: string; role: string; [k: string]: unknown };
+  user: {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    /** Loja da equipe (null para clientes e para o superadmin). */
+    store_id?: number | null;
+    platform_role?: string | null;
+    store?: SessionStore | null;
+    [k: string]: unknown;
+  };
+}
+
+/** Perfil público da loja demo (GET /stores/<slug>): a loja da equipe padrão e a loja padrão das rotas antigas. */
+export interface PublicStore {
+  id: number;
+  slug: string;
+  name: string;
+  is_open: boolean;
+  address: Record<string, string | null>;
+  [k: string]: unknown;
+}
+
+let demoStorePromise: Promise<PublicStore> | null = null;
+
+/** Loja demo (uma consulta por worker): id, slug, nome e endereço de retirada. */
+export function demoStore(): Promise<PublicStore> {
+  demoStorePromise ??= (async () => {
+    const ctx = await request.newContext({ baseURL: E2E.apiURL });
+    try {
+      const res = await ctx.get(`/stores/${E2E.demoStoreSlug}`);
+      expect(res.ok(), `GET /stores/${E2E.demoStoreSlug}: ${res.status()} ${await res.text()}`).toBeTruthy();
+      return (await res.json()) as PublicStore;
+    } finally {
+      await ctx.dispose();
+    }
+  })();
+  demoStorePromise.catch(() => {
+    demoStorePromise = null;
+  });
+  return demoStorePromise;
 }
 
 /** Sufixo único por execução para isolar dados criados pelos testes. */

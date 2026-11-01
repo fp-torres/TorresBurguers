@@ -40,14 +40,13 @@ describe('AppController — GET /health', () => {
     await app.close();
   });
 
-  it('responde 200 com status, nome do sistema e versão do package.json', async () => {
+  it('responde 200 só com { status: "ok" }: sem nome do sistema nem versão', async () => {
     const res = await request(app.getHttpServer()).get('/health').expect(200);
 
-    expect(res.body).toEqual({
-      status: 'ok',
-      name: BRAND.name,
-      version: packageVersion,
-    });
+    expect(res.body).toEqual({ status: 'ok' });
+    expect(res.text).not.toContain(packageVersion);
+    expect(res.text).not.toContain(BRAND.name);
+    expect(res.text).not.toMatch(/version|name/i);
   });
 
   it('é público: nenhum guard na rota nem no controller', () => {
@@ -60,18 +59,8 @@ describe('AppController — GET /health', () => {
     expect(Reflect.getMetadata(GUARDS_METADATA, AppController)).toBeUndefined();
   });
 
-  it('usa APP_NAME quando definido', () => {
+  it('não expõe o nome configurado em APP_NAME', () => {
     process.env.APP_NAME = 'Lanchonete do Bairro';
-    expect(appController.getHealth().name).toBe('Lanchonete do Bairro');
-  });
-
-  it('usa o nome padrão da marca quando APP_NAME está vazio', () => {
-    process.env.APP_NAME = '';
-    expect(appController.getHealth()).toEqual({
-      status: 'ok',
-      name: BRAND.name,
-      version: packageVersion,
-    });
-    expect(BRAND.name).toBeTruthy();
+    expect(appController.getHealth()).toEqual({ status: 'ok' });
   });
 });

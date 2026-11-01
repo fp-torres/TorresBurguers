@@ -2,21 +2,17 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
+    <!-- No build de produção, a Content-Security-Policy entra logo acima (vite.config.ts); o servidor deve enviar
+         também os cabeçalhos de segurança listados lá (frame-ancestors e outros não valem por meta) -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Cor da barra do navegador: a da plataforma; na vitrine de uma loja, a cor da loja (StoreLayout) -->
     <meta name="theme-color" content="#ea580c" />
     <meta name="description" content="Cardápio digital, pedidos online e gestão da cozinha, do balcão e das entregas em um só lugar." />
-    <!-- Título neutro até o app carregar; depois ele vira "Nome — slogan" (src/config/brand.ts) -->
+    <!-- Título neutro até o app carregar; depois ele vira "Nome — slogan" (src/config/brand.ts) ou "<loja> | Nome" na vitrine -->
     <title>Cardápio e pedidos online</title>
-    <!-- SDK do Mercado Pago (pagamento com cartão). async: não trava a abertura do site, nem sem internet.
-         data-status avisa o app quando o script terminou (src/services/mercadoPago.ts). -->
-    <script
-      id="mercadopago-sdk"
-      src="https://sdk.mercadopago.com/js/v2"
-      async
-      onload="this.dataset.status='loaded'"
-      onerror="this.dataset.status='error'"
-    ></script>
+    <!-- O SDK do Mercado Pago (cartão) é carregado sob demanda, só quando o formulário de cartão de uma loja abre
+         (src/services/mercadoPago.ts): o diretório, o painel e o superpainel não baixam scripts de pagamento. -->
   </head>
   <body>
     <noscript>Ative o JavaScript do navegador para ver o cardápio e fazer pedidos.</noscript>

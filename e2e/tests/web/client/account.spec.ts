@@ -1,16 +1,22 @@
 import { test, expect, request, type APIRequestContext, type Page } from '@playwright/test';
 import { contextAs, login } from '../../../support/api';
+import { expectCookieSession } from '../../../support/web';
 import {
   API_URL,
   STORAGE_KEYS,
   addToCart,
   cartLine,
   createClient,
+  demoStore,
   loginViaUI,
+  openCart,
   openHome,
   readStorage,
   searchBox,
   seedCatalog,
+  storePath,
+  storeUrl,
+  storedCartItems,
   trackRequests,
   useSession,
   waitForStoreOpen,
@@ -35,14 +41,20 @@ async function newClient(name: string): Promise<TestClient> {
   return client;
 }
 
-/** Campos de "Meus Dados" (rótulos sem htmlFor: localizados pelo rótulo vizinho). */
+/**
+ * Campos de "Meus Dados" (rótulos sem htmlFor: localizados pelo rótulo vizinho). A senha fica no formulário
+ * "Trocar senha" da seção "Segurança da conta" (POST /account/password, com a senha atual).
+ */
 function profileFields(page: Page) {
+  const passwordForm = page.getByRole('form', { name: 'Trocar senha' });
   return {
     name: page.locator('label:text-is("Nome") + div input'),
     phone: page.locator('label:text-is("Celular") + div input'),
-    email: page.locator('label:text-is("Email (Não editável)") + div input'),
-    newPassword: page.getByPlaceholder('Nova senha (deixe vazio para não alterar)'),
-    confirmPassword: page.getByPlaceholder('Confirme a nova senha'),
+    email: page.locator('label:text-is("E-mail") + div input'),
+    currentPassword: passwordForm.getByLabel('Senha atual'),
+    newPassword: passwordForm.getByLabel(/^Nova senha\s*\*?$/),
+    confirmPassword: passwordForm.getByLabel('Confirmar nova senha'),
+    savePassword: passwordForm.getByRole('button', { name: 'Salvar nova senha' }),
     save: page.getByRole('button', { name: 'Salvar Alterações' }),
   };
 }
@@ -59,7 +71,7 @@ test.describe('Meus Dados', () => {
     await expect(page.getByRole('heading', { name: /Meus Dados/ })).toBeVisible();
     await expect(field.name).toHaveValue('Cliente Perfil');
     await expect(field.email).toHaveValue(client.email);
-    await expect(field.email).toBeDisabled();
+    await expect(field.email).not.toBeEditable();
 
     const newName = `Maria Perfil ${Date.now().toString(36)}`;
     await field.name.fill(newName);
@@ -88,23 +100,27 @@ test.describe('Meus Dados', () => {
   test('sem alterações, senha fraca ou confirmação diferente não chamam a API', async ({ page }) => {
     const client = await newClient('Cliente Regras');
     await useSession(page, client.session);
-    const patches = trackRequests(page, (method, path) => method === 'PATCH' && path.startsWith('/users/'));
+    const patches = trackRequests(
+      page,
+      (method, path) => (method === 'PATCH' && path.startsWith('/users/')) || path === '/account/password',
+    );
     await page.goto('/profile');
     const field = profileFields(page);
 
     await field.save.click();
     await expect(page.getByText('Nenhuma alteração para salvar!')).toBeVisible();
 
+    await field.currentPassword.fill(client.password);
     await field.newPassword.fill('fraca');
-    await expect(page.getByText('9+ caracteres')).toBeVisible();
-    await field.save.click();
+    await expect(page.getByText('Mínimo de 9 caracteres')).toBeVisible();
+    await field.savePassword.click();
     await expect(
       page.getByText('A senha precisa ter no mínimo 9 caracteres, uma letra maiúscula e um número ou símbolo.'),
     ).toBeVisible();
 
     await field.newPassword.fill('SenhaForte@1');
     await field.confirmPassword.fill('SenhaForte@2');
-    await field.save.click();
+    await field.savePassword.click();
     await expect(page.getByText('A confirmação não confere com a nova senha.')).toBeVisible();
 
     expect(patches).toEqual([]);
@@ -113,10 +129,17 @@ test.describe('Meus Dados', () => {
     await anon.dispose();
   });
 
-  test('trocar a senha funciona e password_hash (ou a senha) nunca vai para o localStorage', async ({ page }) => {
+  test('trocar a senha funciona, mantém esta sessão com o token novo, encerra as outras e a senha nunca vai para o localStorage', async ({ page }) => {
     const client = await newClient('Rita Senha');
+    // Login pela tela: sessão do site em cookie (o token de acesso fica só na memória da aba)
+    const loggedIn = page.waitForResponse((r) => r.url() === `${API_URL}/auth/login` && r.request().method() === 'POST');
     await loginViaUI(page, client.email, client.password);
+    const tokenBefore = (await (await loggedIn).json()).access_token as string;
+    // Sem loja visitada antes, o cliente cai no diretório de lojas
     await expect(page).toHaveURL(/\/$/);
+    await expectCookieSession(page);
+    const markerBefore = JSON.parse((await readStorage(page))[STORAGE_KEYS.session]);
+    expect(tokenBefore).toBeTruthy();
 
     await page.getByRole('button', { name: 'Menu da conta' }).click();
     await page.getByRole('link', { name: 'Meus Dados' }).click();
@@ -124,12 +147,19 @@ test.describe('Meus Dados', () => {
 
     const newPassword = 'NovaSenha@2026';
     const field = profileFields(page);
+    // Troca da senha em "Segurança da conta": com a senha atual (POST /account/password)
+    await field.currentPassword.fill(client.password);
     await field.newPassword.fill(newPassword);
     await field.confirmPassword.fill(newPassword);
-    const patch = page.waitForResponse((r) => r.url() === `${API_URL}/users/${client.session.user.id}` && r.request().method() === 'PATCH');
-    await field.save.click();
-    expect(JSON.stringify(await (await patch).json())).not.toMatch(/password/i);
-    await expect(page.getByText('Perfil atualizado com sucesso!')).toBeVisible();
+    const changed = page.waitForResponse((r) => r.url() === `${API_URL}/account/password` && r.request().method() === 'POST');
+    await field.savePassword.click();
+    const response = await changed;
+    expect(response.status()).toBe(200);
+    const changedSession = await response.json();
+    expect(JSON.stringify(changedSession.user)).not.toMatch(/password/i);
+    // Na sessão em cookie, a sessão nova também vem em cookie
+    expect(changedSession.session_transport).toBe('cookie');
+    await expect(page.getByText('Senha alterada. As sessões em outros aparelhos foram encerradas.')).toBeVisible();
 
     const storage = await readStorage(page);
     for (const [key, value] of Object.entries(storage)) {
@@ -137,10 +167,24 @@ test.describe('Meus Dados', () => {
       expect(value, `localStorage[${key}]`).not.toContain(newPassword);
       expect(value, `localStorage[${key}]`).not.toContain(client.password);
     }
+    // Sessão guardada por lista de campos permitidos (SessionUser + support_session)
     const storedUser = JSON.parse(storage[STORAGE_KEYS.user]);
-    expect(Object.keys(storedUser).filter((key) => !['id', 'name', 'email', 'role', 'phone', 'avatar'].includes(key))).toEqual([]);
+    const allowed = ['id', 'name', 'email', 'role', 'phone', 'avatar', 'store_id', 'platform_role', 'store', 'support_session'];
+    expect(Object.keys(storedUser).filter((key) => !allowed.includes(key))).toEqual([]);
+    expect(storedUser).toMatchObject({ id: client.session.user.id, role: 'CLIENT', store_id: null, platform_role: null });
 
+    // A troca da senha encerra as outras sessões: esta continua com a sessão nova (marcador novo, token só em memória)
+    await expectCookieSession(page);
+    expect(JSON.parse(storage[STORAGE_KEYS.session]).sid, 'sessão nova').not.toBe(markerBefore.sid);
+    const tokenAfter = changedSession.access_token as string;
+    expect(tokenAfter).not.toBe(tokenBefore);
     const anon = await request.newContext({ baseURL: API_URL });
+    expect((await anon.get('/addresses', { headers: { Authorization: `Bearer ${tokenAfter}` } })).status()).toBe(200);
+    expect((await anon.get('/addresses', { headers: { Authorization: `Bearer ${tokenBefore}` } })).status()).toBe(401);
+    expect((await client.api.get('/addresses')).status(), 'a sessão aberta antes (outro dispositivo) caiu').toBe(401);
+    await page.reload();
+    await expect(profileFields(page).name).toHaveValue('Rita Senha');
+
     const old = await anon.post('/auth/login', { data: { email: client.email, password: client.password } });
     expect(old.status()).toBe(401);
     await login(anon, client.email, newPassword);
@@ -149,12 +193,19 @@ test.describe('Meus Dados', () => {
 });
 
 test.describe('Sessão e rotas protegidas', () => {
-  test('Meus Pedidos e Meus Dados exigem login', async ({ page }) => {
+  test('Meus Pedidos e Meus Dados exigem login (e voltam para a mesma página depois de entrar)', async ({ page }) => {
     await page.goto('/my-orders');
-    await expect(page).toHaveURL(/\/signin$/);
+    await expect(page).toHaveURL(/\/signin\?redirect=%2Fmy-orders$/);
     await page.goto('/profile');
-    await expect(page).toHaveURL(/\/signin$/);
+    await expect(page).toHaveURL(/\/signin\?redirect=%2Fprofile$/);
     await expect(page.getByRole('heading', { name: /Bem-vindo de volta/ })).toBeVisible();
+
+    const client = await newClient('Cliente Volta');
+    await page.getByPlaceholder('seu@email.com').fill(client.email);
+    await page.getByPlaceholder('******').fill(client.password);
+    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+    await expect(page).toHaveURL(/\/profile$/);
+    await expect(page.getByRole('heading', { name: /Meus Dados/ })).toBeVisible();
   });
 
   test('token inválido no localStorage: a próxima ação protegida leva para /signin com aviso e o carrinho fica', async ({ page }) => {
@@ -167,18 +218,19 @@ test.describe('Sessão e rotas protegidas', () => {
     await page.getByRole('button', { name: 'Menu da conta' }).click();
     await page.getByRole('link', { name: 'Meus Pedidos' }).click();
 
-    await expect(page).toHaveURL(/\/signin$/);
+    await expect(page).toHaveURL(/\/signin(\?|$)/);
     await expect(page.getByText(SESSION_EXPIRED)).toBeVisible();
     const storage = await readStorage(page);
     expect(storage[STORAGE_KEYS.token]).toBeUndefined();
     expect(storage[STORAGE_KEYS.user]).toBeUndefined();
-    expect(JSON.parse(storage[STORAGE_KEYS.cart])).toHaveLength(1);
+    expect(await storedCartItems(page), 'o carrinho da loja continua salvo').toHaveLength(1);
 
-    // Entrando de novo, o cliente volta para o carrinho que ficou salvo
+    // Entrando de novo, o cliente volta para a página que tentou abrir, e o carrinho da loja continua lá
     await page.getByPlaceholder('seu@email.com').fill(client.email);
     await page.getByPlaceholder('******').fill(client.password);
     await page.getByRole('button', { name: 'Entrar', exact: true }).click();
-    await expect(page).toHaveURL(/\/cart$/);
+    await expect(page).toHaveURL(/\/my-orders$/);
+    await openCart(page);
     await expect(cartLine(page, catalog.drink.name)).toBeVisible();
   });
 
@@ -193,7 +245,7 @@ test.describe('Sessão e rotas protegidas', () => {
     await field.name.fill('Outro Nome');
     await field.save.click();
 
-    await expect(page).toHaveURL(/\/signin$/);
+    await expect(page).toHaveURL(/\/signin(\?|$)/);
     await expect(page.getByText(SESSION_EXPIRED)).toBeVisible();
     expect((await readStorage(page))[STORAGE_KEYS.token]).toBeUndefined();
   });
@@ -214,16 +266,50 @@ test.describe('Sessão e rotas protegidas', () => {
     expect(storage[STORAGE_KEYS.user]).toBeUndefined();
   });
 
-  test('endereço desconhecido mostra a página 404 da loja com link para o cardápio', async ({ page }) => {
+  test('endereço desconhecido do site mostra a página 404 com link para o início (diretório de lojas)', async ({ page }) => {
     await page.goto('/pedido/nao-existe');
     await expect(page.getByText('ERRO 404', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Página não encontrada' })).toBeVisible();
     await expect(page.getByText('/pedido/nao-existe', { exact: true })).toBeVisible();
     await expect(page.getByRole('banner').getByRole('link', { name: 'Página inicial' })).toBeVisible();
 
-    await page.getByRole('link', { name: 'Ir para o cardápio' }).click();
+    await page.getByRole('link', { name: 'Ir para o início' }).click();
     await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole('heading', { level: 1, name: /estabelecimentos/ })).toBeVisible();
+  });
+
+  test('endereço desconhecido dentro da loja mostra a 404 com o cabeçalho da loja e link para o cardápio', async ({ page }) => {
+    const store = await demoStore();
+    await page.goto(`${storePath()}/pedido/nao-existe`);
+    await expect(page.getByRole('heading', { name: 'Página não encontrada' })).toBeVisible();
+    await expect(page.getByRole('banner').getByRole('link', { name: `${store.name}: cardápio` })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Ir para o cardápio' }).click();
+    await expect(page).toHaveURL(storeUrl());
     await expect(searchBox(page)).toBeVisible();
+  });
+
+  test('loja inexistente mostra "Loja não encontrada" com atalho para os estabelecimentos', async ({ page }) => {
+    await page.goto('/loja/loja-que-nao-existe-e2e');
+    await expect(page.getByRole('heading', { level: 1, name: 'Loja não encontrada' })).toBeVisible();
+    await expect(page.getByText('loja-que-nao-existe-e2e', { exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Ver estabelecimentos' }).click();
+    await expect(page).toHaveURL(/\/$/);
+  });
+
+  test('endereços antigos /cart e /order-success levam à última loja visitada (sem loja visitada, ao diretório)', async ({ page }) => {
+    await page.goto('/cart');
+    await expect(page).toHaveURL(/\/$/);
+
+    await openHome(page);
+    await addToCart(page, catalog.drink.name);
+    await page.goto('/cart');
+    await expect(page).toHaveURL(storeUrl('cart'));
+    await expect(page.getByRole('heading', { name: 'Carrinho', level: 1, exact: true })).toBeVisible();
+    await expect(cartLine(page, catalog.drink.name)).toBeVisible();
+    await page.goto('/order-success');
+    await expect(page).toHaveURL(storeUrl('order-success'));
+    await expect(page.getByRole('heading', { name: 'Acompanhe seus pedidos' })).toBeVisible();
   });
 });
 
@@ -260,16 +346,16 @@ test.describe('Meus Pedidos: acompanhamento', () => {
     await useSession(page, client.session);
     await page.goto('/my-orders');
     const headers = page.getByText(/^Pedido #\d+$/);
-    await expect(headers).toHaveText([`Pedido #${second.id}`, `Pedido #${first.id}`]);
+    await expect(headers).toHaveText([`Pedido #${second.number}`, `Pedido #${first.number}`]);
     await expect(page.getByText('Aguardando Confirmação', { exact: true })).toHaveCount(2);
 
     // A cozinha começa o preparo: a página atualiza sem recarregar (consulta a cada 10 s)
     await moveTo(second.id, 'PREPARING');
     await expect(page.getByText('Preparando', { exact: true })).toBeVisible({ timeout: 15_000 });
 
-    await page.getByText(`Pedido #${second.id}`, { exact: true }).click();
+    await page.getByText(`Pedido #${second.number}`, { exact: true }).click();
     await expect(page.getByRole('button', { name: 'Cancelar Pedido' })).toHaveCount(0);
-    await page.getByText(`Pedido #${first.id}`, { exact: true }).click();
+    await page.getByText(`Pedido #${first.number}`, { exact: true }).click();
     await expect(page.getByRole('button', { name: 'Cancelar Pedido' })).toHaveCount(1);
   });
 
@@ -281,7 +367,7 @@ test.describe('Meus Pedidos: acompanhamento', () => {
 
     await useSession(page, client.session);
     await page.goto('/my-orders');
-    const header = page.getByText(`Pedido #${order.id}`, { exact: true }).locator('xpath=..');
+    const header = page.getByText(`Pedido #${order.number}`, { exact: true }).locator('xpath=..');
     await expect(header).toContainText('· Retirada');
     // Selo de status do pedido (logo abaixo da data e do tipo)
     const statusBadge = header.locator('xpath=./span');

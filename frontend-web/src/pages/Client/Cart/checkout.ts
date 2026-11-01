@@ -1,7 +1,9 @@
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
 import api, { getApiErrorMessage } from '../../../services/api';
-import { MP_PUBLIC_KEY, loadMercadoPagoSdk } from '../../../services/mercadoPago';
+import { getMercadoPagoInstance, type MercadoPagoInstance, type MercadoPagoPaymentMethod } from '../../../services/mercadoPago';
 import { BRAND } from '../../../config/brand';
+import { isDefaultStore } from '../../../utils/legacyStorage';
+import { MAX_ITEM_QUANTITY, MAX_OBSERVATION_LENGTH } from '../../../utils/catalog';
 import type { CartItem } from '../../../contexts/CartContext';
 
 // --- Contrato da API (pedidos e pagamentos) ---
@@ -20,7 +22,7 @@ export interface OrderItemPayload {
   removedIngredients?: string[];
 }
 
-/** Corpo de POST /orders/quote — o mesmo "order" enviado aos pagamentos. */
+/** Corpo de POST /stores/:slug/orders/quote — o mesmo "order" enviado aos pagamentos. Sem loja no corpo: ela vem do slug. */
 export interface OrderPayload {
   items: OrderItemPayload[];
   type: OrderType;
@@ -66,8 +68,29 @@ export interface PaymentStatusResponse {
   orderId?: number;
 }
 
-export const MAX_ITEM_QUANTITY = 50;
-export const MAX_OBSERVATION_LENGTH = 300;
+/** Corpo de POST /stores/:slug/orders (pagamento na entrega/retirada). */
+export interface CreateOrderBody extends OrderPayload {
+  paymentMethod: OfflineMethod;
+  changeFor?: string;
+}
+
+export interface PixPaymentBody {
+  order: OrderPayload;
+  idempotencyKey: string;
+}
+
+export interface CardPaymentBody {
+  order: OrderPayload;
+  token: string;
+  paymentMethodId: string;
+  installments: number;
+  docType: 'CPF';
+  docNumber: string;
+  idempotencyKey: string;
+}
+
+// Limites do pedido: os mesmos do cardápio (utils/catalog), iguais aos da API
+export { MAX_ITEM_QUANTITY, MAX_OBSERVATION_LENGTH };
 
 /**
  * Tempo de espera de /payment/* e /orders: o servidor pode levar 10–22 s falando com o Mercado Pago.
@@ -81,11 +104,27 @@ export const PIX_WATCH_GRACE_MS = 2 * 60 * 1000;
 /** Aprovado e ainda sem pedido: quanto esperar o servidor registrar antes de avisar o cliente. */
 export const ORDER_REGISTRATION_GRACE_MS = 30_000;
 
-// Chave pública do Mercado Pago (VITE_MP_PUBLIC_KEY; padrão: chave de TESTE)
-export { MP_PUBLIC_KEY };
-
-export function formatBRL(value: number): string {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+/**
+ * Chamadas da compra numa loja. A loja vem SEMPRE do slug da rota (/loja/:slug) e o backend confere se
+ * ela pode vender; nada no corpo indica a loja (a API recusa campos extras).
+ */
+export function storeCheckoutApi(slug: string) {
+  const base = `/stores/${encodeURIComponent(slug)}`;
+  const withTimeout = (config?: AxiosRequestConfig): AxiosRequestConfig => ({ timeout: PAYMENT_TIMEOUT_MS, ...config });
+  return {
+    /** POST /stores/:slug/orders/quote: subtotal, taxa, total e prazo calculados pelo servidor. */
+    quote: async (payload: OrderPayload, config?: AxiosRequestConfig) =>
+      (await api.post<Quote>(`${base}/orders/quote`, payload, withTimeout(config))).data,
+    /** POST /stores/:slug/orders: pedido com pagamento na entrega/retirada. */
+    createOrder: async (body: CreateOrderBody) =>
+      (await api.post<{ id?: number; number?: number | null }>(`${base}/orders`, body, withTimeout())).data,
+    /** POST /stores/:slug/payment/pix: QR Code; o servidor cria o pedido quando o PIX for pago. */
+    createPix: async (body: PixPaymentBody) =>
+      (await api.post<PixPaymentResponse>(`${base}/payment/pix`, body, withTimeout())).data,
+    /** POST /stores/:slug/payment/card: cobra o cartão (token do navegador); aprovado → pedido criado. */
+    createCard: async (body: CardPaymentBody) =>
+      (await api.post<CardPaymentResponse>(`${base}/payment/card`, body, withTimeout())).data,
+  };
 }
 
 /** Itens do carrinho no formato da API (o carrinho já guarda um adicional por unidade). */
@@ -135,6 +174,16 @@ export interface PaymentAttempt {
 /** Reaproveita a chave da tentativa anterior do mesmo pedido (repetição) ou cria uma nova. */
 export function attemptKey(current: PaymentAttempt | null, payloadKey: string): PaymentAttempt {
   return current && current.payloadKey === payloadKey ? current : { key: newIdempotencyKey(), payloadKey };
+}
+
+/** "code" do 400 da API quando a loja recusa endereços fora das zonas de entrega (orçamento, pedido e cobranças). */
+export const DELIVERY_OUT_OF_AREA_CODE = 'DELIVERY_OUT_OF_AREA';
+
+/** "code" informado no corpo do erro da API (ex.: DELIVERY_OUT_OF_AREA); sem ele, null. */
+export function apiErrorCode(error: unknown): string | null {
+  if (!axios.isAxiosError(error)) return null;
+  const code = (error.response?.data as { code?: unknown } | undefined)?.code;
+  return typeof code === 'string' ? code : null;
 }
 
 /** Falha sem resposta definitiva (rede, tempo esgotado ou erro 5xx): a cobrança pode ter acontecido. */
@@ -252,10 +301,12 @@ export async function cancelPayment(paymentId: number): Promise<void> {
   await api.post(`/payment/${paymentId}/cancel`, undefined, { timeout: PAYMENT_TIMEOUT_MS });
 }
 
-// --- PIX em andamento, guardado na aba (por usuário) para continuar depois de recarregar ou voltar ---
+// --- PIX em andamento, guardado na aba (por loja e por usuário) para continuar depois de recarregar ou voltar ---
 
 export interface ActivePix {
   id: number;
+  /** Loja em que o PIX foi gerado: só é retomado no carrinho dela. */
+  storeId: number;
   copyPaste: string;
   amount: number;
   simulation: boolean;
@@ -263,35 +314,91 @@ export interface ActivePix {
   expiresAt: number;
 }
 
-const activePixKey = (userId: number) => `${BRAND.slug}.activePix.${userId}`;
+const activePixKey = (storeId: number, userId: number) => `${BRAND.slug}.activePix.${storeId}.${userId}`;
+/** Formato da versão de loja única (sem a loja na chave): era sempre da loja que virou a loja padrão. */
+const legacyActivePixKey = (userId: number) => `${BRAND.slug}.activePix.${userId}`;
 
-export function readActivePix(userId: number): ActivePix | null {
+function parseActivePix(raw: string | null, storeId: number): ActivePix | null {
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as Partial<ActivePix> | null;
+  const valid =
+    !!parsed &&
+    typeof parsed.id === 'number' &&
+    typeof parsed.copyPaste === 'string' &&
+    typeof parsed.amount === 'number' &&
+    typeof parsed.expiresAt === 'number' &&
+    (parsed.storeId === undefined || parsed.storeId === storeId);
+  if (!valid || (parsed.expiresAt as number) + PIX_WATCH_GRACE_MS < Date.now()) return null;
+  return {
+    id: parsed.id as number,
+    storeId,
+    copyPaste: parsed.copyPaste as string,
+    amount: parsed.amount as number,
+    simulation: !!parsed.simulation,
+    expiresAt: parsed.expiresAt as number,
+  };
+}
+
+/** PIX em andamento desta loja (nunca o de outra loja). Vencido ou inválido é descartado. */
+export function readActivePix(storeId: number, userId: number): ActivePix | null {
+  const key = activePixKey(storeId, userId);
   try {
-    const raw = sessionStorage.getItem(activePixKey(userId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<ActivePix> | null;
-    const valid =
-      !!parsed &&
-      typeof parsed.id === 'number' &&
-      typeof parsed.copyPaste === 'string' &&
-      typeof parsed.amount === 'number' &&
-      typeof parsed.expiresAt === 'number';
-    if (!valid || (parsed.expiresAt as number) + PIX_WATCH_GRACE_MS < Date.now()) {
-      sessionStorage.removeItem(activePixKey(userId));
-      return null;
-    }
-    return { ...(parsed as ActivePix), simulation: !!parsed.simulation };
+    const pix = parseActivePix(sessionStorage.getItem(key), storeId);
+    if (!pix) sessionStorage.removeItem(key);
+    return pix;
   } catch {
+    // Valor corrompido (ou armazenamento bloqueado): descarta
+    try {
+      sessionStorage.removeItem(key);
+    } catch {
+      // Sem acesso ao armazenamento: nada a remover
+    }
     return null;
   }
 }
 
-export function saveActivePix(userId: number, pix: ActivePix | null): void {
+export function saveActivePix(storeId: number, userId: number, pix: ActivePix | null): void {
   try {
-    if (pix) sessionStorage.setItem(activePixKey(userId), JSON.stringify(pix));
-    else sessionStorage.removeItem(activePixKey(userId));
+    if (pix) sessionStorage.setItem(activePixKey(storeId, userId), JSON.stringify({ ...pix, storeId }));
+    else sessionStorage.removeItem(activePixKey(storeId, userId));
   } catch {
     // Armazenamento indisponível (modo privado): o PIX segue só nesta tela
+  }
+}
+
+/** Adoções em andamento (chamadas simultâneas, ex.: efeito repetido do StrictMode, recebem o mesmo resultado). */
+const runningAdoptions = new Map<string, Promise<ActivePix | null>>();
+
+/**
+ * PIX gerado pela versão de loja única (chave sem loja), ainda em andamento nesta aba: pertence à loja
+ * padrão. No carrinho da loja padrão ele passa para a chave nova e volta a ser acompanhado — evita que o
+ * cliente pague um segundo PIX. Em outra loja, nada muda (ele vence sozinho).
+ */
+export function adoptLegacyActivePix(storeId: number, userId: number): Promise<ActivePix | null> {
+  const key = `${storeId}:${userId}`;
+  const running = runningAdoptions.get(key);
+  if (running) return running;
+  const adoption = runLegacyPixAdoption(storeId, userId).finally(() => runningAdoptions.delete(key));
+  runningAdoptions.set(key, adoption);
+  return adoption;
+}
+
+async function runLegacyPixAdoption(storeId: number, userId: number): Promise<ActivePix | null> {
+  let raw: string | null;
+  try {
+    raw = sessionStorage.getItem(legacyActivePixKey(userId));
+  } catch {
+    return null;
+  }
+  if (!raw || !(await isDefaultStore(storeId))) return null;
+
+  try {
+    const pix = parseActivePix(raw, storeId);
+    sessionStorage.removeItem(legacyActivePixKey(userId));
+    if (pix) saveActivePix(storeId, userId, pix);
+    return pix;
+  } catch {
+    return null;
   }
 }
 
@@ -304,50 +411,24 @@ export function clearLegacyPendingPayment(): void {
   }
 }
 
-// --- SDK do Mercado Pago (o index.html carrega com async; aqui só esperamos ficar pronto) ---
+// --- SDK do Mercado Pago (carregado sob demanda por services/mercadoPago; uma instância por chave pública da loja) ---
 
-export interface MercadoPagoPaymentMethod {
-  id: string;
-  payment_type_id?: string;
-  settings?: { security_code?: { length?: number } }[];
-}
+export type { MercadoPagoInstance, MercadoPagoPaymentMethod };
 
-/** Métodos do SDK usados no checkout. */
-export interface MercadoPagoInstance {
-  createCardToken(data: {
-    cardNumber: string;
-    cardholderName: string;
-    cardExpirationMonth: string;
-    cardExpirationYear: string;
-    securityCode: string;
-    identificationType: string;
-    identificationNumber: string;
-  }): Promise<{ id?: string }>;
-  getPaymentMethods?(data: { bin: string }): Promise<{ results?: MercadoPagoPaymentMethod[] }>;
-}
-
-let mpInstance: MercadoPagoInstance | null = null;
-
-export async function getMercadoPago(): Promise<MercadoPagoInstance> {
-  if (mpInstance) return mpInstance;
-  try {
-    const MercadoPago = await loadMercadoPagoSdk();
-    mpInstance = new MercadoPago(MP_PUBLIC_KEY, { locale: 'pt-BR' }) as MercadoPagoInstance;
-    return mpInstance;
-  } catch {
-    throw new Error('O sistema de pagamento com cartão não carregou. Verifique sua conexão ou pague via PIX.');
-  }
+/** Instância do SDK para a chave pública da loja (em cache por chave). */
+export function getMercadoPago(publicKey: string): Promise<MercadoPagoInstance> {
+  return getMercadoPagoInstance(publicKey);
 }
 
 /** Pré-carrega o SDK em segundo plano (erros só aparecem quando o cliente tentar pagar). */
-export function preloadMercadoPago(): void {
-  getMercadoPago().catch(() => undefined);
+export function preloadMercadoPago(publicKey: string): void {
+  getMercadoPagoInstance(publicKey).catch(() => undefined);
 }
 
 /** Meio de pagamento de crédito que o Mercado Pago informa para o BIN (null = nenhum ou sem resposta). */
-export async function lookupCreditMethod(digits: string): Promise<MercadoPagoPaymentMethod | null> {
+export async function lookupCreditMethod(publicKey: string, digits: string): Promise<MercadoPagoPaymentMethod | null> {
   try {
-    const mp = await getMercadoPago();
+    const mp = await getMercadoPagoInstance(publicKey);
     const response = await mp.getPaymentMethods?.({ bin: digits.slice(0, 8) });
     return response?.results?.find((method) => method.payment_type_id === 'credit_card') ?? null;
   } catch {

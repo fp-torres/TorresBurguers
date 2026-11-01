@@ -4,3 +4,8 @@ build/
 .env
 .expo/
 *.log
+
+# Docker: configuração local com segredos e as cópias dela (.bak, .local, .old...); só o modelo é versionado
+.env.docker
+.env.docker.*
+!.env.docker.example

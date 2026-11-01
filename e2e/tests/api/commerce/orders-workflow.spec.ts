@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { uid } from '../../../support/api';
+import { E2E } from '../../../support/env';
 import {
   Actors,
   OUT_OF_RANGE_ID,
@@ -83,12 +84,18 @@ test.describe('Pedidos: fluxo de status, entregas, cancelamento e dashboard', ()
     expect((await getOrder(admin.ctx, order.id)).status).toBe('PREPARING');
   });
 
-  test('cozinha não despacha, não conclui e não cancela pedidos (403)', async () => {
+  test('cozinha não despacha, não conclui e não cancela pedidos (403 na etapa; 404 fora dela)', async () => {
     const order = await newOrder();
-    await advance(kitchen.ctx, order.id, 'PREPARING', 'READY_FOR_PICKUP');
+    await advance(kitchen.ctx, order.id, 'PREPARING');
     for (const status of ['DELIVERING', 'DONE', 'CANCELED']) {
       await expectNestError(await patchStatus(kitchen.ctx, order.id, status), 403);
     }
+    // Pronto saiu da etapa da cozinha: 404 uniforme, como no GET (não revela o status)
+    await advance(kitchen.ctx, order.id, 'READY_FOR_PICKUP');
+    for (const status of ['DELIVERING', 'DONE', 'CANCELED']) {
+      await expectNestError(await patchStatus(kitchen.ctx, order.id, status), 404, 'Pedido não encontrado.');
+    }
+    await expectNestError(await kitchen.ctx.get(`/orders/${order.id}`), 404, 'Pedido não encontrado.');
     expect((await getOrder(admin.ctx, order.id)).status).toBe('READY_FOR_PICKUP');
   });
 
@@ -120,14 +127,14 @@ test.describe('Pedidos: fluxo de status, entregas, cancelamento e dashboard', ()
     expect(done.driver?.id).toBe(courier.id);
   });
 
-  test('segundo entregador não assume pedido já atribuído a outro (403)', async () => {
+  test('segundo entregador não assume pedido já atribuído a outro (404: fora da etapa dele, sem revelar o entregador)', async () => {
     const order = await newOrder();
     await advance(kitchen.ctx, order.id, 'PREPARING', 'READY_FOR_PICKUP');
     await expectStatus(await assign(employee, order.id, courier.id), 200);
     // De volta a "pronto" com o entregador 1 ainda responsável
     await advance(employee.ctx, order.id, 'READY_FOR_PICKUP');
 
-    await expectNestError(await patchStatus(courier2.ctx, order.id, 'DELIVERING'), 403);
+    await expectNestError(await patchStatus(courier2.ctx, order.id, 'DELIVERING'), 404, 'Pedido não encontrado.');
     const still = await getOrder(admin.ctx, order.id);
     expect(still.status).toBe('READY_FOR_PICKUP');
     expect(still.driver?.id).toBe(courier.id);
@@ -146,7 +153,8 @@ test.describe('Pedidos: fluxo de status, entregas, cancelamento e dashboard', ()
     const statuses = [first.status(), second.status()];
     expect(statuses.filter((s) => s === 200), `respostas: ${statuses.join(', ')}`).toHaveLength(1);
     const loser = first.status() === 200 ? second : first;
-    expect([400, 403, 409], `perdedor: ${await loser.text()}`).toContain(loser.status());
+    // 404: o pedido já saiu da etapa do perdedor (está com o outro entregador)
+    expect([400, 403, 404, 409], `perdedor: ${await loser.text()}`).toContain(loser.status());
 
     const winner = first.status() === 200 ? courier : courier2;
     const final = await getOrder(admin.ctx, order.id);
@@ -167,19 +175,21 @@ test.describe('Pedidos: fluxo de status, entregas, cancelamento e dashboard', ()
     expect((await getOrder(admin.ctx, order.id)).status).toBe('PREPARING');
   });
 
-  test('entregador não conclui entrega de outro entregador (403)', async () => {
+  test('entregador não conclui entrega de outro entregador (404: fora da etapa dele)', async () => {
     const order = await newOrder();
     await advance(kitchen.ctx, order.id, 'PREPARING', 'READY_FOR_PICKUP');
     await advance(courier.ctx, order.id, 'DELIVERING');
-    await expectNestError(await patchStatus(courier2.ctx, order.id, 'DONE'), 403);
+    await expectNestError(await patchStatus(courier2.ctx, order.id, 'DONE'), 404, 'Pedido não encontrado.');
     const still = await getOrder(admin.ctx, order.id);
     expect(still.status).toBe('DELIVERING');
     expect(still.payment_status).toBe('PENDING');
   });
 
-  test('entregador não mexe em pedidos fora da sua etapa (403)', async () => {
+  test('entregador não mexe em pedidos fora da sua etapa (404) nem muda o que não pode na etapa (403)', async () => {
     const order = await newOrder();
-    await expectNestError(await patchStatus(courier.ctx, order.id, 'PREPARING'), 403);
+    // Pendente: fora da etapa do entregador → 404 uniforme
+    await expectNestError(await patchStatus(courier.ctx, order.id, 'PREPARING'), 404, 'Pedido não encontrado.');
+    await expectNestError(await courier.ctx.patch(`/orders/${order.id}/cancel`), 404, 'Pedido não encontrado.');
     await advance(kitchen.ctx, order.id, 'PREPARING', 'READY_FOR_PICKUP');
     await expectNestError(await patchStatus(courier.ctx, order.id, 'DONE'), 403);
     await expectNestError(await patchStatus(courier.ctx, order.id, 'CANCELED'), 403);
@@ -190,13 +200,15 @@ test.describe('Pedidos: fluxo de status, entregas, cancelamento e dashboard', ()
   test('pedido de retirada nunca entra em DELIVERING (400 "Transição inválida")', async () => {
     const order = await newOrder('TAKEOUT');
     await advance(kitchen.ctx, order.id, 'PREPARING', 'READY_FOR_PICKUP');
-    for (const actor of [courier, admin, employee]) {
+    for (const actor of [admin, employee]) {
       await expectNestError(
         await patchStatus(actor.ctx, order.id, 'DELIVERING'),
         400,
         'Transição inválida: READY_FOR_PICKUP → DELIVERING',
       );
     }
+    // Retirada pronta não é da etapa do entregador: 404 (a mensagem não revela o tipo do pedido)
+    await expectNestError(await patchStatus(courier.ctx, order.id, 'DELIVERING'), 404, 'Pedido não encontrado.');
     // Nem direto do PENDING pelo gerente
     const fresh = await newOrder('TAKEOUT');
     await expectNestError(await patchStatus(admin.ctx, fresh.id, 'DELIVERING'), 400, /Transição inválida/);
@@ -233,7 +245,8 @@ test.describe('Pedidos: fluxo de status, entregas, cancelamento e dashboard', ()
     await advance(admin.ctx, order.id, 'DONE');
     await expectNestError(await patchStatus(admin.ctx, order.id, 'PENDING'), 400, 'Transição inválida: DONE → PENDING');
     await expectNestError(await patchStatus(employee.ctx, order.id, 'CANCELED'), 400, 'Transição inválida: DONE → CANCELED');
-    await expectNestError(await patchStatus(kitchen.ctx, order.id, 'PREPARING'), 400, /Transição inválida/);
+    // Cozinha: concluído está fora da etapa → 404 (sem "Transição inválida: DONE → ...")
+    await expectNestError(await patchStatus(kitchen.ctx, order.id, 'PREPARING'), 404, 'Pedido não encontrado.');
     expect((await getOrder(admin.ctx, order.id)).status).toBe('DONE');
   });
 
@@ -242,7 +255,7 @@ test.describe('Pedidos: fluxo de status, entregas, cancelamento e dashboard', ()
     await advance(admin.ctx, order.id, 'CANCELED');
     await expectNestError(await patchStatus(admin.ctx, order.id, 'PENDING'), 400, 'Transição inválida: CANCELED → PENDING');
     await expectNestError(await patchStatus(employee.ctx, order.id, 'DONE'), 400, /Transição inválida/);
-    await expectNestError(await patchStatus(kitchen.ctx, order.id, 'PREPARING'), 400, /Transição inválida/);
+    await expectNestError(await patchStatus(kitchen.ctx, order.id, 'PREPARING'), 404, 'Pedido não encontrado.');
     expect((await getOrder(admin.ctx, order.id)).status).toBe('CANCELED');
   });
 
@@ -333,8 +346,8 @@ test.describe('Pedidos: fluxo de status, entregas, cancelamento e dashboard', ()
     const reassigned = await second.json();
     expect(reassigned.status).toBe('DELIVERING');
     expect(reassigned.driver?.id).toBe(courier2.id);
-    // O entregador anterior não conclui mais
-    await expectNestError(await patchStatus(courier.ctx, order.id, 'DONE'), 403);
+    // O entregador anterior não conclui mais: a entrega saiu da etapa dele (404 uniforme)
+    await expectNestError(await patchStatus(courier.ctx, order.id, 'DONE'), 404, 'Pedido não encontrado.');
   });
 
   test('atribuição só vale para pedidos de entrega (TAKEOUT → 400)', async () => {
@@ -361,10 +374,11 @@ test.describe('Pedidos: fluxo de status, entregas, cancelamento e dashboard', ()
     expect((await getOrder(admin.ctx, canceled.id)).status).toBe('CANCELED');
   });
 
-  test('atribuição exige entregador ativo: cliente/cozinha 400, inexistente 404, excluído 404', async () => {
+  test('atribuição exige entregador ativo da equipe da loja: cozinha 400; cliente, inexistente e excluído 404', async () => {
     const order = await newOrder();
     await advance(kitchen.ctx, order.id, 'PREPARING');
-    await expectNestError(await assign(admin, order.id, client.id), 400);
+    // Cliente não é da equipe da loja: 404 uniforme (como um entregador inexistente ou de outra loja)
+    await expectNestError(await assign(admin, order.id, client.id), 404);
     await expectNestError(await assign(admin, order.id, kitchen.id), 400);
     await expectNestError(await assign(admin, order.id, UNKNOWN_ID), 404);
 
@@ -431,16 +445,18 @@ test.describe('Pedidos: fluxo de status, entregas, cancelamento e dashboard', ()
     expect((await getOrder(client.ctx, order.id)).status).toBe('PREPARING');
   });
 
-  test('cliente não cancela pedido de outro cliente (403)', async () => {
+  test('cliente não cancela pedido de outro cliente (404, como um pedido inexistente)', async () => {
     const order = await newOrder();
-    await expectNestError(await otherClient.ctx.patch(`/orders/${order.id}/cancel`), 403);
+    await expectNestError(await otherClient.ctx.patch(`/orders/${order.id}/cancel`), 404);
+    await expectNestError(await otherClient.ctx.patch(`/stores/${E2E.demoStoreSlug}/orders/${order.id}/cancel`), 404);
     expect((await getOrder(client.ctx, order.id)).status).toBe('PENDING');
   });
 
-  test('cozinha e entregador não cancelam pedidos (403)', async () => {
+  test('cozinha e entregador não cancelam pedidos (403 na etapa; 404 fora dela)', async () => {
     const order = await newOrder();
     await expectNestError(await kitchen.ctx.patch(`/orders/${order.id}/cancel`), 403);
-    await expectNestError(await courier.ctx.patch(`/orders/${order.id}/cancel`), 403);
+    // Pendente não é da etapa do entregador: 404 uniforme
+    await expectNestError(await courier.ctx.patch(`/orders/${order.id}/cancel`), 404, 'Pedido não encontrado.');
     expect((await getOrder(client.ctx, order.id)).status).toBe('PENDING');
   });
 
@@ -570,14 +586,51 @@ test.describe('Pedidos: fluxo de status, entregas, cancelamento e dashboard', ()
   // Dashboard (somente ADMIN)
   // -------------------------------------------------------------------------
 
-  test('resumo e gráficos do dashboard são exclusivos do ADMIN', async () => {
-    for (const path of ['/orders/summary', '/orders/charts']) {
-      for (const actor of [employee, kitchen, courier, client]) {
+  test('resumo, gráficos e relatórios do dashboard são exclusivos do ADMIN da loja', async () => {
+    const superadmin = await actors.defaultUser('superadmin');
+    for (const path of ['/orders/summary', '/orders/charts', '/orders/reports']) {
+      for (const actor of [employee, kitchen, courier, client, superadmin]) {
         await expectNestError(await actor.ctx.get(path), 403);
       }
       await expectStatus(await anon.get(path), 401);
+      // A loja demo tem o recurso "advanced_reports" (gráficos e relatórios)
       await expectStatus(await admin.ctx.get(path), 200);
     }
+  });
+
+  test('relatório de vendas (GET /orders/reports): período, totais, dias, status, pagamentos e mais vendidos da loja', async () => {
+    const top = await createProduct(admin.ctx, { name: `Relatorio ${uid('rl')}`, price: 7, category: 'bebidas' });
+    const order = await placeOrder(client.ctx, {
+      items: [{ productId: top.id, quantity: 50 }, { productId: top.id, quantity: 50 }],
+      type: 'TAKEOUT',
+      paymentMethod: 'MONEY',
+    });
+    await advance(admin.ctx, order.id, 'PREPARING', 'READY_FOR_PICKUP', 'DONE');
+
+    const res = await admin.ctx.get('/orders/reports');
+    await expectStatus(res, 200);
+    const report = await res.json();
+    expect(Object.keys(report).sort()).toEqual(['ordersByStatus', 'paymentMethods', 'period', 'revenueByDay', 'summary', 'topProducts']);
+    // Sem período: os últimos dias até hoje, no fuso da loja
+    expect(report.period).toMatchObject({ timeZone: expect.any(String) });
+    expect(report.period.from <= report.period.to).toBe(true);
+    expect(report.revenueByDay).toHaveLength(report.period.days);
+    expect(report.summary.revenue).toBeGreaterThanOrEqual(700);
+    expect(report.summary.paidOrders).toBeGreaterThanOrEqual(1);
+    const statuses = report.ordersByStatus.map((row: Json) => row.status);
+    expect(statuses).toEqual(expect.arrayContaining(['PENDING', 'PREPARING', 'READY_FOR_PICKUP', 'DELIVERING', 'DONE', 'CANCELED']));
+    expect(report.paymentMethods.some((row: Json) => row.method === 'MONEY')).toBe(true);
+    expect(report.topProducts.length).toBeLessThanOrEqual(10);
+    expect(report.topProducts.find((row: Json) => row.name === top.name)?.quantity).toBe(100);
+
+    // Período informado (AAAA-MM-DD) e validações
+    const today = report.period.to;
+    const single = await admin.ctx.get(`/orders/reports?from=${today}&to=${today}`);
+    await expectStatus(single, 200);
+    expect((await single.json()).period).toMatchObject({ from: today, to: today, days: 1 });
+    await expectNestError(await admin.ctx.get('/orders/reports?from=17-10-2026'), 400);
+    await expectNestError(await admin.ctx.get('/orders/reports?from=2026-10-10&to=2026-10-01'), 400);
+    await expectNestError(await admin.ctx.get('/orders/reports?from=2024-01-01&to=2026-01-01'), 400);
   });
 
   test('resumo traz contadores e faturamento numéricos', async () => {

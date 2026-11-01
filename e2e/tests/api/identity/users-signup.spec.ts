@@ -1,11 +1,13 @@
 import { test, expect } from '@playwright/test';
+import { E2E } from '../../../support/env';
 import { DEFAULT_USERS } from '../../../support/users';
 import {
-  ALL_ROLES,
   MAX_UPLOAD_BYTES,
+  STAFF_ROLES,
   STRONG_PASSWORD,
   bearer,
   body,
+  demoStore,
   expectError,
   expectNoSecrets,
   isWebp,
@@ -27,7 +29,7 @@ import {
 test.afterAll(cleanupTrackedStaff);
 
 test.describe('Cadastro público (POST /users)', () => {
-  test('sem perfil cria um CLIENT com nome/e-mail normalizados e sem senha na resposta', async ({ request }) => {
+  test('sem perfil cria um CLIENT global (sem loja) com nome/e-mail normalizados e sem senha na resposta', async ({ request }) => {
     const local = uid('Maria');
     const res = await request.post('/users', {
       data: { name: '  Maria Teste  ', email: `  ${local.toUpperCase()}@E2E.Test  `, password: STRONG_PASSWORD, phone: '21987654321' },
@@ -40,6 +42,9 @@ test.describe('Cadastro público (POST /users)', () => {
       email: `${local.toLowerCase()}@e2e.test`,
       phone: '21987654321',
       role: 'CLIENT',
+      store_id: null,
+      platform_role: null,
+      store: null,
     });
     expect(typeof user.id).toBe('number');
     expectNoSecrets(user, 'resposta do cadastro');
@@ -126,22 +131,42 @@ test.describe('Cadastro público (POST /users)', () => {
     await expectError(res, 403);
   });
 
-  for (const role of ALL_ROLES) {
-    test(`ADMIN cadastra uma conta ${role} e ela entra com esse perfil`, async ({ request }) => {
+  for (const role of STAFF_ROLES) {
+    test(`ADMIN cadastra uma conta ${role} na equipe da própria loja e ela entra com esse perfil`, async ({ request }) => {
+      const store = await demoStore();
       const admin = await sessionOf(request, 'admin');
       const data = signupPayload({ name: `Conta ${role}`, email: uniqueEmail(`admin-cria-${role.toLowerCase()}`), role });
       const res = await request.post('/users', { headers: bearer(admin.token), data });
       expect(res.status(), await res.text()).toBe(201);
       const created = await res.json();
-      if (role !== 'CLIENT') trackStaff(created.id);
-      expect(created.role).toBe(role);
+      trackStaff(created.id);
+      expect(created).toMatchObject({ role, store_id: store.id, platform_role: null });
+      expect(created.store).toMatchObject({ id: store.id, slug: store.slug });
       expectNoSecrets(created, `cadastro de ${role} pelo ADMIN`);
 
       const login = await request.post('/auth/login', { data: { email: data.email, password: data.password } });
       expect(login.ok(), await login.text()).toBeTruthy();
-      expect((await login.json()).user.role).toBe(role);
+      expect((await login.json()).user).toMatchObject({ role, store_id: store.id });
     });
   }
+
+  for (const [label, role] of [['perfil CLIENT', 'CLIENT'], ['sem perfil', undefined]] as const) {
+    test(`ADMIN não cadastra clientes (${label} → 400): clientes se cadastram sozinhos e a equipe exige um perfil da equipe`, async ({ request }) => {
+      const admin = await sessionOf(request, 'admin');
+      const data = signupPayload({ email: uniqueEmail('admin-cliente'), ...(role ? { role } : {}) });
+      await expectError(await request.post('/users', { headers: bearer(admin.token), data }), 400);
+      const login = await request.post('/auth/login', { data: { email: data.email, password: data.password } });
+      expect(login.status(), 'nenhuma conta foi criada').toBe(401);
+    });
+  }
+
+  test('superadmin (conta da plataforma) não cadastra equipe de loja por esta rota (403)', async ({ request }) => {
+    const superadmin = await sessionOf(request, 'superadmin');
+    for (const role of STAFF_ROLES) {
+      const res = await request.post('/users', { headers: bearer(superadmin.token), data: signupPayload({ role }) });
+      expect(res.status(), `superadmin criando ${role}: ${await res.text()}`).toBe(403);
+    }
+  });
 
   test('ADMIN cadastra atendente (EMPLOYEE) via multipart, como o formulário do painel envia', async ({ request }) => {
     const admin = await sessionOf(request, 'admin');
@@ -351,5 +376,81 @@ test.describe('Foto de perfil no cadastro (multipart)', () => {
     });
     const payload = await body(res);
     expect(res.status(), JSON.stringify(payload)).toBe(403);
+  });
+});
+
+/** Entrada na equipe por convite: o ADMIN convida um e-mail para um perfil da equipe da PRÓPRIA loja. */
+test.describe('Convite para a equipe (POST /store/invitations → /invitations/:token/accept)', () => {
+  async function invite(request: import('@playwright/test').APIRequestContext, email: string, role = 'KITCHEN') {
+    const admin = await sessionOf(request, 'admin');
+    const res = await request.post('/store/invitations', { headers: bearer(admin.token), data: { email, role } });
+    expect(res.status(), `convite: ${await res.text()}`).toBe(201);
+    const created = await res.json();
+    expect(created.url).toMatch(new RegExp(`^${E2E.webURL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/convite/[A-Za-z0-9_-]{32,128}$`));
+    return { invitation: created.invitation, token: String(created.url).split('/').pop() as string };
+  }
+
+  test('o convite mostra a loja e o perfil; o aceite cria a conta da equipe da loja, já faz login e o link vale uma vez', async ({ request }) => {
+    const store = await demoStore();
+    const email = uniqueEmail('convite');
+    const { invitation, token } = await invite(request, email, 'KITCHEN');
+    expect(invitation).toMatchObject({ email, role: 'KITCHEN', status: 'PENDING', store_id: store.id });
+    expect(Object.keys(invitation), 'o hash do token nunca sai').not.toContain('token_hash');
+
+    const preview = await request.get(`/invitations/${token}`);
+    expect(preview.status(), await preview.text()).toBe(200);
+    const view = await preview.json();
+    expect(view).toMatchObject({ store: { name: store.name, slug: store.slug }, role: 'KITCHEN' });
+    expect(view.email_masked).not.toBe(email);
+
+    const accepted = await request.post(`/invitations/${token}/accept`, { data: { name: 'Convidado E2E', password: STRONG_PASSWORD } });
+    expect(accepted.status(), await accepted.text()).toBe(201);
+    const session = await accepted.json();
+    trackStaff(session.user.id);
+    expect(Object.keys(session).sort()).toEqual(['access_token', 'user']);
+    expect(session.user).toMatchObject({ email, role: 'KITCHEN', store_id: store.id, platform_role: null });
+    expectNoSecrets(session, 'aceite do convite');
+    expect((await request.get('/orders', { headers: bearer(session.access_token) })).status()).toBe(200);
+
+    // Uso único: o link não vale de novo
+    expect((await request.get(`/invitations/${token}`)).status()).toBe(404);
+    const again = await request.post(`/invitations/${token}/accept`, { data: { name: 'De Novo', password: STRONG_PASSWORD } });
+    expect(again.status()).toBe(404);
+
+    const admin = await sessionOf(request, 'admin');
+    const team = await (await request.get('/users', { headers: bearer(admin.token) })).json();
+    expect(team.map((u: { email: string }) => u.email)).toContain(email);
+  });
+
+  test('só o ADMIN convida (equipe, cliente e superadmin → 403); perfil CLIENT → 400; e-mail que já tem conta → 409', async ({ request }) => {
+    for (const key of ['employee', 'kitchen', 'courier', 'client', 'superadmin'] as const) {
+      const session = await sessionOf(request, key);
+      const res = await request.post('/store/invitations', {
+        headers: bearer(session.token),
+        data: { email: uniqueEmail('convite-negado'), role: 'EMPLOYEE' },
+      });
+      expect(res.status(), `${key}: ${await res.text()}`).toBe(403);
+    }
+    const admin = await sessionOf(request, 'admin');
+    await expectError(
+      await request.post('/store/invitations', { headers: bearer(admin.token), data: { email: uniqueEmail('convite-cliente'), role: 'CLIENT' } }),
+      400,
+    );
+    await expectError(
+      await request.post('/store/invitations', { headers: bearer(admin.token), data: { email: DEFAULT_USERS.client.email, role: 'EMPLOYEE' } }),
+      409,
+    );
+  });
+
+  test('convite revogado pelo ADMIN deixa de valer (404) e link inválido também é 404', async ({ request }) => {
+    const { invitation, token } = await invite(request, uniqueEmail('convite-revogado'), 'COURIER');
+    const admin = await sessionOf(request, 'admin');
+    const revoked = await request.delete(`/store/invitations/${invitation.id}`, { headers: bearer(admin.token) });
+    expect(revoked.status(), await revoked.text()).toBe(200);
+    expect((await revoked.json()).status).toBe('REVOKED');
+
+    await expectError(await request.get(`/invitations/${token}`), 404);
+    await expectError(await request.post(`/invitations/${token}/accept`, { data: { name: 'Tarde Demais', password: STRONG_PASSWORD } }), 404);
+    await expectError(await request.get(`/invitations/${'B'.repeat(43)}`), 404);
   });
 });

@@ -1,5 +1,7 @@
 # compiled output
 /dist
+# build isolado dos testes E2E (npm run build:e2e), separado do dist do nest start --watch
+/dist-e2e
 /node_modules
 /build
 

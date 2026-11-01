@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { E2E } from '../../../support/env';
 import { signInAs } from '../../../support/web';
 import { API_URL, StaffApi, pageHeading, toast } from './helpers';
 
@@ -8,7 +9,7 @@ import { API_URL, StaffApi, pageHeading, toast } from './helpers';
  */
 
 const CORS_HEADERS = {
-  'access-control-allow-origin': 'http://localhost:5174',
+  'access-control-allow-origin': E2E.webURL,
   'access-control-allow-credentials': 'true',
 };
 

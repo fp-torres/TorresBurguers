@@ -1,9 +1,11 @@
 import { test, expect, request, type Page } from '@playwright/test';
+import { E2E } from '../../../support/env';
 import {
   API_URL,
   addToCart,
   cartLink,
   createClient,
+  demoStore,
   fulfillJson,
   menuSection,
   modalAddButton,
@@ -15,14 +17,15 @@ import {
   searchBox,
   searchFor,
   seedCatalog,
+  storeApi,
   trackRequests,
   useSession,
   type Catalog,
 } from './helpers';
 
 /**
- * A loja real NUNCA é fechada aqui: GET /store/status (e o store_open da cotação) são
- * interceptados com page.route e só a resposta vista por esta página muda.
+ * A loja real NUNCA é fechada aqui: o perfil e o status da loja (GET /stores/<slug> e /stores/<slug>/status)
+ * e o store_open da cotação são interceptados com page.route e só a resposta vista por esta página muda.
  */
 
 let catalog: Catalog;
@@ -56,10 +59,12 @@ test.describe('Loja fechada (status simulado)', () => {
     await openHome(page);
     await expect(page.getByText('No momento não estamos recebendo pedidos. Volte mais tarde!')).toBeVisible();
 
-    // Destaques (Imperdíveis) também ficam bloqueados
+    // Destaques (Imperdíveis) também ficam bloqueados: botão "Fechado" (nome acessível "<produto>: loja fechada")
     const imperdiveis = page.locator('section', { has: page.getByRole('heading', { name: 'Imperdíveis' }) });
-    await expect(imperdiveis.getByRole('button', { name: 'Fechado', exact: true }).first()).toBeDisabled();
-    await expect(imperdiveis.getByRole('button', { name: 'Adicionar', exact: true })).toHaveCount(0);
+    const blocked = imperdiveis.getByRole('button', { name: `${catalog.promo.name}: loja fechada`, exact: true });
+    await expect(blocked).toBeDisabled();
+    await expect(blocked).toHaveText('Fechado');
+    await expect(imperdiveis.getByRole('button', { name: /^Adicionar\b/ })).toHaveCount(0);
 
     await searchFor(page, catalog.tag);
     const menu = menuSection(page);
@@ -141,20 +146,20 @@ test.describe('Loja fechada (status simulado)', () => {
   });
 });
 
-test.describe('Banner da página inicial (GET /promotions/banner)', () => {
-  test('mostra o título e a mensagem da promoção devolvidos pela API', async ({ page }) => {
+test.describe('Banner da vitrine (GET /stores/<slug>/promotions/banner)', () => {
+  test('mostra o título e a mensagem da promoção devolvidos pela API para a loja', async ({ page }) => {
     const api = await request.newContext({ baseURL: API_URL });
-    const banner = await (await api.get('/promotions/banner')).json();
+    const banner = await (await api.get(`/stores/${E2E.demoStoreSlug}/promotions/banner`)).json();
     await api.dispose();
 
     await openHome(page);
     await expect(page.getByRole('heading', { name: banner.title, exact: true })).toBeVisible();
     await expect(page.getByText(banner.message, { exact: true })).toBeVisible();
-    await expect(page.getByText(banner.type === 'football' ? 'Jogo de Hoje' : 'Oferta de Hoje', { exact: true })).toBeVisible();
+    await expect(page.getByText(banner.type === 'football' ? 'Jogo de Hoje' : 'Sugestão de Hoje', { exact: true })).toBeVisible();
   });
 
   test('banner de jogo do dia mostra os times, o campeonato e o horário', async ({ page }) => {
-    await page.route(`${API_URL}/promotions/banner`, (route) =>
+    await page.route(storeApi('/promotions/banner'), (route) =>
       fulfillJson(route, 200, {
         type: 'football',
         title: 'Hoje tem jogo! ⚽',
@@ -170,10 +175,12 @@ test.describe('Banner da página inicial (GET /promotions/banner)', () => {
     await expect(page.getByText('Brasileirão · 21:30')).toBeVisible();
   });
 
-  test('se o banner não responder, a vitrine mostra um texto padrão e o cardápio funciona', async ({ page }) => {
-    await page.route(`${API_URL}/promotions/banner`, (route) => route.abort('failed'));
+  test('se o banner não responder, a vitrine mostra um texto padrão com o nome da loja e o cardápio funciona', async ({ page }) => {
+    await page.route(storeApi('/promotions/banner'), (route) => route.abort('failed'));
     await openHome(page);
-    await expect(page.getByRole('heading', { name: 'Peça agora mesmo 🍔' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Peça agora mesmo', exact: true })).toBeVisible();
+    const store = await demoStore();
+    await expect(page.getByText(`Escolha seus favoritos no cardápio de ${store.name}`, { exact: false })).toBeVisible();
     await searchFor(page, catalog.drink.name);
     await expect(menuSection(page).getByRole('heading', { name: catalog.drink.name })).toBeVisible();
     await expect(searchBox(page)).toBeVisible();

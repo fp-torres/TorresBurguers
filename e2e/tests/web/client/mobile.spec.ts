@@ -5,6 +5,7 @@ import {
   cartLink,
   createAddress,
   createClient,
+  demoStore,
   getOrder,
   loginViaUI,
   menuSection,
@@ -14,6 +15,8 @@ import {
   openHome,
   readStorage,
   seedCatalog,
+  storePath,
+  storeUrl,
   summaryValue,
   useSession,
   waitForStoreOpen,
@@ -55,10 +58,17 @@ test.describe('Vitrine no celular (390x844)', () => {
     const client = await newClient('Bruno Celular');
     await createAddress(client.api, { nickname: 'Casa', neighborhood: 'Botafogo', street: 'Rua São Clemente', number: '120' });
 
+    // Sem loja visitada antes, o login leva ao diretório de lojas (marca Comestra); dali o cliente escolhe a loja
     await loginViaUI(page, client.email, client.password);
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByText('Bem-vindo, Bruno!')).toBeVisible();
     await expect(page.getByRole('banner').getByRole('link', { name: 'Página inicial' })).toContainText('Comestra');
+    await expectNoHorizontalScroll(page, 'diretório de lojas');
+
+    const store = await demoStore();
+    await page.getByRole('link', { name: new RegExp(store.name) }).first().click();
+    await expect(page).toHaveURL(storeUrl());
+    await expect(page.getByRole('banner').getByRole('link', { name: `${store.name}: cardápio` })).toBeVisible();
     await expect(menuSection(page).getByRole('button', { name: 'Tudo', exact: true })).toBeVisible();
     await expectNoHorizontalScroll(page, 'vitrine');
 
@@ -70,7 +80,7 @@ test.describe('Vitrine no celular (390x844)', () => {
     });
     await expect(cartLink(page)).toHaveAccessibleName('Carrinho com 1 item');
     await cartLink(page).click();
-    await expect(page).toHaveURL(/\/cart$/);
+    await expect(page).toHaveURL(storeUrl('cart'));
     await expectNoHorizontalScroll(page, 'carrinho');
 
     const total = money(catalog.burger.price, catalog.bacon.price, 7); // Botafogo: R$ 7,00
@@ -87,11 +97,11 @@ test.describe('Vitrine no celular (390x844)', () => {
     expect(status, JSON.stringify(created)).toBe(201);
 
     await expect(page.getByRole('heading', { name: 'Pedido Confirmado! 🎉' })).toBeVisible();
-    await expect(page.getByText(`Pedido #${created.id}`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`Pedido #${created.number} · ${store.name}`, { exact: true })).toBeVisible();
     await expectNoHorizontalScroll(page, 'pedido confirmado');
 
     await page.getByRole('link', { name: 'Meus Pedidos' }).click();
-    await page.getByText(`Pedido #${created.id}`, { exact: true }).click();
+    await page.getByText(`Pedido #${created.number}`, { exact: true }).click();
     await expect(page.getByText(brl(total), { exact: true })).toBeVisible();
     await expect(page.getByText('Dinheiro', { exact: true })).toBeVisible();
     await expect(page.getByText(`Pagar na entrega · troco para ${brl(50)}`)).toBeVisible();
@@ -112,14 +122,16 @@ test.describe('Vitrine no celular (390x844)', () => {
     await useSession(page, client.session);
 
     await openHome(page);
-    await expectNoHorizontalScroll(page, '/');
+    await expectNoHorizontalScroll(page, storePath());
     await addToCart(page, catalog.promo.name);
 
     await openCart(page);
-    await expectNoHorizontalScroll(page, '/cart');
+    await expectNoHorizontalScroll(page, storePath('cart'));
 
     for (const [path, ready] of [
+      ['/', page.getByRole('heading', { level: 1, name: /estabelecimentos/ })],
       ['/my-orders', page.getByText('Nenhum pedido ainda')],
+      ['/esqueci-senha', page.getByRole('heading', { name: 'Esqueceu a senha?' })],
       ['/profile', page.getByRole('heading', { name: /Meus Dados/ })],
       ['/signin', page.getByRole('heading', { name: /Bem-vindo de volta/ })],
       ['/signup', page.getByRole('heading', { name: /Crie sua conta/ })],
@@ -131,7 +143,7 @@ test.describe('Vitrine no celular (390x844)', () => {
     }
   });
 
-  test('no celular o tema fica no menu da conta e sair mantém o carrinho e o tema', async ({ page }) => {
+  test('no celular o tema fica no menu da conta; sair apaga o carrinho deste aparelho e mantém o tema', async ({ page }) => {
     const client = await newClient('Cliente Menu');
     await useSession(page, client.session);
     await openHome(page);
@@ -150,11 +162,13 @@ test.describe('Vitrine no celular (390x844)', () => {
     await page.getByRole('button', { name: 'Sair da Conta' }).click();
     await page.getByRole('alertdialog', { name: 'Sair?' }).getByRole('button', { name: 'Sair', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
-    await expect(cartLink(page)).toHaveAccessibleName('Carrinho com 1 item');
+    // Aparelho compartilhado: o carrinho de quem saiu não fica para a próxima pessoa
+    await expect(cartLink(page)).toHaveAccessibleName('Carrinho');
     await expect(page.locator('html')).toHaveClass(/\bdark\b/);
 
     const storage = await readStorage(page);
     expect(storage[STORAGE_KEYS.token]).toBeUndefined();
     expect(storage[STORAGE_KEYS.theme]).toBe('dark');
+    expect(Object.keys(storage).filter((key) => key.startsWith(`${STORAGE_KEYS.cart}.`))).toEqual([]);
   });
 });

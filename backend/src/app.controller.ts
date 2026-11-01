@@ -8,12 +8,11 @@ import type { HealthStatus } from './app.service';
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
+  /** Pública e sem token: só { status: 'ok' } (sem nome nem versão do sistema). */
   @Get('health')
   @ApiOkResponse({
     description: 'API no ar',
-    schema: {
-      example: { status: 'ok', name: 'Nome do sistema', version: '1.0.0' },
-    },
+    schema: { example: { status: 'ok' } },
   })
   getHealth(): HealthStatus {
     return this.appService.getHealth();
