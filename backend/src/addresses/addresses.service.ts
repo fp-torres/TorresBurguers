@@ -8,8 +8,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DeepPartial, IsNull, Repository } from 'typeorm';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import { omitUndefined } from '../common/transforms';
+import { AddressGeoService } from './address-geo.service';
 import { AddressLocationService } from './address-location.service';
 import { CepLookupService, type CepLookupResult } from './cep-lookup.service';
+import { GEO_ADDRESS_FIELDS } from './geocoding';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { Address } from './entities/address.entity';
@@ -37,6 +39,7 @@ export class AddressesService {
     private readonly rateLimit: RateLimitService,
     private readonly cepLookup: CepLookupService,
     private readonly locations: AddressLocationService,
+    private readonly geo: AddressGeoService,
   ) {}
 
   // --- BUSCA DE CEP (ViaCEP com fallback para a BrasilAPI; ver CepLookupService) ---
@@ -80,10 +83,15 @@ export class AddressesService {
     if (active >= MAX_ADDRESSES_PER_USER) {
       throw new BadRequestException(ADDRESSES_LIMIT_MESSAGE);
     }
-    const location = await this.locations.resolve(createAddressDto.zipCode);
+    // CEP (zona) e coordenadas (entrega por distância) em paralelo; nenhum dos dois impede salvar
+    const [location, coordinates] = await Promise.all([
+      this.locations.resolve(createAddressDto.zipCode),
+      this.geo.resolveForSave(createAddressDto),
+    ]);
     const address = this.addressRepository.create({
       ...omitUndefined(createAddressDto),
       ...location,
+      ...coordinates,
       user: { id: userId },
     } as DeepPartial<Address>);
     const saved = await this.addressRepository.save(address);
@@ -126,17 +134,24 @@ export class AddressesService {
     const zipChanged =
       updateAddressDto.zipCode !== undefined &&
       updateAddressDto.zipCode !== address.zipCode;
+    // Rua, número, bairro, cidade, UF ou CEP mudou: as coordenadas antigas não valem mais
+    const placeChanged = GEO_ADDRESS_FIELDS.some(
+      (field) =>
+        updateAddressDto[field] !== undefined &&
+        updateAddressDto[field] !== address[field],
+    );
     this.addressRepository.merge(
       address,
       omitUndefined(updateAddressDto) as DeepPartial<Address>,
     );
-    if (
-      zipChanged ||
-      !address.cep_status ||
-      address.cep_status === 'UNAVAILABLE'
-    ) {
-      Object.assign(address, await this.locations.resolve(address.zipCode));
-    }
+    const [location, coordinates] = await Promise.all([
+      zipChanged || !address.cep_status || address.cep_status === 'UNAVAILABLE'
+        ? this.locations.resolve(address.zipCode)
+        : null,
+      placeChanged ? this.geo.resolveForSave(address) : null,
+    ]);
+    if (location) Object.assign(address, location);
+    if (coordinates) Object.assign(address, coordinates);
     await this.addressRepository.save(address);
     return this.findOne(id, userId);
   }

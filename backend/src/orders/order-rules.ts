@@ -159,7 +159,24 @@ export interface ZipRange {
   to: string;
 }
 
-export interface DeliveryZone extends DeliveryEstimate {
+/**
+ * Pedido mínimo e frete grátis (em reais), comparados com o SUBTOTAL dos itens (já com as promoções, sem a
+ * taxa). Ficam no topo da configuração de entrega da loja e cada zona (ou faixa) pode sobrescrevê-los;
+ * ausente = vale o da loja. Ver applyOrderRules.
+ */
+export interface OrderValueRules {
+  /** Pedido mínimo para entrega (0 = sem mínimo; numa zona, 0 tira o mínimo da loja só nela). */
+  min_order?: number;
+  /** Frete grátis quando o subtotal chega a este valor (inclusive; 0 = sempre grátis). */
+  free_delivery_above?: number;
+}
+
+/** Regras da loja: as da entrega e se o pedido mínimo vale também na retirada (padrão: só na entrega). */
+export interface StoreOrderValueRules extends OrderValueRules {
+  min_order_takeout?: boolean;
+}
+
+export interface DeliveryZone extends DeliveryEstimate, OrderValueRules {
   /**
    * Bairros atendidos (nome inteiro, sem diferenciar maiúsculas e acentos). Pode ficar vazio quando a zona
    * tem faixas de CEP.
@@ -181,7 +198,7 @@ export const OUTSIDE_ZONES_POLICIES: readonly OutsideZonesPolicy[] = [
   'refuse',
 ];
 
-export interface DeliveryZonesConfig {
+export interface DeliveryZonesConfig extends StoreOrderValueRules {
   zones: DeliveryZone[];
   /** Bairro fora de todas as zonas. */
   fallback: DeliveryEstimate;
@@ -422,6 +439,8 @@ export function parseDeliveryZones(
       ...(ranges?.length ? { zip_ranges: ranges } : {}),
       fee: fromCents(toCents(zone.fee)),
       time: zone.time.trim(),
+      // Pedido mínimo e frete grátis próprios da zona (ausentes = os da loja)
+      ...parseOrderValueRules(zone, `da zona ${position}`),
     };
   });
 
@@ -430,7 +449,261 @@ export function parseDeliveryZones(
     zones,
     fallback: { fee: fromCents(toCents(chosen.fee)), time: chosen.time.trim() },
     ...(policy ? { outside_zones: policy } : {}),
+    ...parseStoreOrderValueRules(object),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Pedido mínimo e frete grátis acima de um valor (no JSON de entrega da loja; por zona, opcional)
+// ---------------------------------------------------------------------------
+
+/** Campo "code" do 400 do pedido e das cobranças abaixo do pedido mínimo (o orçamento não recusa). */
+export const ORDER_BELOW_MINIMUM_CODE = 'ORDER_BELOW_MINIMUM';
+
+/** Valor em reais de uma regra: número de 0 ao teto do banco; ausente ou null → undefined (herda). */
+function parseRuleMoney(
+  value: unknown,
+  field: string,
+  where: string,
+): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    value < 0 ||
+    toCents(value) > MAX_MONEY_CENTS
+  ) {
+    throw new Error(
+      `"${field}" ${where} precisa ser um valor em reais de 0 a ${MAX_MONEY_VALUE} (ex.: 30 ou 29.9).`,
+    );
+  }
+  return fromCents(toCents(value));
+}
+
+/**
+ * Pedido mínimo ("min_order") e frete grátis ("free_delivery_above") de uma zona (ou faixa): ausente ou null
+ * = herda o da loja; 0 vale (sem mínimo / sempre grátis nesta zona). Valores normalizados em centavos.
+ * Inválido → Error com a explicação ("where": "da zona 2", "da faixa 1"...).
+ */
+export function parseOrderValueRules(
+  raw: unknown,
+  where: string,
+): OrderValueRules {
+  const data = (raw && typeof raw === 'object' ? raw : {}) as {
+    min_order?: unknown;
+    free_delivery_above?: unknown;
+  };
+  const minOrder = parseRuleMoney(data.min_order, 'min_order', where);
+  const freeAbove = parseRuleMoney(
+    data.free_delivery_above,
+    'free_delivery_above',
+    where,
+  );
+  return {
+    ...(minOrder !== undefined ? { min_order: minOrder } : {}),
+    ...(freeAbove !== undefined ? { free_delivery_above: freeAbove } : {}),
+  };
+}
+
+/**
+ * Regras da loja (topo da configuração de entrega): "min_order" (0 ou ausente = sem mínimo, omitido),
+ * "free_delivery_above" (ausente = sem frete grátis; 0 = sempre grátis) e "min_order_takeout" (true = o
+ * mínimo vale também na retirada; só é guardado com um mínimo). Nada configurado → {} (o comportamento de
+ * sempre). Inválido → Error com a explicação.
+ */
+export function parseStoreOrderValueRules(raw: unknown): StoreOrderValueRules {
+  const data = (
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+  ) as { min_order_takeout?: unknown };
+  const rules = parseOrderValueRules(data, 'da loja');
+  const takeout = data.min_order_takeout;
+  if (
+    takeout !== undefined &&
+    takeout !== null &&
+    typeof takeout !== 'boolean'
+  ) {
+    throw new Error(
+      '"min_order_takeout" deve ser true (o pedido mínimo vale também na retirada) ou false (só na entrega).',
+    );
+  }
+  const minOrder = rules.min_order ? rules.min_order : undefined;
+  return {
+    ...(minOrder !== undefined ? { min_order: minOrder } : {}),
+    ...(rules.free_delivery_above !== undefined
+      ? { free_delivery_above: rules.free_delivery_above }
+      : {}),
+    ...(minOrder !== undefined && takeout === true
+      ? { min_order_takeout: true }
+      : {}),
+  };
+}
+
+/** Resultado das regras de valor sobre um orçamento (centavos). */
+export interface OrderRulesOutcome {
+  /** Taxa cobrada (0 quando o frete grátis vale). */
+  feeCents: number;
+  /** Taxa da zona (ou faixa) antes do frete grátis. */
+  originalFeeCents: number;
+  /** O frete grátis zerou a taxa (só quando havia taxa a zerar). */
+  freeDeliveryApplied: boolean;
+  /** Valor do frete grátis em vigor na entrega (null = sem frete grátis, ou retirada). */
+  freeDeliveryThresholdCents: number | null;
+  /** Quanto falta para o frete grátis (0 = atingido); null = não se aplica (sem regra, retirada ou sem taxa). */
+  missingForFreeDeliveryCents: number | null;
+  /** Pedido mínimo em vigor (null = sem mínimo). */
+  minOrderCents: number | null;
+  /** Quanto falta para o pedido mínimo (0 = atingido); null = sem mínimo. */
+  missingForMinOrderCents: number | null;
+}
+
+/**
+ * Pedido mínimo e frete grátis de um orçamento (fonte única: orçamento, pedido e cobranças).
+ * - Entrega: vale o valor da zona/faixa ("area") e, sem ele, o da loja. Subtotal ≥ frete grátis (inclusive)
+ *   zera a taxa; subtotal < mínimo → falta (missingForMinOrderCents > 0; quem chama decide se recusa).
+ * - Retirada: sem taxa e sem frete grátis; o mínimo da loja só com "min_order_takeout" (as zonas não valem).
+ * Sem regras (o padrão) → taxa intacta e todos os campos nulos.
+ */
+export function applyOrderRules(
+  input: { type: OrderType; subtotalCents: number; feeCents: number },
+  store?: StoreOrderValueRules | null,
+  area?: OrderValueRules | null,
+): OrderRulesOutcome {
+  const delivery = input.type === OrderType.DELIVERY;
+  const subtotal = Math.max(0, Math.round(input.subtotalCents));
+  const originalFeeCents = Math.max(0, Math.round(input.feeCents));
+
+  const minValue = delivery
+    ? (area?.min_order ?? store?.min_order)
+    : store?.min_order_takeout === true
+      ? store.min_order
+      : undefined;
+  const minCents = minValue === undefined ? 0 : toCents(minValue);
+  const minOrderCents = minCents > 0 ? minCents : null;
+
+  const freeValue = delivery
+    ? (area?.free_delivery_above ?? store?.free_delivery_above)
+    : undefined;
+  const freeDeliveryThresholdCents =
+    freeValue === undefined ? null : toCents(freeValue);
+  // Sem taxa a zerar, não há "frete grátis" a conquistar
+  const freeApplies =
+    freeDeliveryThresholdCents !== null && originalFeeCents > 0;
+  const freeDeliveryApplied =
+    freeApplies && subtotal >= freeDeliveryThresholdCents;
+
+  return {
+    feeCents: freeDeliveryApplied ? 0 : originalFeeCents,
+    originalFeeCents,
+    freeDeliveryApplied,
+    freeDeliveryThresholdCents,
+    missingForFreeDeliveryCents: freeApplies
+      ? Math.max(0, freeDeliveryThresholdCents - subtotal)
+      : null,
+    minOrderCents,
+    missingForMinOrderCents:
+      minOrderCents === null ? null : Math.max(0, minOrderCents - subtotal),
+  };
+}
+
+/** "O pedido mínimo desta loja para entrega é R$ 30,00. Faltam R$ 4,10." */
+export function orderBelowMinimumMessage(
+  type: OrderType,
+  minOrderCents: number,
+  missingCents: number,
+): string {
+  const how = type === OrderType.TAKEOUT ? 'retirada' : 'entrega';
+  return `O pedido mínimo desta loja para ${how} é ${formatBRL(fromCents(minOrderCents))}. Faltam ${formatBRL(fromCents(missingCents))}.`;
+}
+
+/** Campos aditivos do orçamento (POST /orders/quote) com o resultado das regras, em reais. */
+export interface OrderRulesQuoteFields {
+  /** Taxa cobrada (já zerada quando o frete grátis vale). */
+  delivery_fee: number;
+  /** Taxa antes do frete grátis (igual a delivery_fee quando ele não vale). */
+  delivery_fee_original: number;
+  free_delivery_applied: boolean;
+  free_delivery_threshold: number | null;
+  missing_for_free_delivery: number | null;
+  min_order_value: number | null;
+  missing_for_min_order: number | null;
+}
+
+export function orderRulesQuoteFields(
+  outcome: OrderRulesOutcome,
+): OrderRulesQuoteFields {
+  const money = (cents: number | null) =>
+    cents === null ? null : fromCents(cents);
+  return {
+    delivery_fee: fromCents(outcome.feeCents),
+    delivery_fee_original: fromCents(outcome.originalFeeCents),
+    free_delivery_applied: outcome.freeDeliveryApplied,
+    free_delivery_threshold: money(outcome.freeDeliveryThresholdCents),
+    missing_for_free_delivery: money(outcome.missingForFreeDeliveryCents),
+    min_order_value: money(outcome.minOrderCents),
+    missing_for_min_order: money(outcome.missingForMinOrderCents),
+  };
+}
+
+/** Pedido mínimo e frete grátis no perfil público da loja (GET /stores/:slug), para a vitrine. */
+export interface PublicOrderRules {
+  /** Pedido mínimo da loja para entrega (null = sem mínimo). */
+  min_order: number | null;
+  /** O mínimo vale também na retirada. */
+  min_order_takeout: boolean;
+  /** Frete grátis a partir deste subtotal (null = sem frete grátis). */
+  free_delivery_above: number | null;
+  /** Alguma zona tem mínimo ou frete grátis diferente do da loja. */
+  varies_by_zone: boolean;
+}
+
+export const NO_PUBLIC_ORDER_RULES: Readonly<PublicOrderRules> = {
+  min_order: null,
+  min_order_takeout: false,
+  free_delivery_above: null,
+  varies_by_zone: false,
+};
+
+/**
+ * Regras da loja para a vitrine, lidas do JSON de entrega gravado (stores.delivery_zones). Sem zonas próprias
+ * (inclusive a loja padrão com as da plataforma) ou JSON inválido → nada (como no cálculo, que só aplica as
+ * regras das zonas próprias da loja).
+ */
+export function publicOrderRules(storeZones: unknown): PublicOrderRules {
+  if (
+    !storeZones ||
+    typeof storeZones !== 'object' ||
+    Array.isArray(storeZones)
+  )
+    return { ...NO_PUBLIC_ORDER_RULES };
+  try {
+    const store = parseStoreOrderValueRules(storeZones);
+    // No modo por distância, as faixas de km fazem o papel das zonas (delivery-distance.ts)
+    const config = storeZones as {
+      zones?: unknown;
+      mode?: unknown;
+      distance?: { bands?: unknown } | null;
+    };
+    const list =
+      config.mode === 'distance' ? config.distance?.bands : config.zones;
+    const zones = (Array.isArray(list) ? list : []).map((zone, index) =>
+      parseOrderValueRules(zone, `da zona ${index + 1}`),
+    );
+    const storeMin = store.min_order ?? 0;
+    const storeFree = store.free_delivery_above;
+    return {
+      min_order: store.min_order ?? null,
+      min_order_takeout: store.min_order_takeout === true,
+      free_delivery_above: storeFree ?? null,
+      varies_by_zone: zones.some(
+        (zone) =>
+          (zone.min_order !== undefined && zone.min_order !== storeMin) ||
+          (zone.free_delivery_above !== undefined &&
+            zone.free_delivery_above !== storeFree),
+      ),
+    };
+  } catch {
+    return { ...NO_PUBLIC_ORDER_RULES };
+  }
 }
 
 export interface ResolvedDeliveryZones {

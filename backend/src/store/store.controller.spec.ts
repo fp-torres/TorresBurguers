@@ -16,6 +16,7 @@ import { UserRole } from '../users/entities/user.entity';
 import { Store, StoreAccountStatus } from './entities/store.entity';
 import { StoreCustomersController } from './store-customers.controller';
 import { StoreCustomersService } from './store-customers.service';
+import { StoreDeliveryToolsService } from './store-delivery-tools.service';
 import { StoreDirectoryService } from './store-directory.service';
 import { StoreSettingsService } from './store-settings.service';
 import { StoreController } from './store.controller';
@@ -128,6 +129,19 @@ describe('Loja (HTTP): /store e /stores', () => {
     uploadLogo: jest.fn().mockResolvedValue({ logo: 's7-logo.webp' }),
     removeLogo: jest.fn().mockResolvedValue({ logo: null }),
   };
+  // Ferramentas da entrega por distância (localizar a loja, testar um endereço)
+  const deliveryTools = {
+    geocodeStore: jest.fn((tenant: { storeId: number }) =>
+      Promise.resolve({
+        latitude: -22.9,
+        longitude: -43.2,
+        store: tenant.storeId,
+      }),
+    ),
+    simulate: jest.fn((tenant: { storeId: number }) =>
+      Promise.resolve({ mode: 'distance', store: tenant.storeId }),
+    ),
+  };
   const customers = {
     list: jest.fn().mockResolvedValue({
       items: [],
@@ -187,6 +201,7 @@ describe('Loja (HTTP): /store e /stores', () => {
       providers: [
         { provide: StoreService, useValue: storeService },
         { provide: StoreSettingsService, useValue: settings },
+        { provide: StoreDeliveryToolsService, useValue: deliveryTools },
         { provide: StoreCustomersService, useValue: customers },
         { provide: StoreDirectoryService, useValue: directory },
         { provide: TenantService, useValue: tenants },
@@ -389,6 +404,124 @@ describe('Loja (HTTP): /store e /stores', () => {
       expect(settings.getSettings).toHaveBeenCalledWith(
         expect.objectContaining({ storeId: 7 }),
       );
+    });
+
+    it('localizar a loja e testar um endereço: só ADMIN, 200, loja do usuário; DTO valida CEP, coordenadas e o rascunho', async () => {
+      for (const who of [EMPLOYEE_8, KITCHEN_7, CLIENT]) {
+        await request(server)
+          .post('/store/settings/geocode')
+          .set(as(who))
+          .send({})
+          .expect(403);
+        await request(server)
+          .post('/store/settings/delivery-simulation')
+          .set(as(who))
+          .send({ zip_code: '20040003' })
+          .expect(403);
+      }
+      await request(server)
+        .post('/store/settings/geocode')
+        .set(as(ADMIN_7))
+        .send({ zip_code: '20040-003', state: 'rj' })
+        .expect(200);
+      expect(deliveryTools.geocodeStore).toHaveBeenLastCalledWith(
+        expect.objectContaining({ storeId: 7 }),
+        expect.objectContaining({ zip_code: '20040003', state: 'RJ' }),
+      );
+      const simulated = await request(server)
+        .post('/store/settings/delivery-simulation')
+        .set(as(ADMIN_7))
+        .send({
+          zip_code: '20040-003',
+          latitude: '-22.9',
+          longitude: -43.2,
+          delivery_zones: {
+            mode: 'distance',
+            fallback: { fee: 10, time: '60 min' },
+            distance: { bands: [{ up_to_km: 3, fee: 5, time: '30 min' }] },
+          },
+        })
+        .expect(200);
+      expect(simulated.body).toEqual({ mode: 'distance', store: 7 });
+      expect(deliveryTools.simulate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ storeId: 7 }),
+        expect.objectContaining({
+          zip_code: '20040003',
+          latitude: -22.9,
+          delivery_zones: expect.objectContaining({
+            zones: [],
+            mode: 'distance',
+          }) as unknown,
+        }),
+      );
+
+      const invalid = async (body: object, message: string) => {
+        const res = await request(server)
+          .post('/store/settings/delivery-simulation')
+          .set(as(ADMIN_7))
+          .send(body)
+          .expect(400);
+        expect(JSON.stringify(res.body)).toContain(message);
+      };
+      await invalid({}, 'Informe o CEP do endereço a testar.');
+      await invalid({ zip_code: '123' }, 'CEP inválido');
+      await invalid(
+        { zip_code: '20040003', latitude: 91 },
+        'Latitude inválida',
+      );
+      await invalid(
+        {
+          zip_code: '20040003',
+          delivery_zones: { mode: 'distance', fallback: { fee: 1, time: 'x' } },
+        },
+        'Zonas de entrega inválidas: no modo por distância',
+      );
+      await invalid({ zip_code: '20040003', store_id: 8 }, 'store_id');
+    });
+
+    it('PATCH aceita o local da loja (latitude e longitude) e o modo por distância', async () => {
+      await request(server)
+        .patch('/store/settings')
+        .set(as(ADMIN_7))
+        .send({
+          latitude: '-22.9035',
+          longitude: -43.2096,
+          delivery_zones: {
+            mode: 'distance',
+            outside_zones: 'refuse',
+            distance: {
+              bands: [{ up_to_km: 2, fee: 5, time: '25-35 min' }],
+              max_km: 6,
+              extra_km_fee: 1.5,
+            },
+          },
+        })
+        .expect(200);
+      expect(settings.updateSettings).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          latitude: -22.9035,
+          longitude: -43.2096,
+          delivery_zones: {
+            zones: [],
+            outside_zones: 'refuse',
+            mode: 'distance',
+            distance: {
+              bands: [{ up_to_km: 2, fee: 5, time: '25-35 min' }],
+              max_km: 6,
+              extra_km_fee: 1.5,
+              route_factor: 1.3,
+            },
+          },
+        }),
+        expect.anything(),
+      );
+      const res = await request(server)
+        .patch('/store/settings')
+        .set(as(ADMIN_7))
+        .send({ longitude: 200 })
+        .expect(400);
+      expect(JSON.stringify(res.body)).toContain('Longitude inválida');
     });
 
     it('PATCH normaliza os campos antes do serviço', async () => {

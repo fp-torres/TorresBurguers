@@ -33,7 +33,9 @@ navegador ──► http://localhost:8080 ──► web (Nginx)
 - **Mesma origem:** o site chama a API em `/api` (URL relativa, definida no build). Funciona em `localhost`, pelo IP
   da máquina ou atrás de um proxy HTTPS sem gerar o site de novo. As imagens são carregadas de `/api/uploads/...`.
 - **Rede:** o banco fica numa rede interna, sem saída para a internet e sem porta no computador. A API está nas duas
-  redes (sai para a internet: consulta de CEP, Mercado Pago, SMTP). Só o Nginx tem porta publicada.
+  redes (sai para a internet: consulta de CEP, Mercado Pago, SMTP e, só com lojas que cobram a entrega por
+  distância, os serviços de mapa: Nominatim, AwesomeAPI e, com `GOOGLE_MAPS_API_KEY`, Google). Só o Nginx tem porta
+  publicada. As variáveis `GEOCODING_*` e `GOOGLE_MAPS_API_KEY` vão no `.env.docker` (modelo em `.env.docker.example`).
 - **Migrations:** aplicadas pela própria API na subida (`DB_MIGRATIONS_RUN=true`), antes de ela aceitar conexões;
   `DB_SYNCHRONIZE=false`. Uma subida sem migrations pendentes não faz nada no schema.
 - **Saúde:** `db` (pg_isready), `api` (`GET /health`) e `web` (página inicial). O `web` só sobe com a API saudável,

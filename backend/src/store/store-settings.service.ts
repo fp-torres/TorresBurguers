@@ -20,6 +20,7 @@ import {
 import { withOptimizedImage } from '../common/pipes/optimize-image.pipe';
 import { isStoreFile, storeFilePrefix } from '../common/uploads/store-files';
 import { isProduction } from '../config/env';
+import { storeLocationError } from '../orders/delivery-distance';
 import { uploadsDir } from '../config/paths';
 import { STORE_NOT_FOUND_MESSAGE } from '../tenancy/tenant.service';
 import type { TenantContext } from '../tenancy/tenant-context';
@@ -123,6 +124,15 @@ export class StoreSettingsService {
       await this.planLimits.assertFeature(storeId, 'custom_branding');
     }
     await this.assertFulfillment(storeId, current, changes);
+    // Local da loja (entrega por distância): coordenadas juntas e obrigatórias no modo distância
+    if (
+      'latitude' in changes ||
+      'longitude' in changes ||
+      'delivery_zones' in changes
+    ) {
+      const locationError = storeLocationError({ ...current, ...changes });
+      if (locationError) throw new BadRequestException(locationError);
+    }
 
     if (fields.length) {
       const result = await this.stores.update({ id: storeId }, changes);

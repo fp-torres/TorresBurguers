@@ -62,7 +62,7 @@ O **Comestra** é um SaaS multi-tenant: uma única instalação atende muitos es
 - **Cardápio** com fotos, preço promocional, ingredientes, adicionais permitidos, pausa de esgotados e lixeira
 - **Equipe por convite** (link de uso único), lixeira e proteção do responsável pela loja
 - **Clientes** que compraram na loja, com o histórico de pedidos dela, e **bloqueio de cliente** com motivo (só o administrador): o cliente bloqueado não compra naquela loja e continua comprando nas outras
-- **Configurações:** dados comerciais, endereço, horários, fuso, entrega e retirada (zonas por **bairro e/ou faixa de CEP**, taxas próprias e a escolha entre cobrar uma taxa padrão ou **recusar** endereços fora das zonas), mensagens de aberto/fechado, logo e cor (conforme o plano) e credenciais Mercado Pago da loja
+- **Configurações:** dados comerciais, endereço, horários, fuso, entrega e retirada (zonas por **bairro e/ou faixa de CEP** ou cobrança **por distância em km**, com faixas, km adicional até um raio máximo, local da loja no mapa e um simulador "Teste um endereço"; taxas próprias; **pedido mínimo** e **frete grátis acima de um valor**, na loja e em cada zona ou faixa; e a escolha entre cobrar uma taxa padrão ou **recusar** endereços fora da área), mensagens de aberto/fechado, logo e cor (conforme o plano) e credenciais Mercado Pago da loja
 - **Assinatura:** plano, limites e uso (inclusive o medidor de armazenamento), faturas e cancelamento no fim do período
 - **Pagamento estornado no Mercado Pago:** o quadro destaca em vermelho o pedido cujo pagamento foi estornado ou contestado depois da aprovação, para a equipe não entregar sem receber
 - **Dashboard e relatórios** no fuso da loja (relatórios avançados conforme o plano)
@@ -71,7 +71,8 @@ O **Comestra** é um SaaS multi-tenant: uma única instalação atende muitos es
 - Diretório de lojas e vitrine por slug, com a identidade visual da loja
 - Cardápio com busca, categorias, combos e ofertas; personalização (ponto da carne, ingredientes, adicionais, observação)
 - Carrinho **por loja**, retirada no balcão ou entrega com endereço salvo e busca de CEP (ViaCEP, com BrasilAPI como reserva)
-- Taxa e tempo de entrega calculados pela API conforme as zonas da loja, com o **bairro conferido pelo CEP**; fora da área de uma loja que recusa, o carrinho avisa antes de pagar e oferece a retirada
+- Taxa e tempo de entrega calculados pela API conforme as zonas da loja, com o **bairro conferido pelo CEP**, ou pela **distância** até a loja (endereço localizado no mapa pelo servidor); fora da área de uma loja que recusa, o carrinho avisa antes de pagar e oferece a retirada
+- **Pedido mínimo e frete grátis**: selos na vitrine; no carrinho, quanto falta para o mínimo (o pagamento fica bloqueado até lá), a barra "Faltam R$ X para o frete grátis" e a taxa riscada quando a entrega sai grátis. A API confere tudo de novo no pedido e nas cobranças
 - **Minha conta:** e-mail confirmado por link, troca de e-mail com confirmação no endereço novo e "Não fui eu" no antigo, troca de senha com a senha atual
 - Pagamento online por PIX ou cartão (Mercado Pago da loja) ou na entrega/retirada (dinheiro com troco ou maquininha)
 - **O servidor cria o pedido quando o pagamento é aprovado**, mesmo que o cliente feche a página; se a loja não puder mais vender, o valor é estornado
@@ -144,6 +145,7 @@ Status do pedido: `PENDING` (novo) → `PREPARING` (em preparo) → `READY_FOR_P
                     Swagger /api · /health · /uploads ──▶ Mercado Pago de cada loja (cartão e PIX)
                                             │         ──▶ Mercado Pago da Comestra (assinaturas SaaS)
                                             │         ──▶ ViaCEP / BrasilAPI · football-data.org
+                                            │         ──▶ Nominatim / AwesomeAPI / Google (entrega por distância, opcional)
                                             ▼
                          PostgreSQL 14+ (TypeORM + migrations)
 ```
@@ -173,7 +175,7 @@ comestra/
 │   │   ├── orders/           # pedidos, preço no servidor, transições, visão por perfil, dashboard e relatórios
 │   │   ├── payment/          # Mercado Pago por loja (cartão e PIX), sandbox, webhook e conciliação
 │   │   ├── store/            # configurações, status, clientes e credenciais da loja
-│   │   ├── addresses/        # endereços, busca de CEP e conferência do bairro pelo CEP
+│   │   ├── addresses/        # endereços, busca de CEP, conferência do bairro pelo CEP e localização no mapa
 │   │   ├── promotions/       # banner do dia
 │   │   ├── notifications/    # e-mails em texto e HTML com a marca da loja (driver de log ou SMTP) e links
 │   │   ├── common/           # uploads, limites, criptografia, manutenção, validações
@@ -276,7 +278,7 @@ npm run dev
 
 1. **Backup:** `pg_dump -U postgres -Fc comestra > comestra-AAAAMMDD.dump` e uma cópia da pasta `backend/uploads`.
 2. No `backend/.env`, use `DB_SYNCHRONIZE=false` (ou vazio). Com `true`, o TypeORM cria índices e colunas por fora das migrations e o banco fica diferente do de produção.
-3. Atualize o código, rode `npm install` em `backend/` e `frontend-web/` e suba a API: as migrations pendentes são aplicadas na subida. Para conferir: `cd backend && npm run migration:show` (13 migrations com `[X]`) e `npm run migration:check`. A `PerformanceIndexes` cria índices com `CONCURRENTLY`, fora de transação: se falhar no meio, basta subir de novo.
+3. Atualize o código, rode `npm install` em `backend/` e `frontend-web/` e suba a API: as migrations pendentes são aplicadas na subida. Para conferir: `cd backend && npm run migration:show` (14 migrations com `[X]`) e `npm run migration:check`. A `PerformanceIndexes` cria índices com `CONCURRENTLY`, fora de transação: se falhar no meio, basta subir de novo.
 4. **Login de novo?** Vindo de uma versão sem as sessões registradas (`AuthSessions`), defina `JWT_LEGACY_ISSUED_BEFORE` com o instante do deploy (ex.: `2026-11-01T12:00:00Z`) para os tokens antigos valerem até expirar; sem ela, em produção, todos (site, app e equipe) entram de novo.
 5. Vindo da versão de **loja única**, a migration cria a loja inicial com todos os dados atuais (nome e slug em `INITIAL_STORE_NAME`/`INITIAL_STORE_SLUG`) e a define como loja padrão.
 6. **Número do pedido:** a migration `OrderNumbersAndCustomerBlocks` renumera os pedidos existentes **por loja**, na ordem de criação. Telas e conversas antigas que citavam `Pedido #<id>` passam a mostrar outro número; o `id` continua nas rotas da API e no app mobile. Avise as lojas antes de atualizar.
@@ -393,7 +395,7 @@ npm run report      # relatório HTML da última execução
 ```
 
 - Ambiente isolado: a API de teste roda em **:3001** com o banco **`comestra_e2e`** (recriado do zero, schema só pelas migrations) e a web de teste em **:5174**. O banco de desenvolvimento nunca é tocado.
-- Suítes de API: `identity` (inclui sessões e logout, sessão em cookie, conta e troca de e-mail, e a manutenção de uploads e credenciais), `commerce` (inclui o número do pedido por loja, frete por CEP e desempenho), `tenancy` (isolamento entre lojas e bloqueio de cliente pela loja), `platform` (superpainel, sessão de suporte, e-mails com a marca da loja e correções das revisões), `billing` (planos, assinaturas, faturas, cota de armazenamento, webhook e garantias do banco) e `security` (parse de requisições); suítes web: `client` (diretório, vitrine, checkout, cabeçalhos de segurança, sessões ativas, sessão em cookie e segurança da conta), `admin` (painel, quadro de pedidos, sessão entre abas, assinatura e equipe), `platform` (superpainel no navegador, inclusive no celular) e `multistore` (vitrine com várias lojas).
+- Suítes de API: `identity` (inclui sessões e logout, sessão em cookie, conta e troca de e-mail, e a manutenção de uploads e credenciais), `commerce` (inclui o número do pedido por loja, frete por CEP, pedido mínimo e frete grátis, entrega por distância e desempenho), `tenancy` (isolamento entre lojas e bloqueio de cliente pela loja), `platform` (superpainel, sessão de suporte, e-mails com a marca da loja e correções das revisões), `billing` (planos, assinaturas, faturas, cota de armazenamento, webhook e garantias do banco) e `security` (parse de requisições); suítes web: `client` (diretório, vitrine, checkout, cabeçalhos de segurança, sessões ativas, sessão em cookie e segurança da conta), `admin` (painel, quadro de pedidos, sessão entre abas, assinatura e equipe), `platform` (superpainel no navegador, inclusive no celular) e `multistore` (vitrine com várias lojas, pedido mínimo e frete grátis no carrinho e no painel, e entrega por distância).
 - Requer PostgreSQL local, Google Chrome e as dependências instaladas em `backend/` e `frontend-web/`. Se o usuário `postgres` tiver senha: `DB_PASSWORD=... npm test` (Linux) ou `$env:DB_PASSWORD="..."; npm test` (PowerShell).
 - Execuções paralelas isoladas e o spec de CSP contra o build: [`e2e/README.md`](e2e/README.md).
 
@@ -452,6 +454,7 @@ Estes scripts alteram dados do banco de desenvolvimento e atuam **somente na loj
 | Marca da plataforma (nome padrão, slug, domínio, slogan, e-mail de suporte) | `src/config/brand.ts` em cada app |
 | Logo e ícones da plataforma | Web: `frontend-web/public/favicon.svg` e o componente `src/components/BrandLogo`. App: `frontend-mobile/assets/` |
 | Zonas de entrega da loja padrão | `DELIVERY_ZONES_JSON` / `DELIVERY_ZONES_FILE` (padrão em `backend/src/orders/delivery-zones.config.ts`) |
+| Serviços de mapa da entrega por distância | `GEOCODING_CONTACT`, `GEOCODING_PROVIDERS`, `GEOCODING_NOMINATIM_URL` e, opcional, `GOOGLE_MAPS_API_KEY` (custos e termos em [`docs/saas/operacao.md`](docs/saas/operacao.md), seção 8.4) |
 | Promoções do dia da semana | `backend/src/promotions/promotions.service.ts` |
 
 ---
@@ -471,7 +474,7 @@ O Comestra é a evolução do antigo **TorresBurgers**. Para quem já tinha uma 
 
 ## 🛣 Roadmap
 
-**Já disponível:** plataforma multi-loja com isolamento no servidor · superpainel · planos, assinaturas e faturas · painel da loja com convites e configurações · vitrine por slug · Mercado Pago por loja com estorno e conciliação · auditoria · migrations versionadas · testes de isolamento, superpainel e cobrança · e-mail por SMTP em texto e HTML com a marca da loja · logout no servidor e sessões ativas · número do pedido por loja · bloqueio de cliente pela loja · limpeza dos arquivos sem uso (manual ou agendada) · cota de armazenamento por plano · frete por CEP com recusa fora da área · confirmação e troca de e-mail com "Não fui eu" · sessão do site com token curto e refresh em cookie `HttpOnly` · Docker
+**Já disponível:** plataforma multi-loja com isolamento no servidor · superpainel · planos, assinaturas e faturas · painel da loja com convites e configurações · vitrine por slug · Mercado Pago por loja com estorno e conciliação · auditoria · migrations versionadas · testes de isolamento, superpainel e cobrança · e-mail por SMTP em texto e HTML com a marca da loja · logout no servidor e sessões ativas · número do pedido por loja · bloqueio de cliente pela loja · limpeza dos arquivos sem uso (manual ou agendada) · cota de armazenamento por plano · frete por CEP com recusa fora da área · entrega por distância em km · pedido mínimo e frete grátis acima de um valor · confirmação e troca de e-mail com "Não fui eu" · sessão do site com token curto e refresh em cookie `HttpOnly` · Docker
 
 **Próximos passos**
 
@@ -483,6 +486,7 @@ O Comestra é a evolução do antigo **TorresBurgers**. Para quem já tinha uma 
 - [ ] App mobile multi-loja (escolha da loja, carrinho por loja, chave pública por loja)
 - [ ] Status do pedido em tempo real (WebSockets) e notificações push
 - [ ] Cupons e promoções aplicados no checkout
+- [ ] Distância, faixa e frete grátis aplicado no detalhe do pedido para a equipe; correção manual das coordenadas de um cliente
 
 Pendências técnicas detalhadas: [`docs/saas/operacao.md`](docs/saas/operacao.md#10-limitações-conhecidas-e-pendências).
 

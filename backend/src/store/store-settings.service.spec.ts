@@ -40,6 +40,10 @@ import {
   StoreSettingsService,
 } from './store-settings.service';
 import type { StoreService } from './store.service';
+import {
+  STORE_LOCATION_PAIR_MESSAGE,
+  STORE_LOCATION_REQUIRED_MESSAGE,
+} from '../orders/delivery-distance';
 
 // PNG 1x1 válido
 const PNG = Buffer.from(
@@ -78,6 +82,8 @@ function storeRow(overrides: Partial<Store> = {}): Store {
     address_neighborhood: null,
     address_city: 'Rio de Janeiro',
     address_state: 'RJ',
+    latitude: null,
+    longitude: null,
     account_status: StoreAccountStatus.ACTIVE,
     status_reason: null,
     status_changed_at: null,
@@ -434,6 +440,72 @@ describe('StoreSettingsService — PATCH /store/settings', () => {
     await expect(
       service.updateSettings(tenant, { delivery_zones: null }, actor),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('local da loja (entrega por distância): coordenadas juntas e obrigatórias no modo distância', async () => {
+    const distance = {
+      zones: [],
+      fallback: { fee: 9, time: '1h' },
+      mode: 'distance' as const,
+      distance: {
+        bands: [{ up_to_km: 3, fee: 5, time: '30 min' }],
+        route_factor: 1.3,
+      },
+    };
+    const noLocation = setup({ delivery_enabled: true });
+    await expect(
+      noLocation.service.updateSettings(
+        noLocation.tenant,
+        { delivery_zones: distance },
+        actor,
+      ),
+    ).rejects.toThrow(STORE_LOCATION_REQUIRED_MESSAGE);
+    await expect(
+      noLocation.service.updateSettings(
+        noLocation.tenant,
+        { latitude: -22.9 },
+        actor,
+      ),
+    ).rejects.toThrow(STORE_LOCATION_PAIR_MESSAGE);
+    expect(noLocation.stores.update).not.toHaveBeenCalled();
+
+    // Local e modo na mesma requisição
+    await noLocation.service.updateSettings(
+      noLocation.tenant,
+      { latitude: -22.9, longitude: -43.2, delivery_zones: distance },
+      actor,
+    );
+    expect(noLocation.stores.update).toHaveBeenCalledWith(
+      { id: 7 },
+      { latitude: -22.9, longitude: -43.2, delivery_zones: distance },
+    );
+
+    // No modo distância, a loja não apaga o local; no modo por zonas, pode
+    const located = setup({
+      delivery_enabled: true,
+      latitude: -22.9,
+      longitude: -43.2,
+      delivery_zones: distance,
+    });
+    await expect(
+      located.service.updateSettings(
+        located.tenant,
+        { latitude: null, longitude: null },
+        actor,
+      ),
+    ).rejects.toThrow(STORE_LOCATION_REQUIRED_MESSAGE);
+    const byZones = setup({
+      delivery_enabled: true,
+      latitude: -22.9,
+      longitude: -43.2,
+      delivery_zones: { fallback: { fee: 9, time: '1h' }, zones: [] },
+    });
+    await byZones.service.updateSettings(
+      byZones.tenant,
+      { latitude: null, longitude: null },
+      actor,
+    );
+    expect(byZones.stores.update).toHaveBeenCalled();
   });
 
   it('loja recém-criada (entrega ligada sem zonas) ainda edita os outros dados', async () => {

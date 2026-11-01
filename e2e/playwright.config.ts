@@ -1,5 +1,6 @@
 import { defineConfig } from '@playwright/test';
 import { E2E } from './support/env';
+import { E2E_GEOCODING_FAKE } from './support/geocoding-fake';
 
 /**
  * Suíte ponta a ponta (API + Web) contra um ambiente isolado:
@@ -117,6 +118,9 @@ export default defineConfig({
         // passagem do tempo mudando datas no banco de teste e espera a rotina. A loja demo não é afetada:
         // a assinatura dela (plano interno gratuito) não tem vencimento nem faturas
         SAAS_BILLING_INTERVAL_MS: '10000',
+        // Entrega por distância: coordenadas falsas por CEP (a API nunca consulta mapas de verdade nos testes).
+        // Mesmos CEPs de tests/api/commerce/delivery-distance.spec.ts e tests/web/multistore/delivery-distance.spec.ts
+        GEOCODING_FAKE: E2E_GEOCODING_FAKE,
       },
     },
     {

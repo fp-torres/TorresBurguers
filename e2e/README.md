@@ -29,6 +29,7 @@ Os testes **nunca** tocam no banco de desenvolvimento. Eles sobem um ambiente pr
 | `AUTH_REFRESH_GRACE_SECONDS` / `RATE_LIMIT_REFRESH` | `3` / `100000/300` | Sessão do site em cookie: tolerância curta para os testes de reuso do refresh e renovações sem limite. A web e a API de teste em `localhost` são o mesmo site: o cookie funciona sem HTTPS |
 | `RATE_LIMIT_SUBSCRIPTION_CHECKOUT` | `100000/600` | Links de pagamento da assinatura repetidos pelos specs de cobrança |
 | `PLATFORM_INSIGHTS_CACHE_MS` | `0` | Dashboard e financeiro do superpainel sem cache: os specs conferem os números logo depois de criar lojas e pedidos |
+| `GEOCODING_FAKE` | mapa de `support/geocoding-fake.ts` | Entrega por distância sem nenhuma chamada a Google, Nominatim ou AwesomeAPI: a loja fica em `GEO_ORIGIN` e cada CEP `28970-xxx` fica N km ao norte (com o fator de rota 1,3, a distância cobrada é N × 1,3); há CEPs para "só o centro do CEP", "serviços fora do ar" e "não encontrado". Nenhum outro spec usa a faixa `28970-xxx`. Quem sobe a API de teste à mão precisa passar o mesmo mapa: sem ele, em `NODE_ENV=test`, nada é localizado, os testes de `api/commerce/delivery-distance.spec.ts` que dependem do mapa são pulados (com a instrução) e os de `web/multistore/delivery-distance.spec.ts` falham |
 
 Variáveis que a configuração **não** define (alguns testes são pulados sem elas, com a instrução no próprio teste):
 
@@ -136,7 +137,8 @@ No PowerShell, defina a variável antes: `$env:VITE_API_URL="http://localhost:30
 e2e/
 ├── playwright.config.ts      # projetos setup/api/web, servidores de teste e variáveis da API de teste (1 worker, serial)
 ├── support/                  # ambiente (portas, banco, chaves de storage), usuários padrão, loja demo,
-│                             # helpers de API e navegador e matchers das rotas por loja (routes.ts)
+│                             # helpers de API e navegador, matchers das rotas por loja (routes.ts) e o mapa
+│                             # de localização falsa da entrega por distância (geocoding-fake.ts)
 ├── scripts/                  # prepare.mjs (reset + build) e reset-db.mjs
 └── tests/
     ├── global.setup.ts       # login de todos os perfis, loja de cada conta e loja demo aberta
@@ -157,7 +159,13 @@ e2e/
     │   │                     # dashboard e relatórios, pagamentos (sandbox, idempotência), limite de endereços,
     │   │                     # order-numbers.spec.ts (número por loja, pedidos simultâneos sem buraco, imutabilidade),
     │   │                     # delivery-zones.spec.ts (bairro do CEP, faixas de CEP, recusa fora da área, PIX e cartão
-    │   │                     # sem cobrança), orders-payments-review.spec.ts (reservas do limite mensal por PIX
+    │   │                     # sem cobrança), order-rules.spec.ts (pedido mínimo e frete grátis: loja sem regras igual
+    │   │                     # a antes, validação, orçamento abaixo do mínimo sem falhar, 400 ORDER_BELOW_MINIMUM no
+    │   │                     # pedido, PIX e cartão, limite exato, frete grátis zerando a taxa no pedido e no PIX, zona
+    │   │                     # × loja, retirada), delivery-distance.spec.ts (localizar a loja, modo distância exige o
+    │   │                     # local, faixas, km adicional e raio, mínimo e frete grátis da faixa, endereço não
+    │   │                     # localizado com nova tentativa depois de 1 h, simulador do painel, modo por zonas igual),
+    │   │                     # orders-payments-review.spec.ts (reservas do limite mensal por PIX
     │   │                     # pendente, 404 do histórico de loja desativada) e performance.spec.ts (compressão, 413, cache
     │   │                     # de /uploads, quadro igual ao de antes)
     │   ├── tenancy/          # isolamento entre lojas: cardápio, pedidos, pagamentos e estornos, relatórios, configurações
@@ -194,7 +202,11 @@ e2e/
         │                     # (equipe, clientes e visitantes fora de /platform) e mobile (cartões em 375 px, sem
         │                     # rolagem horizontal); helpers.ts cria as lojas extras pela API
         └── multistore/       # storefront.spec.ts: diretório só com lojas que vendem, cardápios e carrinhos separados,
-                              # pedido #1 da loja B, loja suspensa, recusa fora da área e "Retirar no balcão"
+                              # pedido #1 da loja B, loja suspensa, recusa fora da área e "Retirar no balcão";
+                              # order-rules.spec.ts (carrinho: falta para o mínimo bloqueia, falta para o frete
+                              # grátis e taxa riscada; painel: valores da loja e por zona salvos) e
+                              # delivery-distance.spec.ts (painel: modo distância, local da loja no mapa, faixas,
+                              # "Teste um endereço"; vitrine "Entrega até 8 km" e distância no carrinho)
 ```
 
 Os relatórios e evidências ficam em `playwright-report/` e `test-results/` (ignorados pelo git).

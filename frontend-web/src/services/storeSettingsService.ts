@@ -26,7 +26,16 @@ export interface ZipRange {
  * Zona de entrega: bairros atendidos (e, opcionalmente, só nestas cidades) e/ou faixas de CEP, com taxa e
  * prazo. O bairro do cliente é o confirmado pelo CEP do endereço (ou o digitado, quando o CEP não confirma).
  */
-export interface DeliveryZone extends DeliveryEstimate {
+/**
+ * Pedido mínimo e frete grátis (R$, sobre o subtotal dos itens com as promoções, sem a taxa). Na zona,
+ * ausente = vale o da loja; 0 = sem mínimo / frete sempre grátis só nesta zona.
+ */
+export interface OrderValueRules {
+  min_order?: number;
+  free_delivery_above?: number;
+}
+
+export interface DeliveryZone extends DeliveryEstimate, OrderValueRules {
   neighborhoods: string[];
   cities?: string[];
   zip_ranges?: ZipRange[];
@@ -38,11 +47,75 @@ export type OutsideZonesPolicy = 'fallback' | 'refuse';
 /**
  * Zonas próprias da loja: a primeira zona com o bairro ou o CEP vale; fora delas, o "fallback" — ou a
  * recusa (outside_zones = "refuse"; aí o "fallback" é opcional e fica null quando a API não o tem).
+ * Opcionais da loja: pedido mínimo da entrega (min_order; min_order_takeout = vale também na retirada) e
+ * frete grátis a partir de um subtotal (free_delivery_above). Ausentes = sem regra (o padrão).
  */
-export interface DeliveryZonesConfig {
+export interface DeliveryZonesConfig extends OrderValueRules {
   zones: DeliveryZone[];
   fallback: DeliveryEstimate | null;
   outside_zones: OutsideZonesPolicy;
+  min_order_takeout?: boolean;
+  /** Cobrança por distância (ausente = por zonas, o padrão). As zonas continuam guardadas. */
+  mode?: 'distance';
+  /** Faixas de distância (guardadas também no modo por zonas, para quando a loja trocar de modo). */
+  distance?: DistanceSettings;
+}
+
+/** Faixa "até up_to_km km" com taxa, prazo e, como as zonas, pedido mínimo e frete grátis próprios. */
+export interface DistanceBand extends DeliveryEstimate, OrderValueRules {
+  up_to_km: number;
+}
+
+/**
+ * Entrega por distância: faixas em ordem crescente; raio além da última faixa só com taxa por km adicional;
+ * fator de rota sobre a linha reta (padrão 1,3); distância por rua quando a plataforma oferece.
+ */
+export interface DistanceSettings {
+  bands: DistanceBand[];
+  max_km?: number;
+  extra_km_fee?: number;
+  route_factor: number;
+  road_distance?: true;
+}
+
+/** Fator de rota padrão (as ruas nunca vão em linha reta). */
+export const DEFAULT_ROUTE_FACTOR = 1.3;
+
+/** POST /store/settings/geocode: ponto encontrado para o endereço (não é gravado). */
+export interface StoreGeocodeResult {
+  latitude: number;
+  longitude: number;
+  /** ADDRESS (rua e número) ou ZIP_CENTER (centro do CEP: aproximado). */
+  precision: 'ADDRESS' | 'ZIP_CENTER';
+}
+
+/** POST /store/settings/delivery-simulation: resultado do "teste um endereço". */
+export interface DeliverySimulation {
+  mode: 'zones' | 'distance';
+  located: boolean;
+  store_located: boolean;
+  precision: 'ADDRESS' | 'ZIP_CENTER' | null;
+  distance_km: number | null;
+  max_km: number | null;
+  band: number | null;
+  extra_km: number;
+  zone: number | null;
+  outside: boolean;
+  refused: boolean;
+  delivery_fee: number | null;
+  estimated_delivery_time: string | null;
+  min_order: number | null;
+  free_delivery_above: number | null;
+  message: string;
+}
+
+/** Endereço testado no simulador e configuração em edição (ausentes = as salvas). */
+export interface DeliverySimulationInput {
+  zip_code: string;
+  number?: string;
+  delivery_zones?: DeliveryZonesConfig | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 /** Horário de funcionamento (informativo): day 0 = domingo; fechar antes de abrir = vira a madrugada. */
@@ -80,6 +153,9 @@ export interface StoreSettings {
   address_neighborhood: string | null;
   address_city: string | null;
   address_state: string | null;
+  /** Local da loja no mapa (entrega por distância); null = não informado. */
+  latitude: number | null;
+  longitude: number | null;
   account_status: StoreAccountStatus;
   status_reason: string | null;
   is_open: boolean;
@@ -99,6 +175,8 @@ export interface StoreSettings {
   access: StoreAccess | null;
   features: StoreFeatures;
   updated_at: string | null;
+  /** A plataforma oferece a distância real por rua (Google). */
+  road_distance_available: boolean;
 }
 
 /** Campos aceitos no PATCH /store/settings (envie só o que mudou; null limpa os opcionais). */
@@ -116,6 +194,8 @@ export interface StoreSettingsUpdate {
   address_neighborhood?: string | null;
   address_city?: string | null;
   address_state?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   opening_message?: string | null;
   closing_message?: string | null;
   delivery_enabled?: boolean;
@@ -147,6 +227,40 @@ function toZipRanges(value: unknown): ZipRange[] {
     .filter((range) => /^\d{8}$/.test(range.from) && /^\d{8}$/.test(range.to));
 }
 
+/** Pedido mínimo e frete grátis (só os informados, em número ≥ 0), na ordem de chaves do rascunho da tela. */
+function toOrderValueRules(raw: Record<string, unknown>): OrderValueRules {
+  const money = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined);
+  const minOrder = money(raw.min_order);
+  const freeAbove = money(raw.free_delivery_above);
+  return {
+    ...(minOrder !== undefined ? { min_order: minOrder } : {}),
+    ...(freeAbove !== undefined ? { free_delivery_above: freeAbove } : {}),
+  };
+}
+
+/** Faixas de distância (mesma ordem de chaves da API e do rascunho da tela); inválido → undefined. */
+function toDistance(value: unknown): DistanceSettings | undefined {
+  if (!isRecord(value)) return undefined;
+  const bands = readArray(value.bands)
+    .filter(isRecord)
+    .map((band): DistanceBand => ({
+      up_to_km: readNumber(band.up_to_km, 0),
+      ...toEstimate(band),
+      ...toOrderValueRules(band),
+    }))
+    .filter((band) => band.up_to_km > 0);
+  if (!bands.length) return undefined;
+  const maxKm = readNumber(value.max_km, 0);
+  const extraFee = readNumber(value.extra_km_fee, 0);
+  const factor = readNumber(value.route_factor, DEFAULT_ROUTE_FACTOR);
+  return {
+    bands,
+    ...(maxKm > 0 && extraFee > 0 ? { max_km: maxKm, extra_km_fee: extraFee } : {}),
+    route_factor: factor > 0 ? factor : DEFAULT_ROUTE_FACTOR,
+    ...(value.road_distance === true ? { road_distance: true as const } : {}),
+  };
+}
+
 /** Mesma ordem de chaves do rascunho da tela (DeliverySection), para comparar com o salvo. */
 function toZones(value: unknown): DeliveryZonesConfig | null {
   if (!isRecord(value)) return null;
@@ -158,12 +272,23 @@ function toZones(value: unknown): DeliveryZonesConfig | null {
       ...(cities.length ? { cities } : {}),
       ...(zipRanges.length ? { zip_ranges: zipRanges } : {}),
       ...toEstimate(zone),
+      ...toOrderValueRules(zone),
     };
   });
+  const storeRules = toOrderValueRules(value);
+  const distance = toDistance(value.distance);
+  // A API só guarda um mínimo maior que zero (e "vale na retirada" só junto dele)
+  const minOrder = storeRules.min_order ? storeRules.min_order : undefined;
   return {
     zones,
     fallback: isRecord(value.fallback) ? toEstimate(value.fallback) : null,
     outside_zones: value.outside_zones === 'refuse' ? 'refuse' : 'fallback',
+    ...(minOrder !== undefined ? { min_order: minOrder } : {}),
+    ...(storeRules.free_delivery_above !== undefined ? { free_delivery_above: storeRules.free_delivery_above } : {}),
+    ...(minOrder !== undefined && value.min_order_takeout === true ? { min_order_takeout: true } : {}),
+    // Entrega por distância: o modo (só "distance" é gravado) e as faixas — sem elas aqui, salvar apagaria
+    ...(value.mode === 'distance' ? { mode: 'distance' as const } : {}),
+    ...(distance ? { distance } : {}),
   };
 }
 
@@ -209,6 +334,8 @@ export function toStoreSettings(value: unknown): StoreSettings {
     address_neighborhood: readNullableText(raw.address_neighborhood),
     address_city: readNullableText(raw.address_city),
     address_state: readNullableText(raw.address_state),
+    latitude: readCoordinate(raw.latitude, 90),
+    longitude: readCoordinate(raw.longitude, 180),
     account_status: ACCOUNT_STATUSES.find((status) => status === raw.account_status) ?? 'ACTIVE',
     status_reason: readNullableText(raw.status_reason),
     is_open: readBoolean(raw.is_open),
@@ -227,6 +354,36 @@ export function toStoreSettings(value: unknown): StoreSettings {
     access: toStoreAccess(raw.access),
     features: toFeatures(raw.features),
     updated_at: readDate(raw.updated_at),
+    road_distance_available: readBoolean(raw.road_distance_available),
+  };
+}
+
+/** Latitude/longitude em graus (número finito dentro do limite) ou null. */
+function readCoordinate(value: unknown, limit: number): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= limit ? value : null;
+}
+
+function toSimulation(value: unknown): DeliverySimulation {
+  const raw = asRecord(value);
+  const numberOrNull = (item: unknown) => (typeof item === 'number' && Number.isFinite(item) ? item : null);
+  const precision = raw.precision === 'ADDRESS' || raw.precision === 'ZIP_CENTER' ? raw.precision : null;
+  return {
+    mode: raw.mode === 'distance' ? 'distance' : 'zones',
+    located: readBoolean(raw.located),
+    store_located: readBoolean(raw.store_located),
+    precision,
+    distance_km: numberOrNull(raw.distance_km),
+    max_km: numberOrNull(raw.max_km),
+    band: numberOrNull(raw.band),
+    extra_km: numberOrNull(raw.extra_km) ?? 0,
+    zone: numberOrNull(raw.zone),
+    outside: readBoolean(raw.outside),
+    refused: readBoolean(raw.refused),
+    delivery_fee: numberOrNull(raw.delivery_fee),
+    estimated_delivery_time: readNullableText(raw.estimated_delivery_time),
+    min_order: numberOrNull(raw.min_order),
+    free_delivery_above: numberOrNull(raw.free_delivery_above),
+    message: readText(raw.message),
   };
 }
 
@@ -272,4 +429,21 @@ export const storeSettingsService = {
 
   /** GET /addresses/cep/:cep (8 dígitos): endereço do CEP (services/cepService). */
   lookupCep,
+
+  /** POST /store/settings/geocode: localiza no mapa o endereço salvo da loja (nada é gravado). */
+  geocodeStore: async (): Promise<StoreGeocodeResult> => {
+    const response = await api.post<unknown>('/store/settings/geocode', {});
+    const raw = asRecord(response.data);
+    return {
+      latitude: readNumber(raw.latitude, 0),
+      longitude: readNumber(raw.longitude, 0),
+      precision: raw.precision === 'ZIP_CENTER' ? 'ZIP_CENTER' : 'ADDRESS',
+    };
+  },
+
+  /** POST /store/settings/delivery-simulation: "teste um endereço" com a configuração em edição. */
+  simulateDelivery: async (input: DeliverySimulationInput): Promise<DeliverySimulation> => {
+    const response = await api.post<unknown>('/store/settings/delivery-simulation', input);
+    return toSimulation(response.data);
+  },
 };

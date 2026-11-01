@@ -22,7 +22,7 @@ cd backend
 cp .env.example .env                     # Windows: Copy-Item .env.example .env
 #   edite o .env: NODE_ENV=development e DB_PASSWORD (deixe DB_SYNCHRONIZE vazio = false)
 npm install
-npm run start:dev                        # aplica as 13 migrations na subida (DB_MIGRATIONS_RUN) e cria a demo
+npm run start:dev                        # aplica as 14 migrations na subida (DB_MIGRATIONS_RUN) e cria a demo
 
 cd ../frontend-web
 npm install
@@ -118,9 +118,9 @@ npm run migration:show      # as 13 com [X]
 npm run migration:check     # "No changes in database schema were found"
 ```
 
-Banco que já tinha as 7 primeiras (`BaselineSchema` … `AuthSessions`): faltam as 6 novas desta versão
+Banco que já tinha as 7 primeiras (`BaselineSchema` … `AuthSessions`): faltam as 7 novas desta versão
 (`AddressZoneLocation`, `PlanStorageLimit`, `StoreSlugHistoryAndCancelOrigin`, `PerformanceIndexes`,
-`AccountEmailVerification` e `AuthSessionRefresh`). Todas são aditivas (colunas opcionais, tabelas e índices novos);
+`AccountEmailVerification`, `AuthSessionRefresh` e `DeliveryDistance`). Todas são aditivas (colunas opcionais, tabelas e índices novos);
 nenhuma altera pedidos, pagamentos ou contas existentes. Faça o `pg_dump` antes (seção 3.1).
 
 O que cada migration faz em um banco existente:
@@ -140,6 +140,7 @@ O que cada migration faz em um banco existente:
 | `PerformanceIndexes` | Índices de desempenho (seção 8.7), com `CREATE INDEX CONCURRENTLY` e **fora de transação**: não trava as tabelas, mas numa tabela grande pode levar alguns minutos. Se falhar no meio, rode de novo (o índice inválido é recriado). Os índices de busca de contas exigem a extensão `pg_trgm`: sem permissão para criá-la, a migration segue sem eles e o log avisa (a busca funciona, só mais lenta) |
 | `AccountEmailVerification` | `users.email_verified_at` (todas as contas existentes ficam "Não confirmado" até confirmarem) e a tabela `account_email_tokens` |
 | `AuthSessionRefresh` | Colunas da sessão do site em cookie em `auth_sessions`. As sessões existentes viram `BEARER` pelo padrão, sem reescrever a tabela (os CHECKs e a FK são criados `NOT VALID` e validados em seguida) |
+| `DeliveryDistance` | Local da loja (`stores.latitude`/`longitude`) e coordenadas dos endereços (`addresses.geo_*`) para a entrega por distância, com dois CHECKs. Tudo opcional, sem backfill: nenhuma loja muda de modo e nenhum endereço é enviado a serviços de mapa na atualização. Pedido mínimo e frete grátis não têm migration (ficam no JSON de entrega da loja) |
 
 > **Número do pedido muda nas telas.** Antes, as telas mostravam `Pedido #<id>` (o id global, compartilhado
 > por todas as lojas). Depois da `OrderNumbersAndCustomerBlocks`, mostram o número **da loja**: o pedido que era
@@ -197,7 +198,9 @@ Regras:
 - Migrations já aplicadas em algum ambiente nunca são editadas: crie uma nova.
 - `DB_MIGRATIONS_RUN` (padrão `true`) aplica as pendentes na subida. Com várias instâncias da API, deixe
   `false` nelas e rode `npm run migration:run:prod` uma única vez no deploy.
-- Reverter (sempre junto com o código da versão anterior): `AuthSessionRefresh` remove as colunas da sessão em
+- Reverter (sempre junto com o código da versão anterior): `DeliveryDistance` remove o local das lojas e as
+  coordenadas dos endereços (o JSON de entrega fica como está: antes de reverter, volte as lojas que cobram por
+  distância para "Por bairro ou CEP (zonas)" com zonas cadastradas); `AuthSessionRefresh` remove as colunas da sessão em
   cookie (quem estava no modo cookie entra de novo; contas e pedidos não mudam); `AccountEmailVerification` apaga
   as confirmações de e-mail e os links pendentes; `PerformanceIndexes` remove os índices (não a extensão
   `pg_trgm`); `StoreSlugHistoryAndCancelOrigin` perde a origem dos agendamentos e as reservas de slug;
@@ -302,6 +305,11 @@ próprio ambiente (servidor, Docker, CI) têm prioridade sobre o `.env`. Princip
 | `DB_POOL_SIZE` · `DB_STATEMENT_TIMEOUT_MS` · `DB_POOL_ACQUIRE_TIMEOUT_MS` | `10` · `60000` · `30000` | Pool e prazos do banco da API (seção 7.4) |
 | `PLATFORM_INSIGHTS_CACHE_MS` | `30000` | Cache do dashboard e do financeiro do superpainel (`0` desliga) |
 | `CEP_LOOKUP_FAKE` | vazio | Só em testes automatizados (`NODE_ENV=test`); ignorada com aviso nos outros ambientes |
+| `GOOGLE_MAPS_API_KEY` | vazio | Opcional (entrega por distância). Liga o Google na localização dos endereços e a opção "Usar a distância real pelas ruas" no painel. A chave precisa da **Geocoding API** e da **Routes API** habilitadas, com cobrança ativa no Google Cloud. Custos e termos na seção 8.4 |
+| `GEOCODING_PROVIDERS` | `google,nominatim,awesomeapi` | Ordem dos serviços que localizam os endereços no mapa. Sem a chave do Google, ele é pulado. Nomes desconhecidos são ignorados com aviso; `none` desliga a localização (as lojas por distância passam a aplicar a regra de fora da área a todos) |
+| `GEOCODING_CONTACT` | vazio | **Recomendado** quando o Nominatim está na cadeia: e-mail ou site de contato no User-Agent (`comestra-delivery-geocoder/1.0 (<contato>)`), como pede a política de uso do Nominatim. Sem ele, a API avisa na subida |
+| `GEOCODING_NOMINATIM_URL` | `https://nominatim.openstreetmap.org` | Servidor Nominatim próprio ou contratado (recomendado com mais de uma instância da API ou muitos endereços por dia) |
+| `GEOCODING_FAKE` | vazio | Só em testes automatizados (`NODE_ENV=test`): mapa JSON de CEPs com coordenadas; ignorada com aviso nos outros ambientes |
 | `SWAGGER_ENABLED` | dev/test: `true`; produção: `false` | Documentação em `/api` (expõe todas as rotas, inclusive as do superpainel) |
 | `RATE_LIMIT_ENABLED` / `RATE_LIMIT_<NOME>` | `true` / padrões do `.env.example` | Limites por instância, formato `limite/segundos`: login (`LOGIN_FAILURES`, `LOGIN_FAILURES_IP`, `LOGIN_FAILURES_ACCOUNT` 50/3600 por conta, `LOGIN_SUCCESS` 200/600), recuperação, cadastro, pedidos (`ORDER_CREATE`, `ORDER_CREATE_IP`), cobranças do delivery (`PAYMENT_CREATE`, `PAYMENT_CREATE_IP`), webhook (`PAYMENT_WEBHOOK`), uploads, endereços, equipe, troca de credenciais, e-mails de conta (`ACCOUNT_EMAIL` 5/3600, `ACCOUNT_EMAIL_TARGET` 3/3600), renovação da sessão do site (`REFRESH` 120/300), checkout da assinatura (`SUBSCRIPTION_CHECKOUT` 10/600 por loja) e e-mail de teste do superpainel (`TEST_EMAIL`, padrão `5/600` por operador). Tabela completa: `arquitetura.md`, seção 11.8 |
 | `HOST` | `0.0.0.0` | Interface de escuta da API (seção 7.2) |
@@ -460,7 +468,7 @@ oriente a troca de senha.
 | Nova loja: nasce fechada, com a entrega desligada, a assinatura do plano escolhido e um convite do responsável cujo link aparece **uma vez** (com o SMTP configurado, o convite também vai por e-mail; com o driver de log, envie o link por outro canal) | Superpainel → Lojas → Nova loja |
 | Convites seguintes de uma loja (detalhe → Convites): com SMTP, o link vai só por e-mail ("Convite enviado"); sem SMTP, aparece uma vez | Superpainel → Lojas → detalhe |
 | Primeiros passos da loja: o responsável aceita o convite (`/convite/:token`), preenche Configurações (dados, endereço, horários, fuso, zonas e taxas de entrega, política para endereços fora das zonas, credenciais Mercado Pago, logo e cor), cadastra o cardápio, convida a equipe e abre a loja | Painel da loja |
-| Entrega por bairro e/ou faixa de CEP, e "Entregar com uma taxa padrão" ou "Recusar a entrega" fora das zonas (seção 8.4) | Painel da loja → Configurações → Entrega |
+| Entrega por bairro e/ou faixa de CEP **ou por distância (km)**, pedido mínimo, frete grátis acima de um valor, e "Entregar com uma taxa padrão" ou "Recusar a entrega" fora da área (seção 8.4) | Painel da loja → Configurações → Entrega |
 | Minha conta: e-mail (confirmar, trocar com confirmação no endereço novo) e senha (com a senha atual) — seção 8.6 | Meus Dados (cliente) ou menu → Minha conta (painel e superpainel) |
 | Suspender, reativar, desativar ou restaurar uma loja (motivo obrigatório para suspender e desativar; nada é apagado) | Superpainel → Lojas → detalhe |
 | Assinatura: trocar plano, cancelar (motivo obrigatório no cancelamento imediato), desfazer cancelamento agendado, suspender (fica `PLATFORM`: pagamento não reativa) e reativar | Superpainel → Assinaturas ou detalhe da loja |
@@ -572,7 +580,13 @@ Todas as ações são só do superadmin (fora de sessão de suporte) e ficam na 
      SET last_number = GREATEST(store_order_counters.last_number, EXCLUDED.last_number);
   ```
 
-### 8.4 Entrega por CEP
+### 8.4 Entrega: zonas, distância, pedido mínimo e frete grátis
+
+Uma loja que não mexe em nada continua exatamente como antes: cobra por zona, sem pedido mínimo, sem frete grátis e
+sem nenhuma consulta a serviços de mapa. Tudo fica em Painel da loja → Configurações → Entrega e só vale depois de
+**Salvar**.
+
+**Por zona (bairro ou CEP)**
 
 - Em Configurações → Entrega, a loja escolhe **"Entregar com uma taxa padrão"** ou **"Recusar a entrega"** para
   endereços fora das zonas. As zonas aceitam bairros (use os nomes dos **Correios**, os mesmos da busca de CEP) e/ou
@@ -585,6 +599,79 @@ Todas as ações são só do superadmin (fora de sessão de suporte) e ficam na 
   manualmente" (vale o digitado) e o orçamento tenta de novo a cada 1 h; a primeira consulta pode levar ~6 s e depois
   cada serviço fica 60 s sem ser consultado. Os endereços antigos são conferidos no primeiro orçamento de entrega.
 - O app mobile mostra a mensagem do 400 no orçamento quando a loja padrão recusa o endereço.
+
+**Pedido mínimo e frete grátis (passo a passo para o suporte)**
+
+1. Configurações → Entrega → bloco **"Pedido mínimo e frete grátis"**.
+2. **Pedido mínimo para entrega**: valor mínimo em produtos (ex.: R$ 30,00). Em branco = sem mínimo.
+3. **Frete grátis a partir de**: com este valor em produtos (ou mais), a entrega sai de graça. Em branco = sem frete
+   grátis; R$ 0,00 = entrega sempre grátis.
+4. **Pedido mínimo também na retirada no balcão**: marque se o mínimo vale também para quem retira (padrão: só na
+   entrega). A retirada nunca tem frete grátis.
+5. Opcional, por região: cada zona (e cada faixa de km, no modo distância) tem os próprios "Pedido mínimo" e "Frete
+   grátis a partir de". Em branco = usa o da loja; R$ 0,00 = sem mínimo (ou sempre grátis) só naquela região.
+6. Salvar. A tela avisa quando o frete grátis ficou menor que o pedido mínimo (é permitido).
+
+O que o cliente vê: selos de pedido mínimo e frete grátis na vitrine; no carrinho, "Faltam R$ X em produtos para
+finalizar o pedido" (o pagamento fica bloqueado), a barra "Faltam R$ X para o frete grátis" e a taxa riscada com
+"Grátis" quando conseguiu. Os valores comparam o **total dos produtos já com as promoções, sem a taxa**. Dúvidas
+comuns:
+
+- "O cliente diz que passou do mínimo": a taxa não conta; confira o subtotal dos produtos e a zona do endereço (a zona
+  pode ter mínimo próprio).
+- "O frete grátis não apareceu": endereço fora das zonas usa os valores da loja; a zona pode ter um valor maior.
+- A loja padrão que ainda usa as zonas da plataforma não tem mínimo nem frete grátis até salvar as próprias zonas.
+- Uma loja só de retirada precisa cadastrar ao menos uma zona de entrega para ter pedido mínimo (limitação conhecida).
+- Um pagamento já aprovado nunca é recusado por causa do mínimo. O app mobile mostra a mensagem
+  "O pedido mínimo desta loja para entrega é R$ 30,00. Faltam R$ 4,10." ao enviar (não avisa antes).
+
+**Por distância em km (passo a passo para o suporte)**
+
+1. Confira se o **endereço da loja** (seção Endereço, com CEP) está salvo.
+2. Configurações → Entrega → **"Como cobrar a entrega"** → **"Por distância (km)"**. As zonas já cadastradas ficam
+   guardadas para quando voltar a cobrar por bairro.
+3. **"Local da loja no mapa"**: clique em **"Localizar pelo endereço da loja"** e arraste o pino até a porta da loja
+   (ou digite latitude e longitude; "Ver no mapa" abre o ponto no OpenStreetMap). Sem o local, o modo distância não é
+   salvo.
+4. **"Faixas de distância"**: "Até quantos km", taxa e prazo de cada faixa, em ordem crescente (ex.: até 2 km R$ 5,00
+   25-35 min; até 5 km R$ 8,00 35-45 min; até 8 km R$ 12,00 45-60 min). Até 20 faixas e 100 km. Cada faixa pode ter
+   pedido mínimo e frete grátis próprios.
+5. Opcional: **"Cobrar por km adicional além da última faixa"**, com o **"Raio máximo (km)"** e o **"Valor por km
+   adicional"** (cada km começado conta inteiro).
+6. **"Fator de rota"** (padrão 1,3): a distância em linha reta é multiplicada por ele, porque as ruas não vão em linha
+   reta. Aumente (ex.: 1,5) em cidades com rios, morros ou poucas pontes. Com a chave do Google configurada pela
+   plataforma, aparece **"Usar a distância real pelas ruas"** (o fator deixa de valer).
+7. **"Endereços além do raio ou não localizados"**: "Entregar com uma taxa padrão" ou "Recusar a entrega".
+8. **"Teste um endereço"**: informe o CEP e o número de um cliente e veja a distância, a faixa, a taxa e o prazo com
+   a configuração da tela (ainda sem salvar). Depois, **Salvar**.
+
+O que o cliente vê: "Entrega até X km" na vitrine e a linha "Distância da loja" no carrinho. A distância aparece com
+1 casa decimal e é exatamente a que decide a faixa (2,0 km cabe em "até 2 km"). Dúvidas comuns:
+
+- "Não conseguimos localizar este endereço no mapa...": a loja recusa endereços não localizados. Peça ao cliente para
+  conferir CEP, rua e número, ou escolher a retirada; com "Entregar com uma taxa padrão", ele paga a taxa padrão.
+  Quando os serviços de mapa estão fora do ar, o endereço é tentado de novo depois de 1 h.
+- Endereço localizado só pelo **centro do CEP** (CEPs grandes de cidades pequenas): a distância é aproximada.
+- A distância e a faixa ainda não aparecem no quadro de pedidos nem no detalhe do pedido (só no carrinho).
+- "Localizar pelo endereço da loja" e "Teste um endereço" contam no mesmo limite da busca de CEP (`CEP_LOOKUP`, por
+  loja; padrão 60 por minuto): se aparecer "Muitas tentativas em pouco tempo...", espere alguns minutos.
+
+**Serviços de mapa: custos, limites e cuidados**
+
+Os endereços dos clientes só são enviados a esses serviços quando alguma loja com entrega ligada cobra por distância
+(e no orçamento dessas lojas). A cadeia padrão é Google (só com a chave) → Nominatim → AwesomeAPI; cada serviço tem
+até 2,5 s, e a localização no orçamento leva no máximo 4 s no total (a distância por rua do Google, quando ligada, tem
+mais 2 s).
+
+| Serviço | Custo | Limites e regras de uso |
+|---|---|---|
+| Google Geocoding API e Routes API (`GOOGLE_MAPS_API_KEY`) | Pago por chamada, com cota gratuita mensal por produto (desde março de 2025; em 2025, as duas chamadas usadas aqui ficavam na faixa "Essentials", com milhares de chamadas grátis por mês e cobrança por mil chamadas acima disso). **Confira a tabela atual** em [mapsplatform.google.com/pricing](https://mapsplatform.google.com/pricing/) antes de ligar | Exige conta de faturamento. Restrinja a chave às duas APIs e ao IP do servidor e crie alertas de orçamento e cotas diárias no Google Cloud. Os termos do Google Maps Platform limitam por quanto tempo as coordenadas podem ficar guardadas e proíbem exibi-las num mapa que não seja do Google; o Comestra guarda as coordenadas no endereço sem prazo e mostra o ponto da loja num mapa do OpenStreetMap. Avalie os termos com o jurídico antes de usar em produção ou deixe o Google fora (`GEOCODING_PROVIDERS=nominatim,awesomeapi`) |
+| Nominatim público (`nominatim.openstreetmap.org`) | Gratuito, sem chave e sem garantia de disponibilidade | Política de uso: no máximo 1 requisição por segundo (a API respeita isso **por instância**), User-Agent identificado (`GEOCODING_CONTACT`), sem uso intenso nem em lote, resultados guardados em cache (a API guarda 24 h). Pode bloquear quem abusa. Com várias instâncias da API ou muitos endereços por dia, use um Nominatim próprio ou contratado (`GEOCODING_NOMINATIM_URL`) ou o Google. Dados do OpenStreetMap sob licença ODbL |
+| AwesomeAPI CEP (`cep.awesomeapi.com.br`) | Gratuito, sem chave | Dá só o centro do CEP (menos preciso). Sem garantia de disponibilidade nem limites publicados com garantia; é a última opção da cadeia |
+| Mapa do painel (`tile.openstreetmap.org`) | Gratuito | Só o dono da loja vê o mapa, ao configurar a entrega (uso leve). Política de uso dos tiles: atribuição visível (o mapa já mostra "© OpenStreetMap") e nada de uso intenso. Se a plataforma crescer muito, troque por um provedor de tiles contratado (exige mudar `MAP_TILE_SOURCES` na CSP e o endereço do mapa no código) |
+
+Sem internet de saída (ou com os serviços fora do ar), os endereços ficam como "não localizados": nas lojas por
+distância vale a regra de fora da área, e a API tenta de novo depois de 1 h. Salvar o endereço nunca é bloqueado.
 
 ### 8.5 Pagamento estornado no Mercado Pago
 
@@ -681,6 +768,11 @@ detectadas.
       (Superpainel → Configurações → Manutenção) até não restar nenhuma no formato antigo.
 - [ ] Cobrança recorrente (`SAAS_BILLING_PROVIDER=MERCADO_PAGO`) só depois de configurar e validar a conta MP da
       plataforma (seção 11); até lá, `MANUAL`.
+- [ ] Entrega por distância (seção 8.4): `GEOCODING_CONTACT` com um e-mail ou site real da operação (política do
+      Nominatim); com mais de uma instância da API ou muitos endereços por dia, `GEOCODING_NOMINATIM_URL` próprio ou o
+      Google. `GOOGLE_MAPS_API_KEY` só depois de avaliar custos e termos, com a chave restrita à Geocoding API e à
+      Routes API e ao IP do servidor, e alertas de orçamento no Google Cloud. A saída da API para a internet precisa
+      alcançar os serviços escolhidos. `GEOCODING_FAKE` nunca em produção.
 - [ ] Log da subida sem avisos de configuração.
 
 ## 10. Limitações conhecidas e pendências
@@ -770,11 +862,22 @@ Itens adiados na revisão de segurança, agrupados, com a recomendação de cada
   armazenamento, alerta de armazenamento no dashboard, renomear o avatar do cadastro para `u<id>-` e um script que
   zere avatares fora da lista permitida.
 
-**Entrega por CEP**
+**Entrega por CEP, distância, pedido mínimo e frete grátis**
 
 - O retrato do pedido e as telas da equipe mostram só o bairro digitado; endereços já conferidos não são
-  reconferidos se a base de CEPs mudar; não há frete por distância nem lista pública dos bairros atendidos.
-  Recomendação: bairro do CEP no pedido, reconferência periódica, frete por raio e cache de CEP compartilhado.
+  reconferidos se a base de CEPs mudar; não há lista pública dos bairros atendidos.
+  Recomendação: bairro do CEP no pedido, reconferência periódica e cache de CEP compartilhado.
+- Pedido mínimo e frete grátis: a loja só de retirada precisa cadastrar zonas de entrega para ter mínimo; uma zona não
+  desliga o frete grátis da loja (só aumenta o valor); o quadro e o detalhe do pedido não mostram que o frete grátis
+  valeu (só a taxa 0); o app mobile não avisa antes de enviar; uma página web antiga em cache que salva a seção
+  Entrega descarta as regras (peça para recarregar a página). Recomendação: campo próprio para o mínimo da retirada,
+  "sem frete grátis nesta zona", taxa original no pedido e aviso no app.
+- Entrega por distância: o quadro e o detalhe do pedido não mostram a distância nem a faixa; não há correção manual
+  das coordenadas de um cliente; o limite de 1 requisição por segundo do Nominatim e os caches valem por instância;
+  as ferramentas do painel usam o limite da busca de CEP; os serviços gratuitos não têm disponibilidade garantida;
+  com o Google ligado, confira os termos de armazenamento e exibição (seção 8.4). Recomendação: distância no pedido,
+  correção manual das coordenadas, limite próprio para as ferramentas, Nominatim próprio ou fila compartilhada e
+  prazo de validade das coordenadas do Google.
 
 **Desempenho**
 
@@ -814,5 +917,7 @@ Itens adiados na revisão de segurança, agrupados, com a recomendação de cada
 | Cobrança recorrente (Mercado Pago Assinaturas) | Implementada atrás de `SAAS_BILLING_PROVIDER=MERCADO_PAGO`, **não validada contra o Mercado Pago real** | Conta MP da Comestra, `MP_SAAS_ACCESS_TOKEN`, URL pública do webhook `POST /billing/webhook/mercadopago` cadastrada no painel MP com o segredo em `MP_SAAS_WEBHOOK_SECRET`, `SAAS_BILLING_BACK_URL`, testes em sandbox |
 | Pagamentos do delivery (Mercado Pago por loja) | Implementados; cada loja informa as próprias credenciais no painel | Credenciais de produção de cada loja; `MP_NOTIFICATION_URL` pública; nonce de CSP no servidor do SPA para o antifraude |
 | E-mail transacional | Driver SMTP implementado (nodemailer), com texto + HTML e a marca da loja ou da plataforma; o padrão continua `log` (nada é enviado) | Servidor SMTP de produção (`MAIL_DRIVER=smtp`, `SMTP_*`, `MAIL_FROM` com SPF/DKIM) conferido pelo e-mail de teste do superpainel e `PUBLIC_API_URL` para o logo (seção 7.1). Evolução: fila de reenvio, provedores por API e tratamento de bounces. Com SMTP, o superpainel deixa de mostrar os links de redefinição e de convite do detalhe da loja |
+| Localização de endereços (entrega por distância) | Implementada: Google (com `GOOGLE_MAPS_API_KEY`), Nominatim e AwesomeAPI, com cache, prazos curtos e modo falso nos testes. **Não validada em carga** contra os serviços reais | `GEOCODING_CONTACT` real; decidir Nominatim público, próprio (`GEOCODING_NOMINATIM_URL`) ou Google (custos e termos na seção 8.4); fila compartilhada do Nominatim se houver várias instâncias |
+| Mapa do painel (OpenStreetMap) | Tiles de `tile.openstreetmap.org`, liberados na CSP (`img-src`) | Provedor de tiles contratado se o volume crescer |
 | Domínio próprio / subdomínio por loja | Campo `custom_domain` armazenado, sem roteamento | DNS curinga, certificados e resolução por host no front e no CORS |
 | Rate limit distribuído | Em memória, por instância | Armazenamento compartilhado (ex.: Redis) se houver várias instâncias |

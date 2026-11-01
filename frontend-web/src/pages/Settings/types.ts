@@ -10,7 +10,7 @@ export const SECTION_FIELDS = {
   dados: ['name', 'legal_name', 'document', 'email', 'phone', 'description'],
   endereco: ['address_zip_code', 'address_street', 'address_number', 'address_complement', 'address_neighborhood', 'address_city', 'address_state'],
   operacao: ['opening_message', 'closing_message'],
-  entrega: ['delivery_enabled', 'takeout_enabled', 'takeout_estimate', 'delivery_zones', 'is_default_store'],
+  entrega: ['delivery_enabled', 'takeout_enabled', 'takeout_estimate', 'delivery_zones', 'is_default_store', 'latitude', 'longitude', 'road_distance_available'],
   horarios: ['opening_hours'],
   fuso: ['time_zone'],
   // O logo é enviado na hora (sem rascunho): trocar o logo não descarta a cor em edição

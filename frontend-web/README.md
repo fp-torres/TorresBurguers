@@ -21,6 +21,7 @@ O nome da plataforma (logo, título da aba e rodapé) vem de `src/config/brand.t
 - **Axios**: cliente HTTP com o token da sessão da aba, cancelamento de chamadas da sessão anterior e tratamento de sessão expirada.
 - **Lucide React / Iconify**: ícones.
 - **Recharts**: gráficos do Dashboard e do superpainel.
+- **Leaflet** (`leaflet` 1.9): mapa do local da loja em Configurações → Entrega, com as imagens do OpenStreetMap (carregado só quando a loja usa a entrega por distância).
 - **Context API**: sessão (Auth), vitrine (Storefront), carrinho por loja (Cart), tema (Theme) e status da loja (StoreStatus).
 - **Mercado Pago (SDK JS v2)**: tokenização do cartão no navegador com a chave pública **da loja** (carregado só para clientes).
 
@@ -38,6 +39,8 @@ O nome da plataforma (logo, título da aba e rodapé) vem de `src/config/brand.t
 - **Checkout**: retirada ou entrega (endereço com busca de CEP; até 20 endereços por conta; a API confere o bairro pelo CEP e o carrinho avisa "Pelo CEP, o bairro é …" quando difere), total calculado pela API, pagamento online (PIX ou cartão, com o pedido criado pelo servidor após a aprovação) ou na entrega/retirada (dinheiro com troco de até R$ 200 acima do total, ou maquininha).
 - **Meus Pedidos** de todas as lojas (os 100 mais recentes), com o número do pedido **na loja** (`Pedido #N`), status, forma de pagamento e cancelamento enquanto o pedido aguarda confirmação. A confirmação do pedido também mostra o número (com pagamento online, ela busca o pedido para obtê-lo).
 - **Fora da área de entrega**: numa loja que recusa endereços fora das zonas, o carrinho mostra o aviso junto do endereço ("Nada foi cobrado."), a taxa "Fora da área", bloqueia o pagamento e oferece "Retirar no balcão".
+- **Pedido mínimo e frete grátis**: a vitrine mostra os selos (de `order_rules` do perfil público, com uma nota quando variam por região); o carrinho usa os campos do orçamento: "Faltam R$ X em produtos para finalizar o pedido" (pagamento bloqueado, também na barra inferior), a barra de progresso "Faltam R$ X para o frete grátis", a taxa riscada ao lado de "Grátis" e "Frete grátis! Você economizou R$ X na entrega." (`pages/Client/Cart/components/OrderRulesNotice.tsx`). A API confere tudo de novo e responde `400 ORDER_BELOW_MINIMUM` se a tela estiver desatualizada.
+- **Entrega por distância**: a vitrine mostra "Entrega até X km" (`delivery_distance`) e o carrinho mostra a linha "Distância da loja" (`distance_km` do orçamento). Endereço não localizado numa loja que recusa: a mensagem da API aparece junto do endereço, como no fora da área.
 - **Meus Dados**: nome, telefone, e-mail (só leitura), foto (envio de imagem ou um dos avatares prontos), exclusão da conta, **Sessões ativas** (aparelhos conectados, "Encerrar" e "Sair de todos os aparelhos") e **Segurança da conta** (`components/Account/AccountSecurity.tsx`): e-mail com o selo Confirmado/Não confirmado e reenvio da confirmação, troca de e-mail com confirmação no endereço novo e troca de senha com a senha atual. Pedido com pagamento estornado no Mercado Pago aparece como "Estornado" em Meus Pedidos.
 
 ## ⚙️ Painel da loja
@@ -48,6 +51,7 @@ O nome da plataforma (logo, título da aba e rodapé) vem de `src/config/brand.t
 - **Clientes**: quem comprou na loja e o histórico de pedidos; selo "Bloqueado", filtro Todos/Bloqueados e, para o Administrador, bloquear (motivo obrigatório + confirmação) e desbloquear, na lista e no detalhe.
 - **Sessões ativas** e **Minha conta** no menu lateral (painel e superpainel; ocultos em sessão de suporte).
 - **Configurações**: dados da loja, endereço, horários, fuso, entrega e retirada (zonas por bairro e/ou faixa de CEP, taxas, "Entregar com uma taxa padrão" ou "Recusar a entrega" fora das zonas), mensagens, logo e cor, credenciais Mercado Pago.
+- **Configurações → Entrega**: "Como cobrar a entrega" ("Por bairro ou CEP (zonas)" ou "Por distância (km)"); "Pedido mínimo e frete grátis" da loja (com "Pedido mínimo também na retirada no balcão") e por zona ou faixa (vazio = o da loja); no modo distância, as "Faixas de distância" (km adicional, raio máximo, fator de rota e, quando a API oferece, "Usar a distância real pelas ruas"), o "Local da loja no mapa" (Leaflet carregado sob demanda, pino arrastável, "Localizar pelo endereço da loja", latitude/longitude e "Ver no mapa") e "Teste um endereço", que simula com a configuração ainda não salva. Componentes em `pages/Settings/sections/delivery/`. Ao salvar, `DeliverySection` e `storeSettingsService` remontam o JSON de entrega na ordem de chaves da API (chave nova no JSON precisa entrar nos dois, senão a tela a apaga).
 - **Assinatura**: plano, limites e uso (inclusive o medidor "Armazenamento"), faturas, pagamento (quando há provedor recorrente) e cancelamento no fim do período. Cancelamento agendado pela plataforma aponta para o suporte; o cancelamento imediato fica só com o responsável pela loja.
 - **Tabelas no celular**: abaixo de 640 px, as listas do painel e do superpainel viram cartões (`DataTable stackOnMobile`).
 
@@ -141,7 +145,7 @@ npm run lint      # ESLint
 ## 🔒 CSP e cabeçalhos do build
 
 - `vite build` injeta `<meta http-equiv="Content-Security-Policy">` e `<meta name="referrer" content="strict-origin-when-cross-origin">` no `index.html`. O Vite de desenvolvimento **não** tem CSP (usa scripts inline do React Refresh).
-- A política libera a origem de `VITE_API_URL`, os domínios do Mercado Pago (`*.mercadopago.com[.br]`, `*.mercadolibre.com`, `*.mercadolivre.com[.br]`, `*.mlstatic.com`), Iconify (`api.iconify.design`, `api.simplesvg.com`, `api.unisvg.com`) e os avatares (`cdn-icons-png.flaticon.com`).
+- A política libera a origem de `VITE_API_URL`, os domínios do Mercado Pago (`*.mercadopago.com[.br]`, `*.mercadolibre.com`, `*.mercadolivre.com[.br]`, `*.mlstatic.com`), Iconify (`api.iconify.design`, `api.simplesvg.com`, `api.unisvg.com`) e os avatares (`cdn-icons-png.flaticon.com`). O `img-src` também libera `https://tile.openstreetmap.org` (`MAP_TILE_SOURCES`), só para as imagens do mapa do painel: o Leaflet vem no bundle e nenhum `fetch` sai para o OpenStreetMap.
 - O servidor que hospeda o build deve enviar os cabeçalhos de `securityHeaders()` (`vite.config.ts`), porque `frame-ancestors` e `X-Frame-Options` não funcionam pela meta: `Content-Security-Policy` (a mesma + `frame-ancestors 'none'`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=(), usb=()` e, em HTTPS, `Strict-Transport-Security: max-age=31536000; includeSubDomains`. O `npm run preview` já envia todos.
 - Configure também o **rewrite da SPA**: qualquer rota (`/loja/*`, `/platform/*`, `/convite/*`, `/redefinir-senha/*`...) deve servir o `index.html`.
 - Mercado Pago com CSP: a tokenização do cartão funciona; o script inline de perfil do dispositivo (antifraude) só roda se o servidor gerar um nonce por resposta (`'nonce-…'` no `script-src` e `<meta property="csp-nonce" nonce="…">`), que o front repassa ao SDK.
@@ -197,9 +201,11 @@ Os e-mails e senhas das contas de demonstração estão no [README da raiz](../R
 - [x] Tabelas responsivas no celular no painel e no superpainel
 - [x] Sessão em cookie HttpOnly com token curto e renovação, e Segurança da conta (confirmação e troca de e-mail)
 - [x] Frete por CEP no carrinho, cota de armazenamento e pedidos estornados no quadro
+- [x] Pedido mínimo e frete grátis (vitrine, carrinho e painel) e entrega por distância com mapa e simulador no painel
 
 Próximas melhorias:
 
 - [ ] Selo "Entrega só nos bairros atendidos" na vitrine e aviso de confirmação de e-mail no cadastro
+- [ ] Distância, faixa e frete grátis aplicado no quadro e no detalhe do pedido
 - [ ] Integração com **WebSockets** para atualização automática do quadro
 - [ ] Exportação de relatórios em **PDF / Excel**

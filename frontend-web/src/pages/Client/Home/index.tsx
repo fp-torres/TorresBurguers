@@ -6,6 +6,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useStorefront } from '../../../contexts/StorefrontContext';
 import { publicStoreService, type StorefrontProduct } from '../../../services/publicStoreService';
+import { deliveryDistanceLabel, orderRulesLabels } from '../../../services/publicStoreService';
 import { promotionService, type HomeBanner } from '../../../services/promotionService';
 import { assetUrl, getApiErrorMessage } from '../../../services/api';
 import type { Addon } from '../../../services/productService';
@@ -184,6 +185,8 @@ export default function ClientHome() {
   const matchDetails = isFootball ? banner?.details : undefined;
   const BannerIcon = !orderingAvailable ? Ban : isClosed ? Lock : isFootball ? Trophy : DAILY_ICONS[weekday] ?? ShoppingBag;
   const blockedLabel = orderingAvailable ? 'loja fechada' : 'pedidos indisponíveis';
+  const orderRules = orderRulesLabels(store);
+  const deliveryRadius = deliveryDistanceLabel(store);
 
   return (
     <div className="space-y-8 pb-20 animate-in fade-in duration-500 relative">
@@ -215,7 +218,7 @@ export default function ClientHome() {
                 <Chip tone="red" icon={<Lock size={14} />}>Fechado agora</Chip>
               )}
             </li>
-            {store.delivery_enabled && <li><Chip tone="neutral" icon={<Bike size={14} />}>Entrega</Chip></li>}
+            {store.delivery_enabled && <li><Chip tone="neutral" icon={<Bike size={14} />}>{deliveryRadius ?? 'Entrega'}</Chip></li>}
             {store.takeout_enabled && (
               <li>
                 <Chip tone="neutral" icon={<Clock size={14} />}>
@@ -223,7 +226,10 @@ export default function ClientHome() {
                 </Chip>
               </li>
             )}
+            {orderRules.minOrder && <li><Chip tone="neutral" icon={<ShoppingBag size={14} />}>{orderRules.minOrder}</Chip></li>}
+            {orderRules.freeDelivery && <li><Chip tone="green" icon={<Tag size={14} />}>{orderRules.freeDelivery}</Chip></li>}
           </ul>
+          {orderRules.variesNote && <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{orderRules.variesNote}</p>}
         </div>
       </section>
 

@@ -11,6 +11,7 @@ import { StoreSlugHistoryAndCancelOrigin1793485300000 } from './1793485300000-St
 import { PerformanceIndexes1793490000000 } from './1793490000000-PerformanceIndexes';
 import { AccountEmailVerification1793491000000 } from './1793491000000-AccountEmailVerification';
 import { AuthSessionRefresh1793492000000 } from './1793492000000-AuthSessionRefresh';
+import { DeliveryDistance1793501000000 } from './1793501000000-DeliveryDistance';
 
 /**
  * Migrations do banco, em ordem de execução. Lista explícita (sem glob): funciona igual no
@@ -32,4 +33,5 @@ export const MIGRATIONS = [
   PerformanceIndexes1793490000000,
   AccountEmailVerification1793491000000,
   AuthSessionRefresh1793492000000,
+  DeliveryDistance1793501000000,
 ];

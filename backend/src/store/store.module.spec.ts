@@ -1,7 +1,10 @@
 import { Global, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { Address } from '../addresses/entities/address.entity';
 import { AuditService } from '../audit/audit.service';
+import { RateLimitService } from '../common/rate-limit/rate-limit.service';
+import { StoreDeliveryToolsService } from './store-delivery-tools.service';
 import { PlanLimitsService } from '../billing/plan-limits.service';
 import { Order } from '../orders/entities/order.entity';
 import { TenantService } from '../tenancy/tenant.service';
@@ -19,8 +22,9 @@ import { StoreService } from './store.service';
     { provide: TenantService, useValue: {} },
     { provide: PlanLimitsService, useValue: {} },
     { provide: AuditService, useValue: {} },
+    { provide: RateLimitService, useValue: {} },
   ],
-  exports: [TenantService, PlanLimitsService, AuditService],
+  exports: [TenantService, PlanLimitsService, AuditService, RateLimitService],
 })
 class FakeGlobalsModule {}
 
@@ -33,11 +37,14 @@ describe('StoreModule (injeção de dependências)', () => {
       .useValue({})
       .overrideProvider(getRepositoryToken(Order))
       .useValue({})
+      .overrideProvider(getRepositoryToken(Address))
+      .useValue({})
       .compile();
 
     for (const service of [
       StoreService,
       StoreSettingsService,
+      StoreDeliveryToolsService,
       StoreCustomersService,
       StoreDirectoryService,
     ]) {

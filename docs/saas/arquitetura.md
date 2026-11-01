@@ -139,6 +139,9 @@
 | `1793490000000-PerformanceIndexes` | Índices de desempenho da seção 3.3, com `CREATE INDEX CONCURRENTLY IF NOT EXISTS` e **sem transação** (`transaction = false`): não trava as tabelas grandes e, se falhar no meio, basta rodar de novo (o índice inválido é recriado). Os índices de trigramas só são criados quando `pg_trgm` já está instalada ou pode ser criada por este usuário (superusuário, ou extensão `trusted` com permissão `CREATE`); senão a migration segue sem eles, com aviso no log. `down()` remove os índices, não a extensão |
 | `1793491000000-AccountEmailVerification` | `users.email_verified_at` (sem backfill: as contas existentes ficam "não confirmado") e a tabela `account_email_tokens` (seção 3.1). `down()` apaga a tabela e a coluna: perde só as confirmações e os links pendentes |
 | `1793492000000-AuthSessionRefresh` | Colunas da sessão em cookie em `auth_sessions` (`transport` com padrão `BEARER`, `refresh_*`, `refresh_generation`, `parent_session_id`), índices parciais, CHECKs e a FK do pai (`ON DELETE SET NULL`), criados `NOT VALID` e validados em seguida: as linhas existentes viram `BEARER` pelo padrão, sem reescrever a tabela. `down()` remove tudo sem afetar contas e pedidos (as sessões em cookie perdem o refresh e as pessoas entram de novo) |
+| `1793501000000-DeliveryDistance` | Entrega por distância (seção 11.2): `stores.latitude` e `stores.longitude` (local da loja) e, em `addresses`, `geo_latitude`, `geo_longitude` (`double precision`), `geo_precision`, `geo_source`, `geo_status` (`varchar(12)`) e `geo_checked_at` (`timestamptz`), com `CHK_addresses_geo_precision` (`ADDRESS`, `ZIP_CENTER`, `MANUAL`) e `CHK_addresses_geo_status` (`FOUND`, `NOT_FOUND`, `UNAVAILABLE`). Tudo opcional, `IF NOT EXISTS`, sem backfill: os endereços existentes são localizados no primeiro orçamento de uma loja que cobra por distância. `down()` remove as colunas e os CHECKs (o JSON de entrega das lojas não é alterado) |
+
+Pedido mínimo e frete grátis (seção 11.2) **não têm migration**: ficam no JSON `stores.delivery_zones`, que já existia.
 
 Migração dos dados existentes (somente se o banco já tinha dados):
 
@@ -460,8 +463,10 @@ Regra do último administrador: **por loja**. Clientes da loja ficam em `/store/
 |---|---|---|
 | `GET /store/status` | rota antiga (equipe → própria loja; demais → loja padrão) | `{ id, is_open, opening_message, closing_message }` |
 | `PATCH /store/status` | ADMIN, EMPLOYEE | Abre/fecha a própria loja e edita as mensagens |
-| `GET /store/settings` | ADMIN | Configurações completas (sem segredos) + situação (`access`) |
-| `PATCH /store/settings` | ADMIN | Dados comerciais, endereço, operação, entrega/retirada, zonas (bairros e/ou faixas de CEP), taxas e a política para endereços fora das zonas, horários, fuso, identidade visual (se o plano permitir). Corpo JSON de até 2 MB (formato das zonas abaixo) |
+| `GET /store/settings` | ADMIN | Configurações completas (sem segredos) + situação (`access`). Aditivos: `latitude`, `longitude` (local da loja, `number \| null`) e `road_distance_available` (`true` só com `GOOGLE_MAPS_API_KEY` e fora de `NODE_ENV=test`: o painel só oferece a distância por rua quando ela funciona) |
+| `PATCH /store/settings` | ADMIN | Dados comerciais, endereço, operação, entrega/retirada, zonas (bairros e/ou faixas de CEP), taxas e a política para endereços fora das zonas, pedido mínimo e frete grátis, modo de cobrança (zonas ou distância) com as faixas de km, local da loja (`latitude`/`longitude`), horários, fuso, identidade visual (se o plano permitir). Corpo JSON de até 2 MB (formato das zonas abaixo). Local da loja: números ou `null` (texto com número é convertido); só um dos dois → 400 `Informe a latitude e a longitude da loja juntas (ou deixe as duas vazias).`; modo distância sem o local → 400 `Para cobrar a entrega por distância, informe o local da loja no mapa (latitude e longitude) na seção Entrega.` (conferido só quando a requisição mexe em `latitude`, `longitude` ou `delivery_zones`) |
+| `POST /store/settings/geocode` | ADMIN | Localiza a loja no mapa (200; nada é gravado). Corpo `{ zip_code?, street?, number?, neighborhood?, city?, state? }`; sem `zip_code`, usa o endereço salvo da loja. Resposta `{ latitude, longitude, precision: 'ADDRESS' \| 'ZIP_CENTER', source }`. Erros: 400 `Informe o CEP da loja (seção Endereço) para localizá-la no mapa.`, 404 `Não encontramos este endereço no mapa. ...`, 502 `O serviço de mapas não respondeu agora. ...`, 429 (política `CEP_LOOKUP`, chave por loja) |
+| `POST /store/settings/delivery-simulation` | ADMIN | "Teste um endereço" do painel (200; nada é gravado). Corpo `{ zip_code (obrigatório), street?, number?, neighborhood?, city?, state?, delivery_zones? (rascunho não salvo, mesmo formato), latitude?, longitude? }`. Resposta `{ mode, address, store_located, located, precision, distance_km, max_km, band, extra_km, zone, outside, refused, delivery_fee, estimated_delivery_time, min_order, free_delivery_above, message }`. 429 pela política `CEP_LOOKUP` (chave por loja, a mesma da rota anterior) |
 | `POST /store/logo`, `DELETE /store/logo` | ADMIN | Logo da loja (JPG/PNG/WebP até 5 MB → WebP) |
 | `PUT /store/settings/payments`, `DELETE /store/settings/payments` | ADMIN | Credenciais Mercado Pago da loja (token só de escrita; a resposta mostra só uma dica) |
 | `GET /store/invitations`, `POST /store/invitations`, `DELETE /store/invitations/:id` | ADMIN | Convites da equipe (a lista traz `make_owner`). `POST` conta no `TEAM_WRITE` da loja; resposta 201 `{ invitation, url }` (+ `message` aditivo quando o e-mail não foi enviado). Limites diários: 3 convites por destinatário **na própria loja** em 24 h → 429 `A loja já enviou muitos convites para este e-mail nas últimas 24 horas. Tente de novo amanhã.`; 100 por loja em 24 h → 429 `A loja atingiu o limite de convites das últimas 24 horas. Tente de novo amanhã.` Com 10 ou mais convites ao mesmo e-mail em 24 h somando as lojas e o superpainel, o convite é criado **sem e-mail**: 201 com o link e `message: 'O convite foi criado, mas o e-mail não foi enviado agora. Copie o link e envie à pessoa.'`. Convite `make_owner` pendente para o e-mail → 409 ao convidar e 403 ao cancelar (`Este convite de troca do responsável pela loja foi criado pela administração da plataforma: só ela pode cancelá-lo ou substituí-lo.`); vencido, pode ser substituído. `invited_by_user_id` sai `null` quando quem convidou não é da equipe da loja (convites do superpainel) |
@@ -485,13 +490,47 @@ exceto com `outside_zones: 'refuse'`, que exige pelo menos uma zona (`fallback: 
 Sem `outside_zones` vale `fallback` (configurações antigas iguais). Erros com o prefixo `Zonas de entrega inválidas: `.
 `GET /store/settings` devolve o JSON gravado.
 
+Chaves opcionais (aditivas; sem elas o JSON gravado é idêntico ao de antes, byte a byte):
+
+```
+{ zones: [{ ..., min_order?: number, free_delivery_above?: number }],
+  fallback?, outside_zones?,
+  min_order?: number, free_delivery_above?: number, min_order_takeout?: true,
+  mode?: 'distance',
+  distance?: { bands: [{ up_to_km, fee, time, min_order?, free_delivery_above? }],
+               max_km?, extra_km_fee?, route_factor, road_distance?: true } }
+```
+
+- **Pedido mínimo e frete grátis** (valores em reais como **números JSON**; texto → 400), de 0 a 99999999.99,
+  normalizados em centavos. Na loja: `min_order` 0 ou ausente = sem mínimo (não é gravado); `free_delivery_above`
+  ausente = sem frete grátis, 0 = sempre grátis; `min_order_takeout` só é guardado como `true` e só junto de um
+  `min_order` (o mínimo vale também na retirada). Na zona (ou faixa): ausente ou `null` = herda o da loja; 0 = sem
+  mínimo / sempre grátis **só naquela zona**. Exemplos de erro: `"min_order" da zona 2 precisa ser um valor em reais
+  de 0 a 99999999.99 (ex.: 30 ou 29.9).` e `"min_order_takeout" deve ser true (...) ou false (...)`.
+- **Modo de cobrança**: `mode` ausente = por zonas (padrão; `"zones"` é aceito e não é gravado); `"distance"` = por
+  faixas de km a partir do local da loja. No modo distância, `distance` é obrigatório, `zones` pode faltar ou vir vazia
+  (gravada como `[]`) e `fallback`/`outside_zones` valem além do raio e para endereços não localizados (`fallback`
+  obrigatório, salvo com `refuse`). No modo por zonas, um `distance` enviado é validado e guardado (as faixas não se
+  perdem ao trocar de modo); as zonas também ficam guardadas no modo distância.
+- **Faixas** (`distance.bands`): de 1 a 20, em ordem crescente de `up_to_km` (maior que 0, até 100 km), cada uma com
+  `fee`, `time` (até 20 caracteres) e pedido mínimo/frete grátis próprios opcionais. `max_km` + `extra_km_fee`
+  (opcionais, sempre juntos): cobra cada km iniciado além da última faixa até o raio máximo; sem eles, o raio é a
+  última faixa (`max_km` só é gravado quando passa da última faixa). `route_factor`: de 1 a 3, padrão 1.3, sempre
+  gravado. `road_distance: true`: distância real por rua quando houver `GOOGLE_MAPS_API_KEY` (seção 11.2). Exemplo
+  de erro: `as faixas precisam estar em ordem crescente de distância: ...`.
+- Ordem das chaves gravadas: `zones`, `fallback`, `outside_zones`, `min_order`, `free_delivery_above`,
+  `min_order_takeout`, `mode`, `distance`.
+- `DELIVERY_ZONES_JSON`/`FILE` (zonas da plataforma, só da loja padrão sem zonas próprias) aceitam e validam as
+  chaves de pedido mínimo e frete grátis, mas o preço e o perfil público as **ignoram**, e as zonas da plataforma são
+  sempre por zona (nunca por distância): as regras novas só valem nas zonas da própria loja.
+
 ### 5.4 Vitrine pública
 
 | Rota | Descrição |
 |---|---|
 | `GET /stores` | Diretório de lojas visíveis (paginado, busca) |
 | `GET /stores/default` | Perfil público da loja padrão (404 se não houver) |
-| `GET /stores/:storeSlug` | Perfil público: identidade, endereço, horários, entrega/retirada, `delivers_outside_zones` (aditivo; `false` = a loja recusa endereços fora das zonas; a loja padrão sem zonas próprias segue a política das zonas da plataforma), `ordering_available`, `unavailable_message`, `payments: { online_enabled, mp_public_key }`. O mesmo campo em `GET /stores/default` |
+| `GET /stores/:storeSlug` | Perfil público: identidade, endereço, horários, entrega/retirada, `delivers_outside_zones` (aditivo; `false` = a loja recusa endereços fora das zonas; a loja padrão sem zonas próprias segue a política das zonas da plataforma), `ordering_available`, `unavailable_message`, `payments: { online_enabled, mp_public_key }`. O mesmo campo em `GET /stores/default`. Aditivos: `order_rules: { min_order: number \| null, min_order_takeout: boolean, free_delivery_above: number \| null, varies_by_zone: boolean }` (lidos do JSON de entrega **da própria loja**; `varies_by_zone` conta zonas e faixas de km com valores próprios; loja sem zonas próprias, inclusive a padrão nas zonas da plataforma → nulos/`false`) e `delivery_distance: { max_km } \| null` (só no modo distância; as coordenadas da loja **não** são públicas) |
 | `GET /stores/:storeSlug/status` | Mesmo formato de `GET /store/status` |
 | `GET /stores/:storeSlug/products`, `/products/:id`, `/addons` | Cardápio da loja |
 | `GET /stores/:storeSlug/promotions/banner` | Banner da loja |
@@ -544,6 +583,25 @@ Leitura de pedidos pela equipe (`GET /orders` e `GET /orders/:id`), na lista e n
   `POST /orders/quote`, `POST /orders` pago na entrega, `POST /payment/pix` e `POST /payment/card`, nas rotas antigas
   e em `/stores/:storeSlug/...`, conferido antes dos itens e antes de cobrar. Pagamento já aprovado nunca é recusado
   (paga o `fallback` da loja, ou o da plataforma).
+- **Endereço não localizado no mapa** (loja no modo distância com `outside_zones: 'refuse'`): o mesmo 400
+  `DELIVERY_OUT_OF_AREA`, com mensagem e motivo próprios: `{ statusCode: 400, message: 'Não conseguimos localizar
+  este endereço no mapa para calcular a entrega. Confira o CEP, a rua e o número ou escolha retirar no balcão.',
+  error: 'Bad Request', code: 'DELIVERY_OUT_OF_AREA', reason: 'ADDRESS_NOT_LOCATED' }`, nos mesmos quatro pontos.
+  Além do raio, o 400 é o `DELIVERY_OUT_OF_AREA` de sempre (sem `reason`).
+- **Orçamento** (`POST /orders/quote` e `/stores/:storeSlug/orders/quote`), campos aditivos (os de antes não
+  mudam): `delivery_fee` (cobrada: 0 quando o frete grátis vale), `delivery_fee_original` (taxa da zona, faixa ou
+  `fallback` antes do frete grátis; 0 na retirada), `free_delivery_applied` (`true` só quando havia taxa > 0 e o
+  subtotal atingiu o valor), `free_delivery_threshold` (`number | null`; `null` na retirada ou sem regra),
+  `missing_for_free_delivery` (0 = atingido; `null` sem regra, na retirada ou com taxa original 0),
+  `min_order_value` e `missing_for_min_order` (`null` sem mínimo; 0 = atingido), `delivery_mode`
+  (`'zones' | 'distance' | null`; `null` na retirada) e `distance_km` (`number | null`, 1 casa; só no modo
+  distância com o endereço localizado). **Abaixo do mínimo, o orçamento responde 200** com quanto falta.
+- **Pedido abaixo do mínimo**: 400 `{ statusCode: 400, message: 'O pedido mínimo desta loja para entrega é R$ 30,00.
+  Faltam R$ 4,10.' (ou "para retirada"), error: 'Bad Request', code: 'ORDER_BELOW_MINIMUM', min_order_value: 30,
+  missing_for_min_order: 4.1 }` em `POST /orders` pago na entrega, `POST /payment/pix` e `POST /payment/card` (rotas
+  antigas e `/stores/:storeSlug/...`). Conferido depois dos itens (o `DELIVERY_OUT_OF_AREA` vem antes) e nunca num
+  pagamento já aprovado (`POST /orders` com `paymentId`, webhook, status, conciliação). O valor cobrado continua
+  sendo o total do servidor, já com a taxa zerada quando há frete grátis.
 - `GET /payment/status/:id`: o pagador ou ADMIN/EMPLOYEE da loja do pagamento (404 nos demais casos,
   inclusive cozinha e entregador). `POST /orders` com `paymentId` de outro cliente ou de outra loja recebe a
   mesma resposta de um pagamento inexistente. A consulta repetida dispara no máximo uma consulta ao Mercado Pago por
@@ -561,6 +619,11 @@ Leitura de pedidos pela equipe (`GET /orders` e `GET /orders/:id`), na lista e n
   nem reconsultar o CEP. `GET /addresses/cep/:cep` mantém o formato (ViaCEP) e os status 400/404/429/502, agora com
   cache por instância (encontrado 24 h, inexistente 1 h), consultas simultâneas compartilhadas e 60 s sem consultar
   um serviço depois de uma falha (com os dois fora do ar, 502 na hora).
+  Entrega por distância (aditivo): `geo_latitude`, `geo_longitude`, `geo_precision`
+  (`'ADDRESS' | 'ZIP_CENTER' | 'MANUAL' | null`), `geo_source` (`'GOOGLE' | 'NOMINATIM' | 'AWESOMEAPI' | 'FAKE' | null`),
+  `geo_status` (`'FOUND' | 'NOT_FOUND' | 'UNAVAILABLE' | null`) e `geo_checked_at`. Só o servidor os grava (no corpo → 400). Os
+  campos antigos `latitude`/`longitude` do endereço (aceitos desde antes) continuam como estão e **nunca** definem a
+  taxa de entrega.
 - `POST /payment/pix` e `/payment/card` (e `/stores/:storeSlug/payment/...`): 429 acima de `PAYMENT_CREATE`
   (cliente + loja; padrão 10 em 10 min) ou `PAYMENT_CREATE_IP` (padrão 60 em 10 min). Só cobranças novas
   contam; repetir a mesma `idempotencyKey` não conta. Teto de 5 cobranças pendentes não vencidas (PIX ou
@@ -733,6 +796,22 @@ CSP e Mercado Pago no navegador: seção 11.7.
   dos Correios. No carrinho, `DELIVERY_OUT_OF_AREA` aparece junto do endereço ("Fora da área de entrega", "Nada foi
   cobrado.", botão "Retirar no balcão"), a taxa vira "Fora da área" e o pagamento fica bloqueado; também o aviso de
   que a loja só entrega nas zonas atendidas e "Pelo CEP, o bairro é X" quando o bairro do CEP difere do digitado.
+- **Pedido mínimo e frete grátis**: Configurações → Entrega → "Pedido mínimo e frete grátis" ("Pedido mínimo para
+  entrega", "Frete grátis a partir de", "Pedido mínimo também na retirada no balcão") e os mesmos dois campos em cada
+  zona e em cada faixa de km ("Vazio: usa o da loja. R$ 0,00: ..."), com aviso quando o frete grátis fica abaixo do
+  mínimo. A vitrine mostra os selos de pedido mínimo e frete grátis (de `order_rules`, com uma nota quando variam por
+  região). O carrinho trabalha com os campos do orçamento: "Faltam R$ X em produtos para finalizar o pedido" (o
+  pagamento fica bloqueado), barra de progresso "Faltam R$ X para o frete grátis", a taxa riscada ao lado de "Grátis"
+  e "Frete grátis! Você economizou R$ X na entrega." Enquanto o orçamento carrega, o carrinho mostra os valores
+  anunciados pela loja.
+- **Entrega por distância**: em Configurações → Entrega, "Como cobrar a entrega" escolhe "Por bairro ou CEP (zonas)"
+  ou "Por distância (km)". No modo distância: editor de faixas ("Faixas de distância", "Adicionar faixa", "Cobrar por
+  km adicional além da última faixa", "Raio máximo (km)", "Valor por km adicional", "Fator de rota" e, quando
+  `road_distance_available`, "Usar a distância real pelas ruas"); "Local da loja no mapa" (mapa Leaflet carregado sob
+  demanda, pino arrastável, "Localizar pelo endereço da loja", campos de latitude e longitude e "Ver no mapa", que abre
+  o OpenStreetMap); e "Teste um endereço" (CEP e número), que usa a configuração **ainda não salva** da tela. A vitrine
+  mostra "Entrega até X km" e o carrinho mostra a linha "Distância da loja". O Leaflet vem no bundle (`leaflet` em
+  `package.json`); só as imagens do mapa saem do OpenStreetMap (CSP, seção 11.7).
 - **Armazenamento**: medidor "Armazenamento" em `/subscription` e no detalhe da assinatura do superpainel; campo
   "Armazenamento (MB)" com "Ilimitado" no formulário de planos.
 - **Pagamento estornado**: pedido com `payment_status = REFUNDED` e status diferente de `CANCELED` é um pagamento
@@ -777,6 +856,11 @@ CSP e Mercado Pago no navegador: seção 11.7.
 | `PUBLIC_API_URL` | vazio | Endereço público da API (ex.: `https://api.comestra.com.br` ou `https://comestra.com.br/api`), base do logo das lojas nos e-mails (`<PUBLIC_API_URL>/uploads/<arquivo>`). Vazio = e-mails sem logo (monograma); inválido = aviso na subida, sem mostrar o valor |
 | `UPLOADS_CLEANUP_INTERVAL_HOURS` | vazio (desligada) | Limpeza automática dos arquivos sem uso, em horas (decimais aceitos; mínimo 10 s; `0`/`off` desliga; inválido → desligada com aviso). Seção 11.1 |
 | `CEP_LOOKUP_FAKE` | vazio | **Só com `NODE_ENV=test`** (ignorada com aviso nos outros): mapa JSON de CEPs que substitui ViaCEP e BrasilAPI (seção 11.2) |
+| `GOOGLE_MAPS_API_KEY` | vazio | Opcional. Liga o Google Geocoding no início da cadeia de localização e a distância real por rua (Routes API, `computeRoutes`). Na chave, habilite a **Geocoding API** e a **Routes API**. Sem ela, o Google é pulado e o painel não oferece a distância por rua (seção 11.2) |
+| `GEOCODING_PROVIDERS` | `google,nominatim,awesomeapi` | Ordem da cadeia de localização dos endereços. Nomes desconhecidos são ignorados com aviso; `none` desliga (todo endereço segue a regra de fora da área nas lojas por distância) |
+| `GEOCODING_CONTACT` | vazio | E-mail ou site incluído no User-Agent `comestra-delivery-geocoder/1.0 (<contato>)`, como pede a política do Nominatim. Sem ele, com o Nominatim na cadeia, a API avisa na subida |
+| `GEOCODING_NOMINATIM_URL` | `https://nominatim.openstreetmap.org` | Servidor Nominatim próprio (recomendado com mais de uma instância da API ou uso intenso) |
+| `GEOCODING_FAKE` | vazio | **Só com `NODE_ENV=test`** (ignorada com aviso nos outros): mapa JSON `{ "<CEP>": { lat, lng, precision?: 'ZIP_CENTER' } \| "unavailable" \| null }` no lugar dos provedores. Em `NODE_ENV=test` sem ela, nada é localizado (nenhuma chamada externa) |
 | `DB_POOL_SIZE` | `10` | Conexões no pool da API (1 a 200) |
 | `DB_STATEMENT_TIMEOUT_MS` | `60000` | Tempo máximo de cada consulta da API, em ms (`0` desliga; até 24 h). Não vale para as migrations nem para o CLI |
 | `DB_POOL_ACQUIRE_TIMEOUT_MS` | `30000` | Espera máxima por uma conexão livre do pool, em ms (`0` = sem limite; até 600000). Esgotada → 500 |
@@ -823,7 +907,13 @@ Onda 2 da etapa 8 e levas 9a/9b (nenhuma rota usada pelo app mudou de formato; s
   recarrega depois do erro, como no web.
 - **Entrega**: com o padrão (`fallback`), nada muda. Se a loja padrão escolher `refuse`, o app recebe o 400
   `DELIVERY_OUT_OF_AREA` no orçamento e mostra a mensagem (não conhece o `code` nem o bairro do CEP). As respostas
-  de `/addresses` só ganham campos.
+  de `/addresses` só ganham campos (inclusive os `geo_*` da entrega por distância).
+- **Pedido mínimo, frete grátis e distância**: a loja que não configura nada não muda. O app recebe os campos novos do
+  orçamento e do perfil público sem usá-los; com frete grátis, a taxa chega 0 e o app já mostra "Grátis". Abaixo do
+  mínimo, o orçamento passa e o pedido ou a cobrança recebe o 400 `ORDER_BELOW_MINIMUM`, cuja mensagem o app mostra
+  (sem aviso antes de enviar). No modo distância, o 400 de endereço não localizado (`reason: ADDRESS_NOT_LOCATED`)
+  também aparece como mensagem; a distância não é exibida. Conferido só leitura em
+  `frontend-mobile/src/screens/Checkout/index.tsx`.
 - **Equipe**: `POST /users` (equipe), restaurar membro e criar produto (inclusive multipart do app) têm o limite do
   plano rígido, com os mesmos status. O ADMIN pode receber 409 ao usar o e-mail de um convite `make_owner` pendente.
   `PATCH /users/:id` da própria conta mantém a troca imediata de e-mail (modo `compat`), agora com aviso e
@@ -947,6 +1037,44 @@ Onda 2 da etapa 8 e levas 9a/9b (nenhuma rota usada pelo app mudou de formato; s
   conferência. CEP fora do mapa = inexistente (404 / `NOT_FOUND`); `"unavailable"` = serviço fora do ar (502 /
   `UNAVAILABLE`); JSON inválido → erro no log e todos inexistentes. Em `NODE_ENV=test` **sem** a variável, a
   conferência não acessa a internet (fica `UNAVAILABLE`/`MANUAL`) e a busca pública continua indo à internet.
+- **Pedido mínimo e frete grátis** (`applyOrderRules` em `src/orders/order-rules.ts`, função pura chamada por
+  `OrderPricingService.price()`, o cálculo único do orçamento, do pedido e das cobranças): compara o **subtotal dos
+  itens, com as promoções e sem a taxa**. A zona encontrada (ou a faixa de km) sobrescreve a loja campo a campo; fora
+  das zonas (`fallback`, ou além do raio) valem os da loja. Frete grátis quando há taxa > 0 e o subtotal ≥ o valor
+  (`free_delivery_applied` só nesse caso); o retrato do pedido, o valor do PIX e o pedido criado pela aprovação usam a
+  taxa zerada. Retirada: nunca tem frete grátis e só tem mínimo com `min_order_takeout` (as zonas não valem). As regras
+  só valem nas zonas **da própria loja**: a loja padrão nas zonas da plataforma (`DELIVERY_ZONES_*`) não tem mínimo nem
+  frete grátis até salvar zonas próprias no painel. Decisões: `min_order` 0 na loja = sem mínimo (não gravado); 0 na
+  zona é guardado (sem mínimo ou sempre grátis só nela); frete grátis menor que o mínimo é permitido (a tela só avisa).
+- **Entrega por distância** (`src/orders/delivery-distance.ts`, funções puras): distância = linha reta (haversine, R =
+  6371 km) entre o local da loja e as coordenadas do endereço × `route_factor` (padrão 1,3: as ruas nunca vão em linha
+  reta), ou a distância real por rua (Google Routes `computeRoutes`, cabeçalho `X-Goog-Api-Key`, máscara
+  `routes.distanceMeters`, prazo de 2 s, cache de 7 dias por instância) com `road_distance` e `GOOGLE_MAPS_API_KEY` (o
+  fator não se aplica; sem rota, volta para a linha reta). A distância é arredondada para 1 casa e comparada nessa
+  precisão: vale a primeira faixa com km ≤ `up_to_km` (2,0 cabe em "até 2 km"). Além da última faixa, com `max_km` e
+  `extra_km_fee`: taxa da última faixa + cada km **iniciado** × `extra_km_fee`, com o prazo e as regras da última faixa.
+  Além do raio, endereço sem coordenadas ou loja sem local: a política de fora da área (`fallback` ou 400; não
+  localizado → `reason: ADDRESS_NOT_LOCATED`). Pagamento já aprovado nunca é recusado. As zonas continuam guardadas no
+  modo distância; as zonas da plataforma são sempre por zona.
+- **Localização dos endereços** (`GeocodingService` + `AddressGeoService` em `src/addresses`): cadeia configurável
+  (`GEOCODING_PROVIDERS`, padrão Google → Nominatim → AwesomeAPI). Google Geocoding só com `GOOGLE_MAPS_API_KEY`;
+  Nominatim (OpenStreetMap, sem chave) com busca estruturada sem o CEP (o OSM raramente tem CEP no Brasil), só
+  resultados no nível da rua ou melhor (`place_rank ≥ 26`), User-Agent identificado (`GEOCODING_CONTACT`) e no máximo 1
+  requisição a cada 1,1 s **por instância** (espera de até 1,5 s pela vaga); AwesomeAPI (`cep.awesomeapi.com.br`, sem
+  chave) dá o centro do CEP (`ZIP_CENTER`). Prazo total da cadeia: 4 s no orçamento, 5 s ao salvar o endereço, 8 s no
+  painel; até 2,5 s por provedor; provedor que falha fica 60 s sem ser consultado; cache em memória por instância
+  (encontrado 24 h, não encontrado 1 h, até 5000 entradas) e consultas simultâneas do mesmo endereço compartilhadas.
+  Quando localizar: no cadastro e na edição do endereço **só enquanto alguma loja com entrega ligada cobra por
+  distância** (conferido com cache de 30 s; por padrão nenhuma chamada externa) e no orçamento do modo distância
+  (endereço nunca localizado, ou `UNAVAILABLE` há 1 h ou mais). Grava só se CEP, rua e número não mudaram nesse
+  meio-tempo; editar o endereço limpa as coordenadas antigas. Nunca impede salvar nem orçar. Decisão: as coordenadas
+  enviadas pelo cliente (`latitude`/`longitude`) nunca definem a taxa (evita burla, como o bairro do CEP); a precisão
+  `MANUAL` é aceita pelo banco, mas nenhuma rota a grava ainda.
+- **Localização falsa nos testes** (`GEOCODING_FAKE`, só com `NODE_ENV=test`): JSON `{ "<CEP>": { lat, lng,
+  precision?: 'ZIP_CENTER' } | "unavailable" | null }` no lugar dos provedores (CEP fora do mapa ou `null` = não
+  encontrado; `"unavailable"` = provedores fora do ar; JSON inválido → erro no log e nada localizado). Em
+  `NODE_ENV=test` sem a variável, nada é localizado (nenhuma chamada externa). A suíte E2E usa
+  `e2e/support/geocoding-fake.ts` (CEPs `28970-xxx`).
 - **Limites de pedido**: `POST /orders` pago na entrega consome `ORDER_CREATE` (chave loja + cliente) e
   `ORDER_CREATE_IP` (429). Um cliente pode ter numa loja no máximo N pedidos `PENDING` pagos na entrega, com
   N = o limite de `RATE_LIMIT_ORDER_CREATE` (padrão 10): o excesso recebe 429 `Você já tem N pedidos
@@ -1096,7 +1224,9 @@ Onda 2 da etapa 8 e levas 9a/9b (nenhuma rota usada pelo app mudou de formato; s
 convite, redefinição e dos e-mails de conta), `PUBLIC_API_URL` (logo das lojas nos e-mails), `RATE_LIMIT_CEP_LOOKUP`
 (padrão 60/60 s), `SWAGGER_ENABLED`, `SAAS_BILLING_INTERVAL_MS` (padrão 300000, mínimo 10000),
 `PIX_EXPIRATION_MINUTES` (padrão 30; de 30 min a 30 dias), `UPLOADS_CLEANUP_INTERVAL_HOURS` (limpeza agendada),
-`CEP_LOOKUP_FAKE` (só em test). As variáveis de sessão, conta, banco e desempenho estão na seção 9.
+`CEP_LOOKUP_FAKE` (só em test), e as da entrega por distância: `GOOGLE_MAPS_API_KEY`, `GEOCODING_PROVIDERS`,
+`GEOCODING_CONTACT`, `GEOCODING_NOMINATIM_URL` e `GEOCODING_FAKE` (só em test). As variáveis de sessão, conta, banco,
+desempenho e localização estão na seção 9.
 Lista completa e comentada: `backend/.env.example`.
 
 ### 11.6 Superpainel (contratos)
@@ -1230,7 +1360,10 @@ só contagens).
   A política é gerada com a origem de `VITE_API_URL` (por isso o build precisa da URL real da API), os
   domínios do Mercado Pago (`*.mercadopago.com[.br]`, `*.mercadolibre.com`, `*.mercadolivre.com[.br]`,
   `*.mlstatic.com`), Iconify (`api.iconify.design`, `api.simplesvg.com`, `api.unisvg.com`) e os avatares
-  (`cdn-icons-png.flaticon.com`).
+  (`cdn-icons-png.flaticon.com`). O `img-src` também inclui `https://tile.openstreetmap.org` (`MAP_TILE_SOURCES`):
+  só as imagens do mapa do local da loja no painel; o Leaflet (script e CSS) vem no próprio bundle e nenhuma chamada
+  `fetch`/XHR sai para o OpenStreetMap. O mapa mostra a atribuição exigida ("© OpenStreetMap"). O Dockerfile do web lê
+  a CSP do `index.html` gerado pelo build, então não precisou mudar.
 - **Cabeçalhos para o servidor que hospeda o build** (o `vite preview` já os envia; ver `securityHeaders()` em
   `frontend-web/vite.config.ts`): `Content-Security-Policy` (a mesma da meta + `frame-ancestors 'none'`),
   `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
@@ -1407,7 +1540,9 @@ Resumo técnico; a lista para a operação, com recomendações, está em [`oper
 | Credenciais Mercado Pago da loja | Qualquer ADMIN, não só o responsável, troca ou remove as credenciais (auditado em `store.payments.update/remove`) | E-mail ao responsável a cada troca feita por outro ADMIN (modelo novo em `notifications`); alternativa mais restrita: exigir o responsável ou `current_password` (decisão de negócio) |
 | Slug antigo | Reservado para sempre em `store_slug_history`, sem redirecionamento | `GET /stores/<antigo>` → slug atual e `/loja/<antigo>` no SPA (contrato novo + frontend) |
 | Arquivos | Cota por loja e limpeza agendada **entregues** (seção 11.1). A cota usa cache por instância (até 5 min de atraso; com várias instâncias, uploads simultâneos podem passar um pouco do limite); a troca do logo só devolve o espaço na próxima medição. A reconferência antes de apagar procura só as formas exatas (uma URL completa gravada entre a varredura e a exclusão não seria vista; risco pequeno: arquivo parado há 24 h). Avatares do cadastro sem prefixo de dono; avatares externos antigos continuam no banco; arquivos antigos sem prefixo `s<id>-` não contam para nenhuma loja | Tabela compartilhada de contabilidade (`store_storage_usage`) com incrementos e reconciliação periódica; medição em segundo plano; `max_storage_mb` nos planos públicos e no cadastro de loja; alerta de armazenamento no dashboard e coluna na lista de lojas; script para zerar avatares fora da lista permitida e prefixo de dono nos avatares do cadastro |
-| Frete por CEP | Zona pelo bairro do CEP (ViaCEP/BrasilAPI, cache por instância) e por faixas de CEP, mais a política de recusa. O retrato do pedido e as telas da equipe mostram só o bairro digitado; endereço já conferido não é reconferido se a base de CEPs mudar (só ao editar); os nomes de bairro dos Correios podem diferir dos populares (a loja cadastra os dos Correios ou usa faixas); o app mobile mostra a mensagem do 400, mas não conhece o `code` nem o bairro do CEP; sem frete por distância | Frete por distância ou raio (geocodificação); lista pública de bairros e faixas atendidos e selo "Entrega só nos bairros atendidos" na vitrine; bairro do CEP no pedido para a equipe; reconferência periódica e cache de CEP compartilhado (Redis) |
+| Frete por CEP | Zona pelo bairro do CEP (ViaCEP/BrasilAPI, cache por instância) e por faixas de CEP, mais a política de recusa. O retrato do pedido e as telas da equipe mostram só o bairro digitado; endereço já conferido não é reconferido se a base de CEPs mudar (só ao editar); os nomes de bairro dos Correios podem diferir dos populares (a loja cadastra os dos Correios ou usa faixas); o app mobile mostra a mensagem do 400, mas não conhece o `code` nem o bairro do CEP | Lista pública de bairros e faixas atendidos e selo "Entrega só nos bairros atendidos" na vitrine; bairro do CEP no pedido para a equipe; reconferência periódica e cache de CEP compartilhado (Redis) |
+| Pedido mínimo e frete grátis | Disponíveis (seções 5.3 e 11.2). (a) Loja só de retirada só tem mínimo depois de cadastrar zonas de entrega (as regras moram no JSON da entrega); (b) uma zona não desliga o frete grátis da loja, só aumenta o valor; (c) as telas da equipe e o pedido não mostram que o frete grátis valeu (só `delivery_fee` 0); (d) o app mobile mostra "Grátis" e a mensagem do 400, sem aviso antes de enviar; (e) uma página web desatualizada (cache antigo) que salva a seção Entrega descarta as regras, porque a tela remonta o JSON | Campo ou coluna própria para o mínimo da retirada; opção "sem frete grátis nesta zona"; taxa original e frete grátis no retrato do pedido e no detalhe para a equipe; aviso no app mobile |
+| Entrega por distância | Disponível (seções 5.3 e 11.2). (a) As telas da equipe, o detalhe e o retrato do pedido não mostram a distância nem a faixa (só o orçamento e o carrinho); (b) o app mobile mostra o 400 (inclusive `ADDRESS_NOT_LOCATED`), mas não a distância; (c) o Nominatim tem 1 requisição por segundo **por instância** e caches por instância; (d) não há correção manual das coordenadas de um cliente (`MANUAL` reservado); (e) o simulador recebe CEP e número e completa o resto pela busca de CEP; (f) a ferramenta de localizar e o simulador usam o limite `CEP_LOOKUP` (por loja), não um limite próprio; (g) os serviços gratuitos (Nominatim, AwesomeAPI) não têm disponibilidade garantida: fora do ar, o endereço segue a regra de fora da área e é tentado de novo depois de 1 h; (h) com `GOOGLE_MAPS_API_KEY`, as coordenadas do Google ficam gravadas no endereço sem prazo e o ponto da loja aparece num mapa do OpenStreetMap: confira os termos do Google Maps Platform (limite de cache e uso fora de um mapa do Google) antes de ligar em produção (`operacao.md`, seção 8.4) | Distância e faixa no retrato do pedido e nas telas da equipe; correção manual das coordenadas pela loja; limite de taxa próprio para as ferramentas do painel; fila compartilhada do Nominatim entre instâncias (ou `GEOCODING_NOMINATIM_URL` próprio); prazo de validade das coordenadas por provedor (`geo_source = GOOGLE`); distância no app mobile |
 | Desempenho | Índices, caches e pool da seção 11.11. Ainda sobram ~0,5 s de event loop num relatório de um ano de uma loja com 200 mil pedidos (parse das linhas e GC); `GET /store/customers` leva ~0,6 s com 200 mil pedidos; o histórico pagina por `OFFSET` (até 10 mil páginas); a auditoria cresce sem limite; com várias instâncias, os caches valem por instância | Agregar relatórios e métricas no SQL (`GROUP BY` dia no fuso da loja; adiado pelo risco com `created_at` sem fuso, que pede testes de borda de horário de verão); agregados diários para o superpainel e estatísticas por cliente (índice coberto, cache ou tabela); paginação por cursor (aditiva) e rota incremental `?updated_since=` para o quadro (e `?recent_limit=` só no web); retenção ou arquivamento da auditoria; caches compartilhados (Redis) |
 | Uploads e parse | Multer 2.5 com limites de nome, aninhamento e índice (seção 11.1); o `UPLOAD` conta a falha só no fim do parse; `TOKEN_REDEEM` e `STORE_SIGNUP` são consumidos depois do `ValidationPipe` | Reserva atômica da vaga antes de ler o corpo (`RateLimitService.take`, junto da atualização dos dublês nos specs de usuários); mover `TOKEN_REDEEM` e `STORE_SIGNUP` para guards (defesa em profundidade; não é mais necessário com a validação de senha linear) |
 | Dependências | Backend: 0 altas/críticas; `overrides` de `body-parser`, `multer` e `proxy-addr`. Moderadas restantes só com versão maior: `typeorm` 0.3 (glob/minimatch; a SQLi de `orderBy` é só MySQL), `@nestjs/swagger` 11 (js-yaml; Swagger desligado em produção), `mercadopago` 2 (uuid). Frontend web: 0 em produção (`--omit=dev`); 12 moderadas só de desenvolvimento (minimatch via eslint 9/typescript-eslint 8). E2E: 0 | Rodada dedicada às versões maiores (`typeorm` 1.x, `@nestjs/swagger` 12, `mercadopago` 3.6, eslint 10) com a suíte completa; remover os `overrides` quando o Nest publicar as versões corrigidas |

@@ -37,6 +37,8 @@ function storeRow(overrides: Partial<Store> = {}): Store {
     address_neighborhood: 'Centro',
     address_city: 'Rio de Janeiro',
     address_state: 'RJ',
+    latitude: null,
+    longitude: null,
     account_status: StoreAccountStatus.ACTIVE,
     status_reason: null,
     status_changed_at: null,
@@ -156,6 +158,15 @@ describe('StoreDirectoryService — perfil público', () => {
       ordering_available: true,
       unavailable_message: null,
       payments: { online_enabled: true, mp_public_key: 'APP_USR-pk-da-loja' },
+      // Sem pedido mínimo nem frete grátis configurados
+      order_rules: {
+        min_order: null,
+        min_order_takeout: false,
+        free_delivery_above: null,
+        varies_by_zone: false,
+      },
+      // Entrega por zonas (o padrão): sem "Entrega até X km"
+      delivery_distance: null,
     });
     const json = JSON.stringify(profile);
     for (const secret of [

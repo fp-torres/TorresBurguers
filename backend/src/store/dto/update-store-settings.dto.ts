@@ -2,15 +2,21 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsIn, IsOptional } from 'class-validator';
 import { UFS } from '../../addresses/dto/create-address.dto';
-import { emptyToNull, toBoolean, trimString } from '../../common/transforms';
-import { IsOptionalNotNull, IsText } from '../../common/validators';
+import {
+  emptyToNull,
+  toBoolean,
+  toNumber,
+  trimString,
+} from '../../common/transforms';
+import {
+  IsNumberInRange,
+  IsOptionalNotNull,
+  IsText,
+} from '../../common/validators';
 import type { StoreDeliveryZonesConfig } from '../../orders/order-rules';
 import type { OpeningHoursEntry } from '../entities/store.entity';
-import {
-  MAX_OPENING_HOURS_ENTRIES,
-  parseOpeningHours,
-  parseStoreDeliveryZones,
-} from '../store-rules';
+import { parseStoreDeliverySettings } from '../../orders/store-delivery-settings';
+import { MAX_OPENING_HOURS_ENTRIES, parseOpeningHours } from '../store-rules';
 import {
   IsParsedBy,
   IsStoreDocument,
@@ -159,6 +165,31 @@ export class UpdateStoreSettingsDto {
   })
   address_state?: string | null;
 
+  @ApiPropertyOptional({
+    example: -22.9035,
+    nullable: true,
+    description:
+      'Local da loja no mapa (graus decimais): ponto de partida da entrega por distância. Envie latitude e longitude juntas; null limpa (não pode faltar no modo por distância).',
+  })
+  @Transform(({ value }) => toNumber(value))
+  @IsOptional()
+  @IsNumberInRange({
+    min: -90,
+    max: 90,
+    invalid: 'Latitude inválida: use um número de -90 a 90 (ex.: -22.9035).',
+  })
+  latitude?: number | null;
+
+  @ApiPropertyOptional({ example: -43.2096, nullable: true })
+  @Transform(({ value }) => toNumber(value))
+  @IsOptional()
+  @IsNumberInRange({
+    min: -180,
+    max: 180,
+    invalid: 'Longitude inválida: use um número de -180 a 180 (ex.: -43.2096).',
+  })
+  longitude?: number | null;
+
   // --- Operação e vitrine ---
 
   @ApiPropertyOptional({ example: 'Bem-vindo! Peça já o seu.', nullable: true })
@@ -191,16 +222,31 @@ export class UpdateStoreSettingsDto {
       'Taxas e prazos por bairro ou faixa de CEP: { "fallback": { "fee": 12, "time": "50-60 min" }, "zones": [{ "neighborhoods": ["Centro"], "cities": ["Rio de Janeiro"], "zip_ranges": [{ "from": "20000-000", "to": "20099-999" }], "fee": 5, "time": "30-40 min" }], "outside_zones": "fallback" }. ' +
       'Cada zona precisa de bairros e/ou faixas de CEP; "cities" é opcional (restringe os bairros). Vale a primeira zona com o bairro (conferido pelo CEP) ou com o CEP. ' +
       '"outside_zones": "fallback" (padrão: endereço fora das zonas paga o "fallback") ou "refuse" (a loja recusa: 400 "Este endereço está fora da área de entrega da loja."). ' +
-      '"fallback" é obrigatório, exceto com "refuse" (que exige pelo menos uma zona). null remove as zonas próprias.',
+      '"fallback" é obrigatório, exceto com "refuse" (que exige pelo menos uma zona). null remove as zonas próprias. ' +
+      'Opcionais (em reais, sobre o subtotal dos itens com as promoções, sem a taxa): "min_order" (pedido mínimo da entrega; 0 = sem mínimo), ' +
+      '"free_delivery_above" (frete grátis a partir deste subtotal), "min_order_takeout" (true = o mínimo vale também na retirada) e, em cada zona, ' +
+      '"min_order" e "free_delivery_above" próprios (ausentes = os da loja). ' +
+      'Modo de cobrança (opcional): "mode": "zones" (padrão, por bairro/CEP) ou "distance" (por km a partir de latitude/longitude da loja) com ' +
+      '"distance": { "bands": [{ "up_to_km": 2, "fee": 5, "time": "25-35 min", "min_order"?, "free_delivery_above"? }], "max_km"?, "extra_km_fee"?, "route_factor"? (1 a 3, padrão 1.3), "road_distance"? }. ' +
+      'No modo distância, "zones" pode ficar vazia e "fallback"/"outside_zones" valem além do raio ou para endereços não localizados.',
     example: {
       fallback: { fee: 12, time: '50-60 min' },
-      zones: [{ neighborhoods: ['Centro', 'Lapa'], fee: 5, time: '30-40 min' }],
+      zones: [
+        {
+          neighborhoods: ['Centro', 'Lapa'],
+          fee: 5,
+          time: '30-40 min',
+          free_delivery_above: 40,
+        },
+      ],
       outside_zones: 'fallback',
+      min_order: 25,
+      free_delivery_above: 60,
     },
   })
-  @Transform(normalizedBy(parseStoreDeliveryZones))
+  @Transform(normalizedBy(parseStoreDeliverySettings))
   @IsOptional()
-  @IsParsedBy(parseStoreDeliveryZones, 'Zonas de entrega inválidas')
+  @IsParsedBy(parseStoreDeliverySettings, 'Zonas de entrega inválidas')
   delivery_zones?: StoreDeliveryZonesConfig | null;
 
   @ApiPropertyOptional({
@@ -261,6 +307,8 @@ export const STORE_SETTINGS_FIELDS = [
   'address_neighborhood',
   'address_city',
   'address_state',
+  'latitude',
+  'longitude',
   'opening_message',
   'closing_message',
   'delivery_enabled',

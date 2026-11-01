@@ -111,6 +111,11 @@ Modelo comentado, com todas as variáveis e padrões, em [`.env.example`](.env.e
 | `TRUST_PROXY` | vazio | IP real atrás de proxy/túnel: número de proxies (ex.: `1`) ou lista de IPs/sub-redes. `true` vale como `1`, com aviso. Vazio com `X-Forwarded-For` recebido gera aviso |
 | `RATE_LIMIT_ENABLED` · `RATE_LIMIT_<NOME>` | ligado | Limites (`limite/segundos`) de login (por IP e por conta), cadastro, links, pedidos, cobranças, webhook, uploads, endereços, equipe, troca de credenciais, e-mails de conta, renovação da sessão do site, checkout da assinatura e e-mail de teste do superpainel (`RATE_LIMIT_TEST_EMAIL`, padrão `5/600` por operador; em memória por instância, como os demais) |
 | `CEP_LOOKUP_FAKE` | vazio | Só com `NODE_ENV=test`: mapa JSON de CEPs no lugar de ViaCEP/BrasilAPI (testes determinísticos) |
+| `GOOGLE_MAPS_API_KEY` | vazio | Opcional (entrega por distância): Google Geocoding no início da cadeia e distância real por rua (Routes API). Serviço pago acima da cota gratuita |
+| `GEOCODING_PROVIDERS` | `google,nominatim,awesomeapi` | Ordem da cadeia que localiza os endereços (`none` desliga; desconhecidos ignorados com aviso) |
+| `GEOCODING_CONTACT` | vazio | Contato no User-Agent do Nominatim (recomendado; sem ele, aviso na subida) |
+| `GEOCODING_NOMINATIM_URL` | `https://nominatim.openstreetmap.org` | Nominatim próprio (recomendado com várias instâncias) |
+| `GEOCODING_FAKE` | vazio | Só com `NODE_ENV=test`: mapa JSON de CEP → coordenadas no lugar dos provedores (sem ela, em test, nada é localizado) |
 | `MAIL_DRIVER` | `log` | E-mail transacional: `log` (nada é enviado; em produção só destinatário e assunto vão para o log, com aviso na subida) ou `smtp` |
 | `SMTP_HOST` · `SMTP_PORT` · `SMTP_SECURE` | vazio · `587` (ou `465` com `SMTP_SECURE=true`) · ligado só na porta 465 | Servidor SMTP. Sem `SMTP_SECURE`, usa STARTTLS (obrigatório quando há usuário e senha) |
 | `SMTP_USER` · `SMTP_PASSWORD` | vazio | Opcionais, sempre juntos; nunca aparecem em respostas, logs ou auditoria |
@@ -124,7 +129,7 @@ Modelo comentado, com todas as variáveis e padrões, em [`.env.example`](.env.e
 | `MP_NOTIFICATION_URL` | vazio | URL pública de `POST /payment/webhook` |
 | `SAAS_BILLING_PROVIDER` · `MP_SAAS_ACCESS_TOKEN` · `MP_SAAS_WEBHOOK_SECRET` · `SAAS_BILLING_BACK_URL` · `SAAS_BILLING_INTERVAL_MS` | `MANUAL` · vazio · vazio · vazio · `300000` | Cobrança da assinatura SaaS (conta Mercado Pago da Comestra) e intervalo da rotina (mínimo 10000) |
 | `STORE_TIME_ZONE` | `America/Sao_Paulo` | Fuso das lojas que não têm o próprio |
-| `DELIVERY_ZONES_JSON` · `DELIVERY_ZONES_FILE` | vazio | Faixas de entrega da loja padrão (as demais lojas configuram no painel) |
+| `DELIVERY_ZONES_JSON` · `DELIVERY_ZONES_FILE` | vazio | Faixas de entrega da loja padrão (as demais lojas configuram no painel). Sempre por zona; pedido mínimo e frete grátis aqui são validados, mas ignorados |
 | `FOOTBALL_DATA_TOKEN` | vazio | Token de football-data.org para o banner de jogos (opcional) |
 
 Valores booleanos aceitam `true/false`, `1/0`, `yes/no`, `sim/não` e `on/off`. Um valor diferente (ex.: `fasle`) usa o padrão e gera um aviso no log.
@@ -180,10 +185,10 @@ A equipe demo trabalha na loja padrão (a loja demo num banco novo; a loja inici
 | Invitations | `src/invitations` | Convites da equipe (painel da loja e superpainel) e aceite |
 | Users | `src/users` | Clientes e equipe, perfil, avatar, lixeira, responsável da loja e regras de acesso (`users.policy.ts`) |
 | Products | `src/products` | Produtos, categorias, adicionais e lixeira, por loja |
-| Orders | `src/orders` | Orçamento e pedidos (`order-pricing.service.ts`), regras puras (`order-rules.ts`), visão por perfil e etapa, transições, dashboard, relatórios e logística |
+| Orders | `src/orders` | Orçamento e pedidos (`order-pricing.service.ts`), regras puras (`order-rules.ts`: preço, zonas, pedido mínimo e frete grátis; `delivery-distance.ts`: faixas de km; `store-delivery-settings.ts`: JSON de entrega da loja), visão por perfil e etapa, transições, dashboard, relatórios e logística |
 | Payment | `src/payment` | Mercado Pago por loja (cartão e PIX), sandbox, finalização no servidor, estornos, webhook e conciliação |
 | Store | `src/store` | Status, configurações, logo, credenciais Mercado Pago e clientes da loja (com bloqueio por loja); diretório e perfil público (`/stores`) |
-| Addresses | `src/addresses` | Endereços do cliente, busca de CEP compartilhada (`CepLookupService`: ViaCEP → BrasilAPI, com cache) e conferência do bairro pelo CEP (`AddressLocationService`) |
+| Addresses | `src/addresses` | Endereços do cliente, busca de CEP compartilhada (`CepLookupService`: ViaCEP → BrasilAPI, com cache), conferência do bairro pelo CEP (`AddressLocationService`) e localização no mapa para a entrega por distância (`GeocodingService`: Google → Nominatim → AwesomeAPI, com cache e modo falso nos testes; `AddressGeoService`: quando localizar e gravar os `geo_*`) |
 | Promotions | `src/promotions` | Banner do dia (jogo de futebol ou sugestão do dia da semana) |
 | Notifications | `src/notifications` | E-mails em texto e HTML com a marca da loja ou da plataforma (`MailService`: driver de log ou SMTP; `mail-layout.ts`, `mail-brand.ts`, modelos em `mail-templates.ts`) e links de convite/redefinição |
 | Common | `src/common` | Uploads e imagens (cota de armazenamento por loja: `storage-usage.ts`, `storage-quota.ts`), limites (`RateLimitService`), criptografia (`secret-box.ts`), manutenção em segundo plano (otimização de imagens, limpeza dos arquivos sem uso, manual ou agendada, regravação das credenciais Mercado Pago) e validações |
@@ -227,7 +232,7 @@ Use o Swagger (`/api`) para os schemas. Contratos detalhados, mensagens e limite
 | Minha conta | `GET /account/security`, `POST /account/password`, `POST/DELETE /account/email-change`, `POST /account/email-verification` (autenticado); `GET /account/email-change/:token`, `POST /account/email-change/confirm`, `GET /account/email-revert/:token`, `POST /account/email-revert`, `GET /account/email-verification/:token`, `POST /account/email-verification/confirm` (links públicos, limitados) | Autenticado (escritas: não na sessão de suporte) / público |
 | Convites | `GET /invitations/:token`, `POST /invitations/:token/accept` | Público (limitado) |
 | Conta e equipe | `POST /users` (cadastro de cliente ou equipe pelo ADMIN), `GET /users`, `GET /users/trash`, `GET/PATCH/DELETE /users/:id`, `PATCH /users/:id/restore`, `DELETE /users/:id/permanent` | Próprio usuário · ADMIN (equipe da própria loja) |
-| Painel da loja | `GET/PATCH /store/status`, `GET/PATCH /store/settings`, `PUT/DELETE /store/settings/payments`, `POST/DELETE /store/logo`, `GET/POST /store/invitations`, `DELETE /store/invitations/:id`, `GET /store/customers`, `GET /store/customers/:userId`, `POST/DELETE /store/customers/:userId/block` | ADMIN (status e leitura dos clientes: também EMPLOYEE; bloquear e desbloquear: só ADMIN) |
+| Painel da loja | `GET/PATCH /store/status`, `GET/PATCH /store/settings`, `POST /store/settings/geocode` e `POST /store/settings/delivery-simulation` (entrega por distância; nada é gravado), `PUT/DELETE /store/settings/payments`, `POST/DELETE /store/logo`, `GET/POST /store/invitations`, `DELETE /store/invitations/:id`, `GET /store/customers`, `GET /store/customers/:userId`, `POST/DELETE /store/customers/:userId/block` | ADMIN (status e leitura dos clientes: também EMPLOYEE; bloquear e desbloquear: só ADMIN) |
 | Assinatura da loja | `GET /store/subscription`, `POST /store/subscription/{checkout,cancel,resume}` | ADMIN |
 | Vitrine | `GET /stores`, `GET /stores/default`, `GET /stores/:storeSlug`, `GET /stores/:storeSlug/status`, `GET /plans`, `POST /stores/signup` | Público |
 | Cardápio | `GET /products`, `GET /products/:id`, `GET /addons` (e por slug); `GET /products/trash`, `POST/PATCH/DELETE /products...`, `PATCH /products/:id/restore`, `DELETE /products/:id/permanent`, `POST/PATCH/DELETE /addons...` | Público (leitura) · ADMIN |
@@ -271,6 +276,10 @@ As regras ficam em funções puras em [`src/orders/order-rules.ts`](src/orders/o
 - **Cliente bloqueado pela loja** (`POST/DELETE /store/customers/:userId/block`): `403 "Não é possível fazer pedidos nesta loja. Fale com a loja."` no orçamento, no pedido pago na entrega e nas cobranças PIX/cartão daquela loja (conferido em `OrderPricingService.price()`); outras lojas não são afetadas, e um pagamento já aprovado continua virando pedido.
 
 **Entrega por bairro.** A loja padrão usa as zonas da plataforma (`DELIVERY_ZONES_JSON`/`DELIVERY_ZONES_FILE`, padrão em [`src/orders/delivery-zones.config.ts`](src/orders/delivery-zones.config.ts)); as demais lojas configuram as próprias zonas e taxas no painel e, sem zonas, não fazem entrega. O nome inteiro do bairro é comparado, sem diferenciar maiúsculas nem acentos; uma zona também pode ter **faixas de CEP**. O bairro usado é o do CEP, conferido pela API (ViaCEP/BrasilAPI) no cadastro do endereço, na edição e no orçamento; sem o serviço, vale o digitado. Fora das zonas, a loja cobra a taxa padrão (`outside_zones: fallback`) ou recusa (`refuse` → `400` com `code: DELIVERY_OUT_OF_AREA` no orçamento, no pedido e nas cobranças, antes de cobrar). Retirada (`TAKEOUT`) é grátis.
+
+**Entrega por distância** (opcional, `mode: "distance"` no JSON de entrega da loja; o padrão continua por zona): faixas "até X km" com taxa e prazo, km adicional até um raio máximo, distância = linha reta (haversine) × fator de rota (padrão 1,3) ou a distância real por rua com `GOOGLE_MAPS_API_KEY`. Os endereços são localizados **pelo servidor** (`src/addresses/geocoding*.ts` e `address-geo.service.ts`: Google → Nominatim → AwesomeAPI, prazos curtos, cache e campos `geo_*`); as coordenadas enviadas pelo cliente nunca definem a taxa. Além do raio ou sem localização, vale a mesma política de fora da área (não localizado → `reason: ADDRESS_NOT_LOCATED`). Funções puras em `src/orders/delivery-distance.ts`.
+
+**Pedido mínimo e frete grátis** (opcionais, na loja e em cada zona ou faixa; `applyOrderRules` em `src/orders/order-rules.ts`): comparam o subtotal dos itens com as promoções, sem a taxa. O orçamento nunca falha abaixo do mínimo (traz `min_order_value`, `missing_for_min_order`, `free_delivery_applied`, `delivery_fee_original`...); o pedido pago na entrega e as cobranças PIX/cartão recebem `400` com `code: ORDER_BELOW_MINIMUM` (`"O pedido mínimo desta loja para entrega é R$ 30,00. Faltam R$ 4,10."`). Frete grátis zera a taxa no pedido e no PIX. Pagamento já aprovado nunca é recusado. Contratos completos: [`docs/saas/arquitetura.md`](../docs/saas/arquitetura.md) (seções 5.3, 5.5 e 11.2).
 
 **Pagamento:** `PIX`, `CREDIT_CARD`, `DEBIT_CARD` ou `MONEY`. Com `paymentId`, o pedido foi pago online; sem ele, na entrega ou na retirada.
 - O troco só vale para `MONEY`, precisa ser maior ou igual ao total e no máximo **R$ 200,00 acima** dele.
@@ -338,6 +347,7 @@ O schema vem das migrations em [`src/database/migrations`](src/database/migratio
 | `PerformanceIndexes` | Índices de desempenho com `CONCURRENTLY`, fora de transação (os de trigramas só com `pg_trgm`) |
 | `AccountEmailVerification` | `users.email_verified_at` e `account_email_tokens` |
 | `AuthSessionRefresh` | Colunas da sessão do site em cookie em `auth_sessions` |
+| `DeliveryDistance` | Local da loja (`stores.latitude`/`longitude`) e coordenadas dos endereços (`addresses.geo_*`) para a entrega por distância (opcionais, sem backfill) |
 
 - Tabelas globais: `stores`, `store_slug_history`, `plans`, `subscriptions`, `subscription_events`, `subscription_invoices`, `billing_webhook_events`, `platform_settings`, `audit_logs`, `support_sessions`, `auth_sessions`, `maintenance_jobs`, `users`, `account_email_tokens`, `addresses`, `invitations`, `password_reset_tokens`. Por loja: `products`, `addons`, `orders`, `payments` (+ junções), `store_customer_blocks` e `store_order_counters` (sem entidade: só o gatilho usa). `store_config` fica como histórico da versão de loja única.
 - A `OrderNumbersAndCustomerBlocks` renumera os pedidos existentes por loja: telas e conversas antigas que citavam `Pedido #<id>` passam a mostrar outro número (o `id` não muda). Depois de restaurar ou importar pedidos, confira o contador ([`operacao.md`](../docs/saas/operacao.md#83-clientes-bloqueados-e-número-do-pedido)).
@@ -384,6 +394,8 @@ Checklist completo: [`docs/saas/operacao.md`](../docs/saas/operacao.md#9-checkli
 - [x] E-mails em HTML com a marca da loja, confirmação e troca de e-mail (modo `compat`)
 - [x] Access token curto com refresh rotativo em cookie HttpOnly no site e recusa dos tokens sem `jti` fora da janela de transição
 - [x] Cota de armazenamento por plano, limpeza agendada, frete por CEP e índices de desempenho
+- [x] Pedido mínimo e frete grátis (loja, zona e faixa) e entrega por distância em km com localização dos endereços
+- [ ] Distância, faixa e frete grátis aplicado no retrato do pedido; correção manual das coordenadas; fila do Nominatim compartilhada entre instâncias
 - [ ] Fila de reenvio dos e-mails, provedores por API e o modo `strict` da conta (fase 1b)
 - [ ] Refresh no app mobile, sessão deslizante e checkout da assinatura sem conexão aberta durante a chamada ao provedor
 - [ ] Agregar relatórios no SQL, paginação por cursor e retenção da auditoria

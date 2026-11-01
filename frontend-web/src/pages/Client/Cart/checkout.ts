@@ -4,6 +4,7 @@ import { getMercadoPagoInstance, type MercadoPagoInstance, type MercadoPagoPayme
 import { BRAND } from '../../../config/brand';
 import { isDefaultStore } from '../../../utils/legacyStorage';
 import { MAX_ITEM_QUANTITY, MAX_OBSERVATION_LENGTH } from '../../../utils/catalog';
+import { formatCurrency } from '../../../utils/format';
 import type { CartItem } from '../../../contexts/CartContext';
 
 // --- Contrato da API (pedidos e pagamentos) ---
@@ -32,10 +33,49 @@ export interface OrderPayload {
 export interface Quote {
   items: { productId: number; name: string; quantity: number; unitPrice: number; addonsTotal: number; lineTotal: number }[];
   subtotal: number;
+  /** Taxa cobrada (já zerada quando o frete grátis vale). */
   delivery_fee: number;
   total: number;
   estimated_delivery_time: string;
   store_open: boolean;
+  // Pedido mínimo e frete grátis (aditivos; ausentes numa API antiga = sem regras)
+  /** Taxa da região antes do frete grátis. */
+  delivery_fee_original?: number;
+  free_delivery_applied?: boolean;
+  free_delivery_threshold?: number | null;
+  /** Quanto falta para o frete grátis (0 = conseguiu; null = não se aplica). */
+  missing_for_free_delivery?: number | null;
+  min_order_value?: number | null;
+  /** Quanto falta para o pedido mínimo (0 = atingido; null = sem mínimo). O orçamento não falha abaixo dele. */
+  missing_for_min_order?: number | null;
+  // Entrega por distância (aditivos; ausentes numa API antiga = por zonas)
+  /** "zones" (bairro/CEP) ou "distance" (km); null na retirada. */
+  delivery_mode?: 'zones' | 'distance' | null;
+  /** Distância da loja até o endereço (km, 1 casa) no modo distância; null quando não se aplica. */
+  distance_km?: number | null;
+}
+
+/** "3,2 km" da entrega por distância (null quando a loja cobra por bairro ou o endereço não foi localizado). */
+export function quoteDistanceLabel(quote: Quote | null): string | null {
+  const km = quote?.distance_km;
+  if (quote?.delivery_mode !== 'distance' || typeof km !== 'number' || !Number.isFinite(km)) return null;
+  return `${km.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km`;
+}
+
+/** "code" do 400 do pedido e das cobranças abaixo do pedido mínimo da loja. */
+export const ORDER_BELOW_MINIMUM_CODE = 'ORDER_BELOW_MINIMUM';
+
+/** Mesma frase da API: "O pedido mínimo desta loja para entrega é R$ 30,00. Faltam R$ 4,10." */
+export function minimumOrderMessage(type: OrderType, minOrder: number, missing: number): string {
+  return `O pedido mínimo desta loja para ${type === 'TAKEOUT' ? 'retirada' : 'entrega'} é ${formatCurrency(minOrder)}. Faltam ${formatCurrency(missing)}.`;
+}
+
+/** Pedido mínimo ainda não atingido segundo o orçamento: { mínimo, quanto falta } ou null. */
+export function quoteBelowMinimum(quote: Quote | null): { minOrder: number; missing: number } | null {
+  const missing = quote?.missing_for_min_order;
+  const minOrder = quote?.min_order_value;
+  if (typeof missing !== 'number' || typeof minOrder !== 'number' || !(missing > 0)) return null;
+  return { minOrder, missing };
 }
 
 export interface CardPaymentResponse {

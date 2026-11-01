@@ -31,6 +31,12 @@ const ICONIFY_SOURCES = ['https://api.iconify.design', 'https://api.simplesvg.co
 const AVATAR_SOURCES = ['https://cdn-icons-png.flaticon.com']
 
 /**
+ * Mapa do local da loja (Painel › Configurações › Entrega, Leaflet): só as imagens dos "tiles" do OpenStreetMap.
+ * O Leaflet vem no próprio bundle (script e CSS do 'self'); nenhuma chamada fetch/XHR sai para o OSM.
+ */
+const MAP_TILE_SOURCES = ['https://tile.openstreetmap.org']
+
+/**
  * Recharts e as dependências que só ele traz (npm ls: nenhum outro pacote do app as usa). Se um pacote daqui
  * passar a ser usado fora dos gráficos, tire-o da lista: senão o pedaço principal passa a carregar o "charts".
  */
@@ -61,7 +67,7 @@ function contentSecurityPolicy(apiUrl: string, { frameAncestors = false } = {}):
     'script-src': ["'self'", ...MERCADO_PAGO_SOURCES],
     // O react-hot-toast injeta <style> e o React aplica estilos inline
     'style-src': ["'self'", "'unsafe-inline'"],
-    'img-src': ["'self'", 'data:', 'blob:', ...apiSources, ...AVATAR_SOURCES, ...MERCADO_PAGO_SOURCES],
+    'img-src': ["'self'", 'data:', 'blob:', ...apiSources, ...AVATAR_SOURCES, ...MERCADO_PAGO_SOURCES, ...MAP_TILE_SOURCES],
     'font-src': ["'self'", 'data:'],
     'connect-src': ["'self'", ...apiSources, ...MERCADO_PAGO_SOURCES, ...ICONIFY_SOURCES],
     'frame-src': MERCADO_PAGO_SOURCES,

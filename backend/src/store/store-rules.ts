@@ -186,6 +186,7 @@ export const MAX_ZONE_TIME_LENGTH = 20;
  */
 export function parseStoreDeliveryZones(
   raw: unknown,
+  options: { allowNoZones?: boolean } = {},
 ): StoreDeliveryZonesConfig | null {
   if (raw === null || raw === undefined) return null;
 
@@ -219,7 +220,12 @@ export function parseStoreDeliveryZones(
   }
 
   const config = parseDeliveryZones(data);
-  if (policy === 'refuse' && config.zones.length === 0) {
+  // No modo por distância (allowNoZones) as faixas de km fazem o papel das zonas: a lista pode ficar vazia
+  if (
+    policy === 'refuse' &&
+    config.zones.length === 0 &&
+    !options.allowNoZones
+  ) {
     throw new Error(
       'para recusar os endereços fora das zonas ("outside_zones": "refuse"), cadastre pelo menos uma zona.',
     );

@@ -1,3 +1,6 @@
+import { roadDistanceConfigured } from '../addresses/geocoding';
+import { publicDeliveryDistance } from '../orders/delivery-distance';
+import { publicOrderRules } from '../orders/order-rules';
 import type { StoreAccessState } from '../tenancy/store-access';
 import type { Store } from './entities/store.entity';
 import type { StoreFeatures } from './store-rules';
@@ -66,6 +69,9 @@ export function presentStoreSettings(
     address_neighborhood: store.address_neighborhood ?? null,
     address_city: store.address_city ?? null,
     address_state: store.address_state ?? null,
+    // Aditivo: local da loja no mapa (entrega por distância)
+    latitude: store.latitude ?? null,
+    longitude: store.longitude ?? null,
     account_status: store.account_status,
     status_reason: store.status_reason ?? null,
     status_changed_at: store.status_changed_at ?? null,
@@ -86,6 +92,8 @@ export function presentStoreSettings(
     payments: extras.payments,
     access: extras.access,
     features: extras.features,
+    // Aditivo: a distância por rua (Google) está disponível na plataforma (o painel só oferece então)
+    road_distance_available: roadDistanceConfigured(),
   };
 }
 
@@ -141,6 +149,10 @@ export function presentPublicStore(store: Store, extras: PublicStoreExtras) {
     ordering_available: extras.ordering_available,
     unavailable_message: extras.unavailable_message,
     payments: extras.payments,
+    // Aditivo: pedido mínimo e frete grátis da loja para a vitrine (das zonas próprias; sem elas, nada)
+    order_rules: publicOrderRules(store.delivery_zones),
+    // Aditivo: "Entrega até X km" na vitrine (modo por distância); null no modo por zonas
+    delivery_distance: publicDeliveryDistance(store.delivery_zones),
   };
 }
 

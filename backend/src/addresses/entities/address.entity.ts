@@ -10,8 +10,17 @@ import {
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import type { CepStatus, NeighborhoodSource } from '../address-location';
+import type { GeoPrecision, GeoSource, GeoStatus } from '../geocoding';
 
 @Entity('addresses')
+@Check(
+  'CHK_addresses_geo_precision',
+  `"geo_precision" IN ('ADDRESS', 'ZIP_CENTER', 'MANUAL')`,
+)
+@Check(
+  'CHK_addresses_geo_status',
+  `"geo_status" IN ('FOUND', 'NOT_FOUND', 'UNAVAILABLE')`,
+)
 @Check(
   'CHK_addresses_neighborhood_source',
   `"neighborhood_source" IN ('CEP', 'MANUAL')`,
@@ -88,6 +97,33 @@ export class Address {
   /** Quando o CEP foi conferido (UNAVAILABLE: o orçamento tenta de novo depois de 1 h). */
   @Column({ type: 'timestamptz', nullable: true })
   cep_checked_at: Date | null;
+  // -------------------------------------
+
+  // --- COORDENADAS PARA A ENTREGA POR DISTÂNCIA (ver geocoding.ts) ---
+  // Gravadas SÓ pelo servidor (cadeia de provedores); latitude/longitude acima continuam sendo as enviadas
+  // pelo app e nunca entram no cálculo do frete (evita taxa errada ou burla).
+
+  @Column({ type: 'double precision', nullable: true })
+  geo_latitude: number | null;
+
+  @Column({ type: 'double precision', nullable: true })
+  geo_longitude: number | null;
+
+  /** ADDRESS (rua e número), ZIP_CENTER (centro do CEP) ou MANUAL. */
+  @Column({ type: 'varchar', length: 12, nullable: true })
+  geo_precision: GeoPrecision | null;
+
+  /** Provedor: GOOGLE, NOMINATIM, AWESOMEAPI ou FAKE (testes). */
+  @Column({ type: 'varchar', length: 12, nullable: true })
+  geo_source: GeoSource | null;
+
+  /** FOUND, NOT_FOUND ou UNAVAILABLE (null = ainda não localizado). */
+  @Column({ type: 'varchar', length: 12, nullable: true })
+  geo_status: GeoStatus | null;
+
+  /** Quando foi localizado (UNAVAILABLE: o orçamento tenta de novo depois de 1 h). */
+  @Column({ type: 'timestamptz', nullable: true })
+  geo_checked_at: Date | null;
   // -------------------------------------
 
   // Lista de endereços do cliente e checkout (migration PerformanceIndexes)

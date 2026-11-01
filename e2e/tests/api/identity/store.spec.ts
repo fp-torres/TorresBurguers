@@ -161,6 +161,8 @@ const PUBLIC_PROFILE_KEYS = [
   'closing_message',
   // Público de propósito (onda 2): a vitrine avisa se a loja entrega fora das zonas cadastradas
   'delivers_outside_zones',
+  // Aditivo: "Entrega até X km" na vitrine (null no modo por zonas)
+  'delivery_distance',
   'delivery_enabled',
   'description',
   'email',
@@ -170,6 +172,8 @@ const PUBLIC_PROFILE_KEYS = [
   'name',
   'opening_hours',
   'opening_message',
+  // Aditivo: pedido mínimo e frete grátis anunciados na vitrine
+  'order_rules',
   'ordering_available',
   'payments',
   'phone',

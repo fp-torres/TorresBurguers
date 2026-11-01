@@ -714,7 +714,10 @@ describe('OrdersService', () => {
     it('orçamento usa a loja da vitrine e não conta no limite do plano', async () => {
       const { service, pricing, planLimits, tenantB } = setup();
       const quote = await service.quote(baseDto, client, tenantB);
-      expect(pricing.price).toHaveBeenCalledWith(baseDto, client.id, tenantB);
+      // O orçamento nunca recusa abaixo do pedido mínimo (mostra quanto falta); o pedido recusa
+      expect(pricing.price).toHaveBeenCalledWith(baseDto, client.id, tenantB, {
+        allowBelowMinimum: true,
+      });
       expect(quote).toMatchObject({ total: 37.9, store_open: true });
       expect(planLimits.assertWithinLimit).not.toHaveBeenCalled();
     });

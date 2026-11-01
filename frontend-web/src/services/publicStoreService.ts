@@ -80,6 +80,22 @@ export interface PublicStoreProfile {
   ordering_available: boolean;
   unavailable_message: string | null;
   payments: StorePaymentsInfo;
+  /** Pedido mínimo e frete grátis da loja (sem a informação: nenhum). */
+  order_rules: StoreOrderRules;
+  /** Entrega cobrada por distância: raio máximo em km (null = por bairro/CEP, o padrão). */
+  delivery_distance: { max_km: number } | null;
+}
+
+/** Pedido mínimo e frete grátis anunciados na vitrine (o carrinho usa sempre o orçamento do servidor). */
+export interface StoreOrderRules {
+  /** Pedido mínimo para entrega (null = sem mínimo). */
+  min_order: number | null;
+  /** O pedido mínimo vale também na retirada. */
+  min_order_takeout: boolean;
+  /** Frete grátis a partir deste subtotal (null = sem frete grátis). */
+  free_delivery_above: number | null;
+  /** Algum bairro/região tem valores diferentes. */
+  varies_by_zone: boolean;
 }
 
 /** Produto da vitrine: o do cardápio mais o destaque marcado pela loja. */
@@ -223,6 +239,63 @@ export function toPublicStoreProfile(data: unknown): PublicStoreProfile {
       online_enabled: payments.online_enabled === true,
       mp_public_key: text(payments.mp_public_key),
     },
+    order_rules: orderRules(raw.order_rules),
+    delivery_distance: deliveryDistance(raw.delivery_distance),
+  };
+}
+
+/** Raio da entrega por distância (API antiga ou valor estranho: null). */
+function deliveryDistance(value: unknown): { max_km: number } | null {
+  const raw = isRecord(value) ? value : null;
+  const maxKm = raw ? num(raw.max_km) : null;
+  return maxKm !== null && maxKm > 0 ? { max_km: maxKm } : null;
+}
+
+/** "Entrega até 8 km" (loja que cobra por distância e está entregando); senão null. */
+export function deliveryDistanceLabel(store: Pick<PublicStoreProfile, 'delivery_enabled' | 'delivery_distance'>): string | null {
+  if (!store.delivery_enabled || !store.delivery_distance) return null;
+  return `Entrega até ${store.delivery_distance.max_km.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km`;
+}
+
+const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
+/**
+ * Selos da vitrine: "Pedido mínimo R$ 30,00" (com "na entrega" quando a retirada não tem mínimo) e "Frete grátis
+ * acima de R$ 60,00", só para as formas de atendimento ativas; e o aviso quando os valores variam por bairro.
+ */
+export function orderRulesLabels(
+  store: Pick<PublicStoreProfile, 'delivery_enabled' | 'takeout_enabled' | 'order_rules'> & Partial<Pick<PublicStoreProfile, 'delivery_distance'>>,
+): { minOrder: string | null; freeDelivery: string | null; variesNote: string | null } {
+  const rules = store.order_rules;
+  const takeoutMin = store.takeout_enabled && rules.min_order_takeout;
+  let minOrder: string | null = null;
+  if (rules.min_order !== null && (store.delivery_enabled || takeoutMin)) {
+    const scope = store.delivery_enabled && store.takeout_enabled && !takeoutMin ? ' na entrega' : !store.delivery_enabled ? ' na retirada' : '';
+    minOrder = `Pedido mínimo ${brl.format(rules.min_order)}${scope}`;
+  }
+  let freeDelivery: string | null = null;
+  if (store.delivery_enabled && rules.free_delivery_above !== null) {
+    freeDelivery = rules.free_delivery_above > 0 ? `Frete grátis acima de ${brl.format(rules.free_delivery_above)}` : 'Frete grátis';
+  }
+  const variesNote = store.delivery_enabled && rules.varies_by_zone
+    ? `O pedido mínimo e o frete grátis podem variar conforme ${store.delivery_distance ? 'a distância' : 'o bairro'} de entrega.`
+    : null;
+  return { minOrder, freeDelivery, variesNote };
+}
+
+/** Pedido mínimo e frete grátis do perfil (API antiga ou valor estranho: nenhum). */
+function orderRules(value: unknown): StoreOrderRules {
+  const raw = isRecord(value) ? value : {};
+  const money = (amount: unknown) => {
+    const parsed = num(amount);
+    return parsed !== null && parsed >= 0 ? parsed : null;
+  };
+  const minOrder = money(raw.min_order);
+  return {
+    min_order: minOrder !== null && minOrder > 0 ? minOrder : null,
+    min_order_takeout: raw.min_order_takeout === true,
+    free_delivery_above: money(raw.free_delivery_above),
+    varies_by_zone: raw.varies_by_zone === true,
   };
 }
 

@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Patch,
   Post,
   Put,
@@ -22,7 +23,12 @@ import {
 } from '../tenancy/decorators';
 import type { TenantContext } from '../tenancy/tenant-context';
 import { UserRole } from '../users/entities/user.entity';
+import {
+  DeliverySimulationDto,
+  GeocodeStoreDto,
+} from './dto/delivery-tools.dto';
 import { StorePaymentCredentialsDto } from './dto/store-payment-credentials.dto';
+import { StoreDeliveryToolsService } from './store-delivery-tools.service';
 import { UpdateStoreSettingsDto } from './dto/update-store-settings.dto';
 import { UpdateStoreStatusDto } from './dto/update-store-status.dto';
 import { presentStoreStatus } from './store-presenter';
@@ -45,6 +51,7 @@ export class StoreController {
   constructor(
     private readonly storeService: StoreService,
     private readonly settings: StoreSettingsService,
+    private readonly deliveryTools: StoreDeliveryToolsService,
   ) {}
 
   // --- Status (contrato do app mobile) ---
@@ -87,6 +94,30 @@ export class StoreController {
     @Req() req: AuthenticatedRequest,
   ) {
     return this.settings.updateSettings(tenant, dto, actorOf(req));
+  }
+
+  // --- Entrega por distância (ADMIN): localizar a loja e testar um endereço (nada é gravado) ---
+
+  /** Ponto do endereço informado (ou do salvo) no mapa: 404 não encontrado, 502 serviço fora do ar. */
+  @Post('settings/geocode')
+  @HttpCode(200)
+  @StaffRoute(UserRole.ADMIN)
+  geocodeStore(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() dto: GeocodeStoreDto,
+  ) {
+    return this.deliveryTools.geocodeStore(tenant, dto);
+  }
+
+  /** Distância, faixa (ou zona), taxa e prazo de um endereço com a configuração em edição. */
+  @Post('settings/delivery-simulation')
+  @HttpCode(200)
+  @StaffRoute(UserRole.ADMIN)
+  simulateDelivery(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() dto: DeliverySimulationDto,
+  ) {
+    return this.deliveryTools.simulate(tenant, dto);
   }
 
   /** Credenciais do Mercado Pago da loja: o Access Token é só de escrita (a resposta traz uma dica). */

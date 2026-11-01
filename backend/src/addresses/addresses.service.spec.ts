@@ -9,6 +9,7 @@ import {
 import { IsNull, Repository } from 'typeorm';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import type { AddressLocationFields } from './address-location';
+import type { AddressGeoService } from './address-geo.service';
 import type { AddressLocationService } from './address-location.service';
 import {
   ADDRESSES_LIMIT_MESSAGE,
@@ -20,6 +21,7 @@ import { CepLookupService } from './cep-lookup.service';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { Address } from './entities/address.entity';
+import { EMPTY_GEO_FIELDS, type AddressGeoFields } from './geocoding';
 
 const CHECKED_AT = new Date('2026-10-31T12:00:00Z');
 /** Conferência do CEP com bairro (FOUND) e sem resposta do serviço (UNAVAILABLE). */
@@ -57,18 +59,22 @@ describe('AddressesService', () => {
   let service: AddressesService;
   let fetchMock: jest.SpyInstance;
   const locations = { resolve: jest.fn() };
+  // Coordenadas (entrega por distância): vazias, salvo quando o teste muda
+  const geo = { resolveForSave: jest.fn() };
 
   beforeEach(() => {
     process.env = { ...originalEnv, RATE_LIMIT_ENABLED: 'true' };
     delete process.env.RATE_LIMIT_CEP_LOOKUP;
     delete process.env.CEP_LOOKUP_FAKE;
     locations.resolve.mockReset().mockResolvedValue(FOUND);
+    geo.resolveForSave.mockReset().mockResolvedValue({ ...EMPTY_GEO_FIELDS });
     // Limite de tentativas e cache de CEP novos a cada teste (em memória)
     service = new AddressesService(
       repo as unknown as Repository<Address>,
       new RateLimitService(),
       new CepLookupService(),
       locations as unknown as AddressLocationService,
+      geo as unknown as AddressGeoService,
     );
     fetchMock = jest.spyOn(global, 'fetch');
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
@@ -357,6 +363,44 @@ describe('AddressesService', () => {
       expect(locations.resolve).toHaveBeenCalledTimes(3);
     });
 
+    it('coordenadas (entrega por distância): cadastro guarda o resultado da localização ao lado do CEP', async () => {
+      const located: AddressGeoFields = {
+        geo_latitude: -22.97,
+        geo_longitude: -43.18,
+        geo_precision: 'ADDRESS',
+        geo_source: 'NOMINATIM',
+        geo_status: 'FOUND',
+        geo_checked_at: CHECKED_AT,
+      };
+      geo.resolveForSave.mockResolvedValueOnce(located);
+      await service.create(dto, 42);
+      expect(geo.resolveForSave).toHaveBeenCalledWith(dto);
+      expect(saved).toMatchObject({ ...located, cep_status: 'FOUND' });
+    });
+
+    it('edição: rua, número, bairro, cidade, UF ou CEP mudou → localiza de novo (as coordenadas antigas não valem); complemento não', async () => {
+      const old: AddressGeoFields = {
+        geo_latitude: -22.9,
+        geo_longitude: -43.2,
+        geo_precision: 'ADDRESS',
+        geo_source: 'GOOGLE',
+        geo_status: 'FOUND',
+        geo_checked_at: CHECKED_AT,
+      };
+      saved = { ...dto, ...FOUND, ...old };
+      await service.update(77, { complement: 'Fundos' }, 42);
+      expect(geo.resolveForSave).not.toHaveBeenCalled();
+      expect(saved).toMatchObject(old);
+
+      // Nenhuma loja cobra por distância: as coordenadas antigas são apagadas (localizadas no orçamento)
+      await service.update(77, { number: '99' }, 42);
+      expect(geo.resolveForSave).toHaveBeenCalledTimes(1);
+      expect(geo.resolveForSave).toHaveBeenLastCalledWith(
+        expect.objectContaining({ number: '99', street: dto.street }),
+      );
+      expect(saved).toMatchObject(EMPTY_GEO_FIELDS);
+    });
+
     it('edição sem mudança (corpo vazio ou os mesmos valores): não grava nem consulta o CEP de novo', async () => {
       const checkedAt = new Date('2026-10-31T10:00:00Z');
       saved = { ...dto, ...UNAVAILABLE, cep_checked_at: checkedAt };
@@ -370,6 +414,7 @@ describe('AddressesService', () => {
         42,
       );
       expect(locations.resolve).not.toHaveBeenCalled();
+      expect(geo.resolveForSave).not.toHaveBeenCalled();
       expect(save).not.toHaveBeenCalled();
       expect(same).toMatchObject({
         cep_status: 'UNAVAILABLE',

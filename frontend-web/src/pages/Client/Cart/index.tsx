@@ -26,6 +26,8 @@ import PixCheckout from './components/PixCheckout';
 import {
   MAX_ITEM_QUANTITY, PIX_WATCH_GRACE_MS, DELIVERY_OUT_OF_AREA_CODE, adoptLegacyActivePix, apiErrorCode, attemptKey, buildOrderItems, cancelPayment, clearLegacyPendingPayment, errorMessage, isUncertainFailure, pixExpiresAt, pollPaymentStatus, readActivePix, saveActivePix, storeCheckoutApi, type ActivePix, type OfflineMethod, type OnlineMethod, type OrderPayload, type OrderType, type PaymentAttempt, type PixPaymentResponse, type Quote,
 } from './checkout';
+import { minimumOrderMessage, quoteBelowMinimum, quoteDistanceLabel } from './checkout';
+import OrderRulesNotice from './components/OrderRulesNotice';
 import { formatCurrency } from '../../../utils/format';
 
 const OFFLINE_OPTIONS: { value: OfflineMethod; label: string }[] = [
@@ -182,6 +184,9 @@ export default function ClientCart() {
 
   // Loja: status compartilhado + o informado no último orçamento (o mais restritivo vale até o novo orçamento)
   const storeOpen = storeIsOpen !== false && (quoteData ? quoteData.store_open : true);
+  // Pedido mínimo e frete grátis: do orçamento do tipo escolhido (entrega sem endereço ainda não tem)
+  const rulesQuote = quoteData && deliveryReady ? quoteData : null;
+  const belowMinimum = quoteBelowMinimum(rulesQuote);
 
   // Ao abrir o carrinho, confere o status e o perfil da loja na hora (pagamentos, entrega, disponibilidade)
   useEffect(() => {
@@ -257,6 +262,7 @@ export default function ClientCart() {
     if (orderType === 'DELIVERY' && selectedAddressId === null) return 'Selecione um endereço para entrega.';
     if (currentQuoteError) return currentQuoteError;
     if (!quoteData) return 'Calculando o total do pedido...';
+    if (belowMinimum) return minimumOrderMessage(orderType, belowMinimum.minOrder, belowMinimum.missing);
     return null;
   }
   const blockedReason = getBlockedReason();
@@ -307,6 +313,12 @@ export default function ClientCart() {
       setQuoteError(null);
       if (!data.store_open) {
         showError('A loja está fechada no momento.');
+        return null;
+      }
+      // Abaixo do pedido mínimo (a loja mudou o valor ou o preço baixou): nada é cobrado
+      const below = quoteBelowMinimum(data);
+      if (below) {
+        showError(minimumOrderMessage(orderPayload.type, below.minOrder, below.missing));
         return null;
       }
       if (shownTotal !== null && Math.abs(data.total - shownTotal) >= 0.005) {
@@ -859,12 +871,34 @@ export default function ClientCart() {
         </div>
         <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
           <span>Taxa de entrega</span>
-          <span>{deliveryFeeLabel}</span>
+          <span>
+            {/* Frete grátis: a taxa da região riscada ao lado de "Grátis" */}
+            {orderType === 'DELIVERY' && rulesQuote?.free_delivery_applied && (rulesQuote.delivery_fee_original ?? 0) > 0 && (
+              <s className="mr-1.5 text-gray-400 dark:text-gray-500">{formatCurrency(rulesQuote.delivery_fee_original)}</s>
+            )}
+            {deliveryFeeLabel}
+          </span>
         </div>
+        {/* Entrega por distância: quantos km da loja até o endereço (a taxa acima é da faixa dessa distância) */}
+        {orderType === 'DELIVERY' && !outOfArea && quoteDistanceLabel(rulesQuote) && (
+          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+            <span>Distância da loja</span>
+            <span>{quoteDistanceLabel(rulesQuote)}</span>
+          </div>
+        )}
         <div className="flex justify-between font-bold text-gray-800 dark:text-white pt-3 border-t border-gray-100 dark:border-slate-800">
           <span>Total</span>
           <span>{payableTotal !== null ? formatCurrency(payableTotal) : '--'}</span>
         </div>
+        {isAuthenticated && !outOfArea && (
+          <OrderRulesNotice
+            orderType={orderType}
+            quote={rulesQuote}
+            rules={store.order_rules}
+            deliveryEnabled={deliveryEnabled}
+            menuPath={storePath(slug)}
+          />
+        )}
         {!isAuthenticated && (
           <p className="text-xs text-gray-500 dark:text-gray-400">Entre na sua conta para calcular a entrega e finalizar o pedido.</p>
         )}
@@ -1013,6 +1047,9 @@ export default function ClientCart() {
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase">Total a pagar</p>
                 <p className="text-2xl font-bold text-gray-800 dark:text-white">{payableTotal !== null ? formatCurrency(payableTotal) : '--'}</p>
+                {belowMinimum && (
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Faltam {formatCurrency(belowMinimum.missing)} para o pedido mínimo</p>
+                )}
               </div>
 
               {paymentType === 'OFFLINE' && (

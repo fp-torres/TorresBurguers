@@ -285,6 +285,10 @@ test.describe('Isolamento entre lojas: loja B suspensa pelo superpainel', () => 
       ['POST /store/logo', () => api.post('/store/logo', { headers: admin, multipart: { file: pngFile(makePng(8, 8)) } })],
       ['PUT /store/settings/payments', () =>
         api.put('/store/settings/payments', { headers: admin, data: { mp_public_key: `TEST-${uid('pk')}`, mp_access_token: `TEST-${uid('tk')}` } })],
+      // Ferramentas da entrega por distância (localizar a loja e testar um endereço): bloqueadas como as configurações
+      ['POST /store/settings/geocode', () => api.post('/store/settings/geocode', { headers: admin, data: { zip_code: '28970-000' } })],
+      ['POST /store/settings/delivery-simulation', () =>
+        api.post('/store/settings/delivery-simulation', { headers: admin, data: { zip_code: '28970-001' } })],
       ['POST /users (equipe)', () =>
         api.post('/users', { headers: admin, data: { name: 'Equipe Suspensa', email: uniqueEmail('tn-susp'), password: 'SenhaForte@123', role: 'EMPLOYEE' } })],
       ['PATCH /users/:id (equipe)', () => api.patch(`/users/${teamB.KITCHEN.user.id}`, { headers: admin, data: { name: 'Cozinha Renomeada' } })],

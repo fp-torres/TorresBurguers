@@ -189,6 +189,9 @@ test.describe('Token de suporte: somente leitura do painel da loja', () => {
         data: { mp_public_key: 'TEST-chave-do-suporte', mp_access_token: 'TEST-token-do-suporte-12345678' },
       },
       { method: 'DELETE', path: '/store/settings/payments' },
+      // Ferramentas da entrega por distância (nada é gravado, mas consultam mapas): também recusadas
+      { method: 'POST', path: '/store/settings/geocode', data: { zip_code: '28970-000' } },
+      { method: 'POST', path: '/store/settings/delivery-simulation', data: { zip_code: '28970-001' } },
       { method: 'POST', path: '/store/subscription/checkout', data: {} },
       { method: 'POST', path: '/store/subscription/cancel', data: { reason: 'Cancelado pelo suporte' } },
       { method: 'POST', path: '/store/subscription/resume' },

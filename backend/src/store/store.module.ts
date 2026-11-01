@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AddressesModule } from '../addresses/addresses.module';
 import { Order } from '../orders/entities/order.entity';
+import { StoreDeliveryToolsService } from './store-delivery-tools.service';
 import { Store } from './entities/store.entity';
 import { StoreCustomersController } from './store-customers.controller';
 import { StoreCustomersService } from './store-customers.service';
@@ -16,11 +18,13 @@ import { StoresController } from './stores.controller';
  * plano (BillingModule) e auditoria (AuditModule) também são globais.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([Store, Order])],
+  // AddressesModule: localização no mapa e busca de CEP das ferramentas de entrega do painel
+  imports: [TypeOrmModule.forFeature([Store, Order]), AddressesModule],
   controllers: [StoreController, StoreCustomersController, StoresController],
   providers: [
     StoreService,
     StoreSettingsService,
+    StoreDeliveryToolsService,
     StoreCustomersService,
     StoreDirectoryService,
   ],

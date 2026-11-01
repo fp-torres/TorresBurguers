@@ -4,7 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { FindOperator, type Repository } from 'typeorm';
+import type { AddressGeoService } from '../addresses/address-geo.service';
 import type { AddressLocationService } from '../addresses/address-location.service';
+import type { GeocodingService } from '../addresses/geocoding.service';
 import type { Address } from '../addresses/entities/address.entity';
 import type { Addon } from '../products/entities/addon.entity';
 import type { Product } from '../products/entities/product.entity';
@@ -16,6 +18,7 @@ import type { QuoteOrderDto } from './dto/create-order.dto';
 import {
   CUSTOMER_BLOCKED_MESSAGE,
   OrderPricingService,
+  toQuoteResponse,
 } from './order-pricing.service';
 import {
   DELIVERY_OUT_OF_AREA_CODE,
@@ -24,6 +27,10 @@ import {
   DELIVERY_DISABLED_MESSAGE,
   TAKEOUT_DISABLED_MESSAGE,
 } from './order-rules';
+import {
+  ADDRESS_NOT_LOCATED_MESSAGE,
+  straightDeliveryKm,
+} from './delivery-distance';
 import { toOrderSnapshot } from './order-snapshot';
 import { OrderType } from './order.enums';
 
@@ -116,6 +123,11 @@ const products = [
   // Vínculo inconsistente (o banco recusa; aqui só para provar a defesa extra)
   product(4, STORE_A, 'Lanche Estranho', '20.00', [catupiryB]),
   product(10, STORE_B, 'Pizza da Loja B', '50.00'),
+  // Em promoção: R$ 30,00 por R$ 25,90 (o pedido mínimo e o frete grátis olham o preço cobrado)
+  {
+    ...product(11, STORE_A, 'Burger da Semana', '30.00'),
+    promotion_price: '25.90',
+  } as unknown as Product,
 ];
 
 const addresses = [
@@ -188,6 +200,14 @@ function setup(defaultStoreId: number | null = STORE_A) {
   const locations = {
     refresh: jest.fn((address: Address) => Promise.resolve(address)),
   };
+  // Coordenadas do endereço (entrega por distância): devolve o endereço como está, salvo se o teste mudar
+  const addressGeo = {
+    refresh: jest.fn((address: Address) => Promise.resolve(address)),
+  };
+  // Distância por rua (Google Routes): indisponível, salvo se o teste mudar
+  const geocoder = {
+    roadDistanceKm: jest.fn(() => Promise.resolve(null as number | null)),
+  };
   const service = new OrderPricingService(
     productRepository as unknown as Repository<Product>,
     addonRepository as unknown as Repository<Addon>,
@@ -195,6 +215,8 @@ function setup(defaultStoreId: number | null = STORE_A) {
     tenants as unknown as TenantService,
     blockRepository as unknown as Repository<StoreCustomerBlock>,
     locations as unknown as AddressLocationService,
+    addressGeo as unknown as AddressGeoService,
+    geocoder as unknown as GeocodingService,
   );
   return {
     service,
@@ -205,6 +227,8 @@ function setup(defaultStoreId: number | null = STORE_A) {
     blocked,
     blockRepository,
     locations,
+    addressGeo,
+    geocoder,
   };
 }
 
@@ -755,5 +779,526 @@ describe('OrderPricingService (por loja)', () => {
       userId: 8,
     });
     expect(stranger.addressExists).toBe(false);
+  });
+
+  describe('pedido mínimo e frete grátis (no JSON de entrega da loja)', () => {
+    /** Pinheiros (o endereço 20) na zona 1, com taxa de R$ 7,00; fora das zonas, R$ 12,00. */
+    const rulesStore = (
+      rules: Record<string, unknown> = {},
+      zoneRules: Record<string, unknown> = {},
+    ) =>
+      storeRow(STORE_A, {
+        delivery_zones: {
+          fallback: { fee: 12, time: '50 min' },
+          zones: [
+            {
+              neighborhoods: ['Pinheiros'],
+              fee: 7,
+              time: '25 min',
+              ...zoneRules,
+            },
+          ],
+          ...rules,
+        },
+      });
+    /** Entrega no endereço 20 com os itens informados. */
+    const deliver = (items: QuoteOrderDto['items']): QuoteOrderDto => ({
+      items,
+      type: OrderType.DELIVERY,
+      addressId: 20,
+    });
+    // X-Bacon: R$ 30,00; Refrigerante: R$ 6,00; Burger da Semana: R$ 25,90 (promoção de R$ 30,00)
+    const promo = [{ productId: 11, quantity: 1 }];
+
+    async function belowMinimum(promise: Promise<unknown>) {
+      const error = await promise.then(
+        () => null,
+        (reason: unknown) => reason,
+      );
+      expect(error).toBeInstanceOf(BadRequestException);
+      return (error as BadRequestException).getResponse();
+    }
+
+    it('nada configurado: mesmos valores de antes e o orçamento informa só nulos', async () => {
+      const { service } = setup();
+      const priced = await service.price(
+        deliver(promo),
+        CLIENT_ID,
+        tenant(rulesStore()),
+      );
+      expect(priced).toMatchObject({
+        subtotal: 25.9,
+        delivery_fee: 7,
+        total: 32.9,
+      });
+      expect(toQuoteResponse(priced)).toMatchObject({
+        delivery_fee: 7,
+        delivery_fee_original: 7,
+        free_delivery_applied: false,
+        free_delivery_threshold: null,
+        missing_for_free_delivery: null,
+        min_order_value: null,
+        missing_for_min_order: null,
+      });
+    });
+
+    it('orçamento abaixo do mínimo NÃO falha: informa o mínimo e quanto falta (com a promoção)', async () => {
+      const { service } = setup();
+      const priced = await service.price(
+        deliver(promo),
+        CLIENT_ID,
+        tenant(rulesStore({ min_order: 30 })),
+        { allowBelowMinimum: true },
+      );
+      expect(toQuoteResponse(priced)).toMatchObject({
+        subtotal: 25.9,
+        delivery_fee: 7,
+        total: 32.9,
+        min_order_value: 30,
+        missing_for_min_order: 4.1,
+      });
+    });
+
+    it('pedido e cobranças abaixo do mínimo → 400 ORDER_BELOW_MINIMUM com mensagem clara', async () => {
+      const { service } = setup();
+      const body = await belowMinimum(
+        service.price(
+          deliver(promo),
+          CLIENT_ID,
+          tenant(rulesStore({ min_order: 30 })),
+        ),
+      );
+      expect(body).toEqual({
+        statusCode: 400,
+        message:
+          'O pedido mínimo desta loja para entrega é R$ 30,00. Faltam R$ 4,10.',
+        error: 'Bad Request',
+        code: 'ORDER_BELOW_MINIMUM',
+        min_order_value: 30,
+        missing_for_min_order: 4.1,
+      });
+    });
+
+    it('no limite exato passa; pagamento já aprovado nunca é recusado', async () => {
+      const { service } = setup();
+      await expect(
+        service.price(
+          deliver([{ productId: 1, quantity: 1 }]),
+          CLIENT_ID,
+          tenant(rulesStore({ min_order: 30 })),
+        ),
+      ).resolves.toMatchObject({ subtotal: 30, total: 37 });
+      await expect(
+        service.price(
+          deliver(promo),
+          CLIENT_ID,
+          tenant(rulesStore({ min_order: 30 })),
+          { alreadyPaid: true },
+        ),
+      ).resolves.toMatchObject({ subtotal: 25.9, total: 32.9 });
+    });
+
+    it('frete grátis zera a taxa no total e no retrato do pedido (valor cobrado)', async () => {
+      const { service } = setup();
+      const store = tenant(rulesStore({ free_delivery_above: 36 }));
+      const below = await service.price(
+        deliver([
+          { productId: 1, quantity: 1 },
+          { productId: 3, quantity: 1 },
+        ]),
+        CLIENT_ID,
+        store,
+      );
+      // R$ 36,00 exatos: grátis
+      expect(below).toMatchObject({ subtotal: 36, delivery_fee: 0, total: 36 });
+      expect(toOrderSnapshot(below)).toMatchObject({
+        deliveryFee: 0,
+        total: 36,
+      });
+      expect(toQuoteResponse(below)).toMatchObject({
+        delivery_fee: 0,
+        delivery_fee_original: 7,
+        free_delivery_applied: true,
+        free_delivery_threshold: 36,
+        missing_for_free_delivery: 0,
+      });
+      // Com a promoção (R$ 25,90), não chega: a taxa continua e o orçamento diz quanto falta
+      const promoQuote = toQuoteResponse(
+        await service.price(deliver(promo), CLIENT_ID, store),
+      );
+      expect(promoQuote).toMatchObject({
+        delivery_fee: 7,
+        total: 32.9,
+        free_delivery_applied: false,
+        missing_for_free_delivery: 10.1,
+      });
+    });
+
+    it('a zona sobrescreve a loja; fora das zonas valem os da loja', async () => {
+      const { service, addressRepository } = setup();
+      const store = tenant(
+        rulesStore(
+          { min_order: 20, free_delivery_above: 100 },
+          { min_order: 40, free_delivery_above: 30 },
+        ),
+      );
+      // Pinheiros (zona): mínimo 40, grátis a partir de 30
+      const zoneBody = await belowMinimum(
+        service.price(
+          deliver([{ productId: 1, quantity: 1 }]),
+          CLIENT_ID,
+          store,
+        ),
+      );
+      expect(zoneBody).toMatchObject({
+        message:
+          'O pedido mínimo desta loja para entrega é R$ 40,00. Faltam R$ 10,00.',
+      });
+      await expect(
+        service.price(
+          deliver([{ productId: 2, quantity: 1 }]),
+          CLIENT_ID,
+          store,
+        ),
+      ).resolves.toMatchObject({ subtotal: 40, delivery_fee: 0, total: 40 });
+
+      // Outro bairro (fora das zonas: fallback de R$ 12,00): mínimo 20, grátis a partir de 100
+      addressRepository.findOne.mockResolvedValueOnce({
+        ...addresses[0],
+        neighborhood: 'Butantã',
+      });
+      await expect(
+        service.price(
+          deliver([{ productId: 1, quantity: 1 }]),
+          CLIENT_ID,
+          store,
+        ),
+      ).resolves.toMatchObject({ subtotal: 30, delivery_fee: 12, total: 42 });
+    });
+
+    it('retirada: o mínimo só vale com min_order_takeout; nunca há taxa', async () => {
+      const { service } = setup();
+      const dto = takeout(promo);
+      await expect(
+        service.price(dto, CLIENT_ID, tenant(rulesStore({ min_order: 30 }))),
+      ).resolves.toMatchObject({ subtotal: 25.9, delivery_fee: 0 });
+      const body = await belowMinimum(
+        service.price(
+          dto,
+          CLIENT_ID,
+          tenant(rulesStore({ min_order: 30, min_order_takeout: true })),
+        ),
+      );
+      expect(body).toMatchObject({
+        code: 'ORDER_BELOW_MINIMUM',
+        message:
+          'O pedido mínimo desta loja para retirada é R$ 30,00. Faltam R$ 4,10.',
+      });
+    });
+
+    it('zonas da plataforma (loja padrão sem zonas próprias) não têm pedido mínimo nem frete grátis', async () => {
+      const previous = process.env.DELIVERY_ZONES_JSON;
+      process.env.DELIVERY_ZONES_JSON = JSON.stringify({
+        fallback: { fee: 9, time: '45 min' },
+        zones: [],
+        min_order: 500,
+        free_delivery_above: 1,
+      });
+      try {
+        const { service } = setup(STORE_A);
+        await expect(
+          service.price(deliver(promo), CLIENT_ID, tenant(storeRow(STORE_A))),
+        ).resolves.toMatchObject({ delivery_fee: 9, total: 34.9 });
+      } finally {
+        if (previous === undefined) delete process.env.DELIVERY_ZONES_JSON;
+        else process.env.DELIVERY_ZONES_JSON = previous;
+      }
+    });
+  });
+
+  describe('entrega por distância (faixas de km a partir do local da loja)', () => {
+    /** Loja na Av. Paulista; o cliente fica "km" quilômetros ao norte, em linha reta. */
+    const ORIGIN = { lat: -23.5617, lng: -46.656 };
+    const north = (km: number) => ({
+      geo_latitude: ORIGIN.lat + km / 111.19492664,
+      geo_longitude: ORIGIN.lng,
+      geo_status: 'FOUND' as const,
+    });
+    const DISTANCE = {
+      bands: [
+        { up_to_km: 2, fee: 5, time: '25-35 min' },
+        { up_to_km: 5, fee: 8, time: '35-45 min', min_order: 40 },
+        { up_to_km: 8, fee: 12, time: '45-55 min', free_delivery_above: 25 },
+      ],
+      route_factor: 1.3,
+    };
+    const distanceStore = (
+      extra: Record<string, unknown> = {},
+      distance: Record<string, unknown> = {},
+      location: Partial<Store> = {
+        latitude: ORIGIN.lat,
+        longitude: ORIGIN.lng,
+      },
+    ) =>
+      storeRow(STORE_A, {
+        ...location,
+        delivery_zones: {
+          // As zonas continuam guardadas, mas não valem no modo distância
+          zones: [{ neighborhoods: ['Pinheiros'], fee: 1, time: '5 min' }],
+          fallback: { fee: 15, time: '60-70 min' },
+          mode: 'distance',
+          distance: { ...DISTANCE, ...distance },
+          ...extra,
+        } as Store['delivery_zones'],
+      });
+    const locate = (
+      addressGeo: { refresh: jest.Mock },
+      fields: Partial<Address>,
+    ) =>
+      addressGeo.refresh.mockImplementation((address: Address) =>
+        Promise.resolve({ ...address, ...fields }),
+      );
+    async function rejection(promise: Promise<unknown>) {
+      const error = await promise.then(
+        () => null,
+        (reason: unknown) => reason,
+      );
+      expect(error).toBeInstanceOf(BadRequestException);
+      return (error as BadRequestException).getResponse() as Record<
+        string,
+        unknown
+      >;
+    }
+
+    it('a faixa da distância (linha reta × fator 1,3) define taxa e prazo; o orçamento traz delivery_mode e distance_km', async () => {
+      const { service, addressGeo, locations } = setup();
+      locate(addressGeo, north(1)); // 1 km em linha reta → 1,3 km
+      const priced = await service.price(
+        delivery(),
+        CLIENT_ID,
+        tenant(distanceStore()),
+      );
+      expect(priced).toMatchObject({
+        delivery_fee: 5,
+        estimated_delivery_time: '25-35 min',
+        total: 35,
+        delivery: { mode: 'distance', distanceKm: 1.3 },
+      });
+      expect(addressGeo.refresh).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 20 }),
+      );
+      // A conferência do CEP continua (o bairro canônico segue no endereço)
+      expect(locations.refresh).toHaveBeenCalled();
+      expect(toQuoteResponse(priced)).toMatchObject({
+        delivery_fee: 5,
+        delivery_mode: 'distance',
+        distance_km: 1.3,
+      });
+    });
+
+    it('limites inclusivos e fator configurável: 2,0 km cabe em "até 2 km"; fator 1 = linha reta', async () => {
+      const { service, addressGeo } = setup();
+      locate(addressGeo, north(2));
+      await expect(
+        service.price(
+          delivery(),
+          CLIENT_ID,
+          tenant(distanceStore({}, { route_factor: 1 })),
+        ),
+      ).resolves.toMatchObject({
+        delivery_fee: 5,
+        delivery: { distanceKm: 2 },
+      });
+      // Mesmo ponto com o fator padrão: 2,6 km → faixa 2 (pedido mínimo de R$ 40 > R$ 30)
+      expect(
+        straightDeliveryKm(ORIGIN, {
+          lat: north(2).geo_latitude,
+          lng: ORIGIN.lng,
+        }),
+      ).toBe(2.6);
+      await expect(
+        service.price(delivery(), CLIENT_ID, tenant(distanceStore()), {
+          allowBelowMinimum: true,
+        }),
+      ).resolves.toMatchObject({
+        delivery_fee: 8,
+        delivery: { distanceKm: 2.6 },
+      });
+    });
+
+    it('pedido mínimo e frete grátis próprios da faixa', async () => {
+      const { service, addressGeo } = setup();
+      locate(addressGeo, north(3)); // 3,9 km → faixa 2 (mínimo R$ 40)
+      const body = await rejection(
+        service.price(delivery(), CLIENT_ID, tenant(distanceStore())),
+      );
+      expect(body).toMatchObject({
+        code: 'ORDER_BELOW_MINIMUM',
+        min_order_value: 40,
+        missing_for_min_order: 10,
+      });
+      // O orçamento não recusa: mostra quanto falta
+      await expect(
+        service.price(delivery(), CLIENT_ID, tenant(distanceStore()), {
+          allowBelowMinimum: true,
+        }),
+      ).resolves.toMatchObject({
+        delivery_fee: 8,
+        rules: { minOrderCents: 4000, missingForMinOrderCents: 1000 },
+      });
+      // 6,5 km → faixa 3, frete grátis a partir de R$ 25 (o X-Bacon custa R$ 30)
+      locate(addressGeo, north(5));
+      await expect(
+        service.price(delivery(), CLIENT_ID, tenant(distanceStore())),
+      ).resolves.toMatchObject({
+        delivery_fee: 0,
+        total: 30,
+        rules: { originalFeeCents: 1200, freeDeliveryApplied: true },
+      });
+    });
+
+    it('taxa por km adicional além da última faixa, até o raio máximo (com as regras da última faixa)', async () => {
+      const { service, addressGeo } = setup();
+      const store = distanceStore({}, { max_km: 12, extra_km_fee: 1.5 });
+      locate(addressGeo, north(7.3)); // 9,5 km → 2 km além de 8 → 12 + 2 × 1,50 = 15
+      await expect(
+        service.price(delivery(), CLIENT_ID, tenant(store)),
+      ).resolves.toMatchObject({
+        // frete grátis da última faixa (a partir de R$ 25) vale também no km adicional
+        delivery_fee: 0,
+        rules: { originalFeeCents: 1500 },
+        estimated_delivery_time: '45-55 min',
+        delivery: { distanceKm: 9.5 },
+      });
+    });
+
+    it('além do raio: taxa padrão ("fallback") ou recusa; pagamento já aprovado nunca é recusado', async () => {
+      const { service, addressGeo } = setup();
+      locate(addressGeo, north(10)); // 13 km
+      await expect(
+        service.price(delivery(), CLIENT_ID, tenant(distanceStore())),
+      ).resolves.toMatchObject({
+        delivery_fee: 15,
+        estimated_delivery_time: '60-70 min',
+        delivery: { mode: 'distance', distanceKm: 13 },
+      });
+      const refusing = distanceStore({ outside_zones: 'refuse' });
+      const body = await rejection(
+        service.price(delivery(), CLIENT_ID, tenant(refusing)),
+      );
+      expect(body).toEqual({
+        statusCode: 400,
+        message: DELIVERY_OUT_OF_AREA_MESSAGE,
+        error: 'Bad Request',
+        code: DELIVERY_OUT_OF_AREA_CODE,
+      });
+      await expect(
+        service.price(delivery(), CLIENT_ID, tenant(refusing), {
+          alreadyPaid: true,
+        }),
+      ).resolves.toMatchObject({ delivery_fee: 15 });
+    });
+
+    it('endereço não localizado (provedores sem resposta): política de fora da área, com o motivo na recusa', async () => {
+      const { service, addressGeo } = setup();
+      locate(addressGeo, {
+        geo_latitude: null,
+        geo_longitude: null,
+        geo_status: 'UNAVAILABLE',
+      });
+      await expect(
+        service.price(delivery(), CLIENT_ID, tenant(distanceStore())),
+      ).resolves.toMatchObject({
+        delivery_fee: 15,
+        delivery: { mode: 'distance', distanceKm: null },
+      });
+      const body = await rejection(
+        service.price(
+          delivery(),
+          CLIENT_ID,
+          tenant(distanceStore({ outside_zones: 'refuse' })),
+        ),
+      );
+      expect(body).toMatchObject({
+        code: DELIVERY_OUT_OF_AREA_CODE,
+        reason: 'ADDRESS_NOT_LOCATED',
+        message: ADDRESS_NOT_LOCATED_MESSAGE,
+      });
+    });
+
+    it('loja sem local no mapa: não localiza o endereço e vale a política de fora da área', async () => {
+      const { service, addressGeo } = setup();
+      const store = distanceStore({}, {}, { latitude: null, longitude: null });
+      await expect(
+        service.price(delivery(), CLIENT_ID, tenant(store)),
+      ).resolves.toMatchObject({ delivery_fee: 15 });
+      expect(addressGeo.refresh).not.toHaveBeenCalled();
+    });
+
+    it('distância por rua (quando a loja pede): usada sem o fator; sem resposta, volta para a linha reta', async () => {
+      const { service, addressGeo, geocoder } = setup();
+      locate(addressGeo, north(1)); // linha reta: 1,3 km (faixa 1)
+      geocoder.roadDistanceKm.mockResolvedValueOnce(4.2);
+      const store = distanceStore({}, { road_distance: true });
+      await expect(
+        service.price(delivery(), CLIENT_ID, tenant(store), {
+          allowBelowMinimum: true,
+        }),
+      ).resolves.toMatchObject({
+        delivery_fee: 8,
+        delivery: { distanceKm: 4.2 },
+      });
+      await expect(
+        service.price(delivery(), CLIENT_ID, tenant(store)),
+      ).resolves.toMatchObject({
+        delivery_fee: 5,
+        delivery: { distanceKm: 1.3 },
+      });
+      expect(geocoder.roadDistanceKm).toHaveBeenCalledTimes(2);
+    });
+
+    it('padrão (modo por zonas) e retirada: nada é localizado e o orçamento traz delivery_mode "zones" / null', async () => {
+      const { service, addressGeo, geocoder } = setup();
+      const zones = storeRow(STORE_A, {
+        latitude: ORIGIN.lat,
+        longitude: ORIGIN.lng,
+        delivery_zones: {
+          zones: [{ neighborhoods: ['Pinheiros'], fee: 6, time: '25 min' }],
+          fallback: { fee: 12, time: '50 min' },
+          // Faixas guardadas para depois: no modo por zonas, não valem
+          distance: DISTANCE,
+        } as Store['delivery_zones'],
+      });
+      const priced = await service.price(delivery(), CLIENT_ID, tenant(zones));
+      expect(toQuoteResponse(priced)).toMatchObject({
+        delivery_fee: 6,
+        delivery_mode: 'zones',
+        distance_km: null,
+      });
+      const pickup = await service.price(
+        takeout([{ productId: 1, quantity: 1 }]),
+        CLIENT_ID,
+        tenant(distanceStore()),
+      );
+      expect(toQuoteResponse(pickup)).toMatchObject({
+        delivery_fee: 0,
+        delivery_mode: null,
+        distance_km: null,
+      });
+      expect(addressGeo.refresh).not.toHaveBeenCalled();
+      expect(geocoder.roadDistanceKm).not.toHaveBeenCalled();
+    });
+
+    it('configuração de distância gravada inválida: cobra pelas zonas guardadas (nunca derruba o pedido)', async () => {
+      const { service, addressGeo } = setup();
+      const broken = distanceStore({}, { bands: [] });
+      await expect(
+        service.price(delivery(), CLIENT_ID, tenant(broken)),
+      ).resolves.toMatchObject({
+        delivery_fee: 1,
+        delivery: { mode: 'zones' },
+      });
+      expect(addressGeo.refresh).not.toHaveBeenCalled();
+    });
   });
 });

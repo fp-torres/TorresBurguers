@@ -175,9 +175,17 @@ export class OrdersService {
   // Cliente (a loja vem do PublicStoreGuard: :storeSlug ou a loja padrão nas rotas antigas)
   // ---------------------------------------------------------------------------
 
-  /** POST /orders/quote — valores calculados pelo servidor (loja fechada → store_open:false). */
+  /**
+   * POST /orders/quote — valores calculados pelo servidor (loja fechada → store_open:false). Abaixo do pedido
+   * mínimo não recusa: devolve quanto falta (missing_for_min_order) para a tela avisar; o pedido e as
+   * cobranças recusam (400 ORDER_BELOW_MINIMUM).
+   */
   async quote(dto: QuoteOrderDto, actor: AuthUser, store: TenantContext) {
-    return toQuoteResponse(await this.pricing.price(dto, actor.id, store));
+    return toQuoteResponse(
+      await this.pricing.price(dto, actor.id, store, {
+        allowBelowMinimum: true,
+      }),
+    );
   }
 
   async create(

@@ -13,6 +13,8 @@ import { Addon } from '../products/entities/addon.entity';
 import { Address } from '../addresses/entities/address.entity';
 import { deliveryLocationOf } from '../addresses/address-location';
 import { AddressLocationService } from '../addresses/address-location.service';
+import { AddressGeoService } from '../addresses/address-geo.service';
+import { GeocodingService } from '../addresses/geocoding.service';
 import { StoreAccountStatus, type Store } from '../store/entities/store.entity';
 import { StoreCustomerBlock } from '../store/entities/store-customer-block.entity';
 import type { TenantContext } from '../tenancy/tenant-context';
@@ -21,16 +23,32 @@ import { QuoteOrderDto } from './dto/create-order.dto';
 import type { OrderItemAddonSnapshot } from './entities/order-item.entity';
 import { OrderType } from './order.enums';
 import {
+  ADDRESS_NOT_LOCATED_MESSAGE,
+  ADDRESS_NOT_LOCATED_REASON,
+  distanceDeliveryFor,
+  storeDistanceSettings,
+  straightDeliveryKm,
+  validCoordinates,
+  type Coordinates,
+  type DeliveryMode,
+  type DistanceSettings,
+} from './delivery-distance';
+import {
   DELIVERY_OUT_OF_AREA_CODE,
   DELIVERY_OUT_OF_AREA_MESSAGE,
   DELIVERY_ZONES_MISSING_MESSAGE,
+  ORDER_BELOW_MINIMUM_CODE,
+  applyOrderRules,
   countAddonIds,
-  deliveryEstimateAt,
   deliveryZonesMissing,
   effectiveUnitPriceCents,
+  findDeliveryZone,
   fromCents,
+  orderBelowMinimumMessage,
+  orderRulesQuoteFields,
   orderTotalLimitError,
   orderTypeUnavailableMessage,
+  outsideZonesPolicy,
   priceLine,
   resolveDeliveryZones,
   storeDeliveryZones,
@@ -38,6 +56,9 @@ import {
   toCents,
   type DeliveryEstimate,
   type DeliveryZonesConfig,
+  type OrderRulesOutcome,
+  type OrderRulesQuoteFields,
+  type OrderValueRules,
 } from './order-rules';
 
 export const STORE_CLOSED_MESSAGE = 'A loja está fechada no momento.';
@@ -61,13 +82,81 @@ export function deliveryOutOfAreaException(): BadRequestException {
   });
 }
 
+/**
+ * Entrega por distância numa loja que recusa endereços fora da área, com o endereço não localizado no mapa:
+ * o mesmo 400 DELIVERY_OUT_OF_AREA (o web e o app já tratam), com a explicação e "reason" aditivo.
+ */
+export function addressNotLocatedException(): BadRequestException {
+  return new BadRequestException({
+    statusCode: 400,
+    message: ADDRESS_NOT_LOCATED_MESSAGE,
+    error: 'Bad Request',
+    code: DELIVERY_OUT_OF_AREA_CODE,
+    reason: ADDRESS_NOT_LOCATED_REASON,
+  });
+}
+
+/**
+ * Pedido abaixo do pedido mínimo da loja (ou da zona): 400 com { statusCode, message, error,
+ * code: "ORDER_BELOW_MINIMUM", min_order_value, missing_for_min_order } no pedido e nas cobranças.
+ */
+export function orderBelowMinimumException(
+  type: OrderType,
+  outcome: Pick<OrderRulesOutcome, 'minOrderCents' | 'missingForMinOrderCents'>,
+): BadRequestException {
+  const minOrderCents = outcome.minOrderCents ?? 0;
+  const missingCents = outcome.missingForMinOrderCents ?? 0;
+  return new BadRequestException({
+    statusCode: 400,
+    message: orderBelowMinimumMessage(type, minOrderCents, missingCents),
+    error: 'Bad Request',
+    code: ORDER_BELOW_MINIMUM_CODE,
+    min_order_value: fromCents(minOrderCents),
+    missing_for_min_order: fromCents(missingCents),
+  });
+}
+
 export interface PriceOptions {
   /**
    * O pagamento já foi aprovado (recuperação do pedido de um pagamento pago): o bloqueio do cliente pela
    * loja não impede o pedido — ele nasce como os criados pela aprovação, e a loja pode cancelar e estornar.
-   * Pelo mesmo motivo, a recusa de endereços fora das zonas também não vale (o endereço paga o "fallback").
+   * Pelo mesmo motivo, a recusa de endereços fora das zonas também não vale (o endereço paga o "fallback"),
+   * nem o pedido mínimo.
    */
   alreadyPaid?: boolean;
+  /**
+   * Orçamento (POST /orders/quote): abaixo do pedido mínimo NÃO recusa — a resposta traz quanto falta
+   * (missing_for_min_order) para a tela avisar. O pedido e as cobranças recusam (400 ORDER_BELOW_MINIMUM).
+   */
+  allowBelowMinimum?: boolean;
+}
+
+/**
+ * Taxa e prazo da entrega (ou da retirada) e as regras de valor da zona ou faixa atendida (null = as da loja),
+ * com o modo de cobrança (null na retirada) e a distância (só no modo distância, quando localizada).
+ */
+interface Logistics extends DeliveryEstimate {
+  area: OrderValueRules | null;
+  mode: DeliveryMode | null;
+  distanceKm: number | null;
+}
+
+/**
+ * Zonas em uso e se são as próprias da loja (só elas trazem pedido mínimo e frete grátis). "distance": as faixas
+ * de km quando a loja cobra por distância (só com configuração própria e válida).
+ */
+interface ZonesInUse {
+  config: DeliveryZonesConfig;
+  own: boolean;
+  distance: DistanceSettings | null;
+}
+
+/** Modo de cobrança e distância do orçamento (campos aditivos delivery_mode e distance_km). */
+export interface PricedDelivery {
+  /** null na retirada. */
+  mode: DeliveryMode | null;
+  /** km com 1 casa (modo distância com o endereço localizado); senão null. */
+  distanceKm: number | null;
 }
 
 /** Loja do orçamento: o contexto da vitrine (com a situação da assinatura) ou só a entidade. */
@@ -98,16 +187,25 @@ export interface PricedOrder {
   items: PricedOrderItem[];
   address: Address | null;
   subtotal: number;
+  /** Taxa cobrada (já zerada quando o frete grátis vale). */
   delivery_fee: number;
   total: number;
   totalCents: number;
   estimated_delivery_time: string;
   /** Aberta pela equipe (is_open) e podendo vender (situação da conta e da assinatura). */
   store_open: boolean;
+  /** Pedido mínimo e frete grátis aplicados (ausente = nenhuma regra: só em objetos montados fora de price()). */
+  rules?: OrderRulesOutcome;
+  /** Modo de cobrança e distância (ausente: só em objetos montados fora de price()). */
+  delivery?: PricedDelivery;
 }
 
-/** Resposta de POST /orders/quote (contrato). */
-export interface QuoteResponse {
+/**
+ * Resposta de POST /orders/quote (contrato). Os campos de OrderRulesQuoteFields são aditivos: delivery_fee já
+ * vem zerada quando o frete grátis vale (delivery_fee_original guarda a taxa da zona) e o orçamento abaixo do
+ * pedido mínimo NÃO falha (missing_for_min_order > 0).
+ */
+export interface QuoteResponse extends OrderRulesQuoteFields {
   items: {
     productId: number;
     name: string;
@@ -117,10 +215,13 @@ export interface QuoteResponse {
     lineTotal: number;
   }[];
   subtotal: number;
-  delivery_fee: number;
   total: number;
   estimated_delivery_time: string;
   store_open: boolean;
+  /** Aditivo: "zones" ou "distance" na entrega; null na retirada. */
+  delivery_mode: DeliveryMode | null;
+  /** Aditivo: distância em km (1 casa) no modo distância com o endereço localizado; senão null. */
+  distance_km: number | null;
 }
 
 function isTenantContext(input: PricingStore): input is TenantContext {
@@ -158,6 +259,8 @@ export class OrderPricingService {
   private readonly deliveryZones: DeliveryZonesConfig;
   /** Lojas com zonas inválidas já avisadas no log (um aviso por loja, não um por pedido). */
   private readonly invalidZonesWarned = new Set<number>();
+  /** Lojas no modo distância sem local já avisadas no log (um aviso por loja). */
+  private readonly missingLocationWarned = new Set<number>();
 
   constructor(
     @InjectRepository(Product)
@@ -170,6 +273,8 @@ export class OrderPricingService {
     @InjectRepository(StoreCustomerBlock)
     private readonly blockRepository: Repository<StoreCustomerBlock>,
     private readonly locations: AddressLocationService,
+    private readonly addressGeo: AddressGeoService,
+    private readonly geocoder: GeocodingService,
   ) {
     const resolved = resolveDeliveryZones(process.env, (path) =>
       readFileSync(path, 'utf8'),
@@ -228,9 +333,23 @@ export class OrderPricingService {
     ]);
 
     // Antes dos itens: endereço fora da área de uma loja que recusa esses endereços → 400
-    const logistics = address
-      ? this.deliveryLogistics(address, store, options)
-      : takeoutEstimateFor(store.takeout_estimate);
+    const zones = this.zonesFor(store);
+    const logistics: Logistics = address
+      ? zones.distance
+        ? await this.distanceLogistics(
+            address,
+            store,
+            zones,
+            zones.distance,
+            options,
+          )
+        : this.deliveryLogistics(address, zones, options)
+      : {
+          ...takeoutEstimateFor(store.takeout_estimate),
+          area: null,
+          mode: null,
+          distanceKm: null,
+        };
 
     const items = requested.map((item): PricedOrderItem => {
       // Produto de outra loja ou da lixeira não é carregado: mesma resposta de um id inexistente
@@ -308,11 +427,27 @@ export class OrderPricingService {
       (sum, item) => sum + toCents(item.lineTotal),
       0,
     );
-    const totalCents = subtotalCents + toCents(logistics.fee);
+    // Pedido mínimo e frete grátis: os da zona atendida ou os da loja (só nas zonas próprias da loja)
+    const rules = applyOrderRules(
+      { type: dto.type, subtotalCents, feeCents: toCents(logistics.fee) },
+      zones.own ? zones.config : null,
+      logistics.area,
+    );
+    const totalCents = subtotalCents + rules.feeCents;
 
     // O banco guarda até R$ 99.999.999,99: recusa antes de cobrar (orçamento, pedido e pagamentos)
     const limitError = orderTotalLimitError(totalCents);
     if (limitError) throw new BadRequestException(limitError);
+
+    // Abaixo do mínimo: o pedido e as cobranças recusam; o orçamento mostra quanto falta. Pagamento já
+    // aprovado nunca é recusado (a loja pode cancelar e estornar).
+    if (
+      (rules.missingForMinOrderCents ?? 0) > 0 &&
+      !options.alreadyPaid &&
+      !options.allowBelowMinimum
+    ) {
+      throw orderBelowMinimumException(dto.type, rules);
+    }
 
     return {
       storeId: store.id,
@@ -320,11 +455,13 @@ export class OrderPricingService {
       items,
       address,
       subtotal: fromCents(subtotalCents),
-      delivery_fee: logistics.fee,
+      delivery_fee: fromCents(rules.feeCents),
       total: fromCents(totalCents),
       totalCents,
       estimated_delivery_time: logistics.time,
       store_open: store.is_open === true && canSell,
+      rules,
+      delivery: { mode: logistics.mode, distanceKm: logistics.distanceKm },
     };
   }
 
@@ -335,19 +472,106 @@ export class OrderPricingService {
    */
   private deliveryLogistics(
     address: Address,
-    store: Store,
+    zones: ZonesInUse,
     options: PriceOptions,
-  ): DeliveryEstimate {
-    const zones = this.zonesFor(store);
-    const estimate = deliveryEstimateAt(deliveryLocationOf(address), zones);
-    if (estimate) return estimate;
-    if (options.alreadyPaid)
-      return { fee: zones.fallback.fee, time: zones.fallback.time };
-    throw deliveryOutOfAreaException();
+  ): Logistics {
+    const { config } = zones;
+    const zone = findDeliveryZone(deliveryLocationOf(address), config);
+    const by = { mode: 'zones' as const, distanceKm: null };
+    // Mínimo e frete grátis próprios da zona só nas zonas da loja (as da plataforma não têm regras)
+    if (zone)
+      return {
+        fee: zone.fee,
+        time: zone.time,
+        area: zones.own ? zone : null,
+        ...by,
+      };
+    if (outsideZonesPolicy(config) === 'refuse' && !options.alreadyPaid)
+      throw deliveryOutOfAreaException();
+    // Fora das zonas: o "fallback", com as regras da loja
+    return {
+      fee: config.fallback.fee,
+      time: config.fallback.time,
+      area: null,
+      ...by,
+    };
   }
 
-  /** Zonas da loja (stores.delivery_zones) ou as da plataforma. */
-  private zonesFor(store: Store): DeliveryZonesConfig {
+  /**
+   * Entrega por distância: km entre a loja e o endereço (linha reta × fator de rota, ou por rua quando a loja
+   * pediu e a plataforma tem a chave do Google — com queda para a linha reta) e a faixa dessa distância, com o
+   * pedido mínimo e o frete grátis próprios da faixa. Além do raio, ou sem coordenadas (endereço não localizado
+   * ou loja sem local), vale a política de fora da área: o "fallback" ou 400. Pagamento já aprovado nunca é
+   * recusado (vale o "fallback"). Os provedores têm prazo curto: nunca travam o orçamento.
+   */
+  private async distanceLogistics(
+    address: Address,
+    store: Store,
+    zones: ZonesInUse,
+    settings: DistanceSettings,
+    options: PriceOptions,
+  ): Promise<Logistics> {
+    const { config } = zones;
+    const origin = validCoordinates(store.latitude, store.longitude);
+    if (!origin) this.warnMissingStoreLocation(store.id);
+    const located = origin ? await this.addressGeo.refresh(address) : address;
+    const destination = validCoordinates(
+      located.geo_latitude,
+      located.geo_longitude,
+    );
+    const distanceKm =
+      origin && destination
+        ? await this.distanceKm(origin, destination, settings)
+        : null;
+    const pick =
+      distanceKm === null ? null : distanceDeliveryFor(distanceKm, settings);
+    if (pick)
+      return {
+        fee: pick.fee,
+        time: pick.time,
+        area: pick.area,
+        mode: 'distance',
+        distanceKm,
+      };
+    if (outsideZonesPolicy(config) === 'refuse' && !options.alreadyPaid)
+      throw distanceKm === null
+        ? addressNotLocatedException()
+        : deliveryOutOfAreaException();
+    return {
+      fee: config.fallback.fee,
+      time: config.fallback.time,
+      area: null,
+      mode: 'distance',
+      distanceKm,
+    };
+  }
+
+  /** Por rua (quando pedido e disponível) ou linha reta × fator de rota; km com 1 casa. */
+  private async distanceKm(
+    origin: Coordinates,
+    destination: Coordinates,
+    settings: DistanceSettings,
+  ): Promise<number> {
+    if (settings.road_distance) {
+      const road = await this.geocoder.roadDistanceKm(origin, destination);
+      if (road !== null) return road;
+    }
+    return straightDeliveryKm(origin, destination, settings.route_factor);
+  }
+
+  private warnMissingStoreLocation(storeId: number): void {
+    if (this.missingLocationWarned.has(storeId)) return;
+    this.missingLocationWarned.add(storeId);
+    this.logger.warn(
+      `A loja #${storeId} cobra a entrega por distância, mas não tem o local (latitude e longitude): os endereços seguem a política de fora da área.`,
+    );
+  }
+
+  /**
+   * Zonas da loja (stores.delivery_zones) ou as da plataforma. "own" = as próprias da loja e válidas: só elas
+   * trazem pedido mínimo e frete grátis (a loja padrão com as zonas da plataforma não tem essas regras).
+   */
+  private zonesFor(store: Store): ZonesInUse {
     const resolved = storeDeliveryZones(
       store.delivery_zones,
       this.deliveryZones,
@@ -358,7 +582,16 @@ export class OrderPricingService {
         `Zonas de entrega da loja #${store.id} inválidas (${resolved.error}). Usando as zonas padrão da plataforma.`,
       );
     }
-    return resolved.config;
+    const own =
+      store.delivery_zones !== null &&
+      store.delivery_zones !== undefined &&
+      !resolved.error;
+    // Cobrança por distância: só com a configuração própria da loja (a da plataforma é sempre por zonas)
+    return {
+      config: resolved.config,
+      own,
+      distance: own ? storeDistanceSettings(store.delivery_zones) : null,
+    };
   }
 
   // Sem a lixeira: item excluído responde como um id inexistente (nunca revela o nome)
@@ -465,6 +698,16 @@ export class OrderPricingService {
 }
 
 export function toQuoteResponse(priced: PricedOrder): QuoteResponse {
+  // Sem o resultado das regras (objeto montado fora de price()): a taxa como veio, sem mínimo nem frete grátis
+  const rules: OrderRulesOutcome = priced.rules ?? {
+    feeCents: toCents(priced.delivery_fee),
+    originalFeeCents: toCents(priced.delivery_fee),
+    freeDeliveryApplied: false,
+    freeDeliveryThresholdCents: null,
+    missingForFreeDeliveryCents: null,
+    minOrderCents: null,
+    missingForMinOrderCents: null,
+  };
   return {
     items: priced.items.map((item) => ({
       productId: item.product.id,
@@ -475,9 +718,14 @@ export function toQuoteResponse(priced: PricedOrder): QuoteResponse {
       lineTotal: item.lineTotal,
     })),
     subtotal: priced.subtotal,
-    delivery_fee: priced.delivery_fee,
     total: priced.total,
     estimated_delivery_time: priced.estimated_delivery_time,
     store_open: priced.store_open,
+    ...orderRulesQuoteFields(rules),
+    // Sem o resultado (objeto montado fora de price()): entrega por zonas, sem distância
+    delivery_mode:
+      priced.delivery?.mode ??
+      (priced.type === OrderType.DELIVERY ? 'zones' : null),
+    distance_km: priced.delivery?.distanceKm ?? null,
   };
 }

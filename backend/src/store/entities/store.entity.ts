@@ -99,6 +99,16 @@ export class Store {
   @Column({ type: 'varchar', length: 2, nullable: true })
   address_state: string | null;
 
+  /**
+   * Local da loja no mapa (graus decimais), ponto de partida da entrega por distância. Obtido no painel
+   * localizando o endereço acima (com ajuste manual); as duas juntas ou nenhuma.
+   */
+  @Column({ type: 'double precision', nullable: true })
+  latitude: number | null;
+
+  @Column({ type: 'double precision', nullable: true })
+  longitude: number | null;
+
   // --- Situação na plataforma ---
 
   @Column({
